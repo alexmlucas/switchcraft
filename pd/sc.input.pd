@@ -1,0 +1,4 @@
+#N canvas 735 406 772 500 12;
+#X obj 168 102 notein;
+#X obj 284 102 ctlin;
+#X text 437 105 everything is currently on channel one;

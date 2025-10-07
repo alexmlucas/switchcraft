@@ -1,0 +1,18 @@
+Pd 0.53-1 on Linux aarch64
+--------------------------------------------------------------------------------
+------------------ done with main ----------------------
+connection from 'pd' to 'pd-gui' on 127.0.0.1:58994
+Tk 8.6.13
+detected font: DejaVu Sans Mono
+using font: DejaVu Sans Mono bold
+pdlua 0.7.3 (GPL) 2014-2016 Martin Peach et al., based on
+lua 0.6~svn (GPL) 2008 Claude Heiland-Allen <claude@mathr.co.uk>
+pdlua: compiled for pd-0.53 on compiled for Debian on 2022/12/07 at 09:47:01 UTC
+Using lua version 5.2
+Loading plugin: /usr/lib/puredata/tcl/pd_deken.tcl
+[deken] Platform detected: Linux-aarch64-float32
+Loading plugin: /usr/lib/puredata/tcl/pd_docsdir.tcl
+Pd documents directory: /home/alex/Documents/Pd
+[deken] Platform re-detected: Linux-arm64-float32
+priority 6 scheduling failed; running at normal priority
+the Pd window filtered 17 lines
