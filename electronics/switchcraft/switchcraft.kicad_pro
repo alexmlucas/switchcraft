@@ -538,7 +538,7 @@
       "plot": "gerbers5/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "",
+      "step": "../../../../../Desktop/sc_pcb.stl",
       "svg": "",
       "vrml": ""
     },
