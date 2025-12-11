@@ -535,7 +535,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "gerbers5/",
+      "plot": "gerbers_new/",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "../../../../../Desktop/sc_pcb.stl",
@@ -667,10 +667,6 @@
       "discrete_input"
     ],
     [
-      "29a02cc6-3241-47b4-9274-5f8d1699ed7f",
-      "continuous_input"
-    ],
-    [
       "b9b4ca8a-542f-4d18-912a-4eab22dd28c6",
       "discrete_input1"
     ],
@@ -707,8 +703,12 @@
       "discrete_input9"
     ],
     [
-      "3650cd66-f58d-4df7-821f-1ce3127b1676",
-      "continuous_input1"
+      "c6e6e8dc-73ec-48e1-af45-d39a5f42bb61",
+      "new_continuous1"
+    ],
+    [
+      "73b8166d-f185-403b-9255-1b572b66e03f",
+      "new_continuous"
     ]
   ],
   "text_variables": {}

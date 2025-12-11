@@ -1791,10 +1791,6 @@
 					(reference "CN1")
 					(unit 1)
 				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "CN2")
-					(unit 1)
-				)
 			)
 		)
 	)
@@ -1859,10 +1855,6 @@
 			(project ""
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260/29a02cc6-3241-47b4-9274-5f8d1699ed7f"
 					(reference "#PWR03")
-					(unit 1)
-				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "#PWR04")
 					(unit 1)
 				)
 			)
@@ -1939,10 +1931,6 @@
 					(reference "Q3")
 					(unit 1)
 				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "Q14")
-					(unit 1)
-				)
 			)
 		)
 	)
@@ -2007,10 +1995,6 @@
 			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260/29a02cc6-3241-47b4-9274-5f8d1699ed7f"
 					(reference "#PWR021")
-					(unit 1)
-				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "#PWR023")
 					(unit 1)
 				)
 			)
@@ -2088,10 +2072,6 @@
 			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260/29a02cc6-3241-47b4-9274-5f8d1699ed7f"
 					(reference "D1")
-					(unit 1)
-				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "D2")
 					(unit 1)
 				)
 			)
@@ -2178,10 +2158,6 @@
 			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260/29a02cc6-3241-47b4-9274-5f8d1699ed7f"
 					(reference "R4")
-					(unit 1)
-				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "R5")
 					(unit 1)
 				)
 			)
@@ -2272,10 +2248,6 @@
 					(reference "D3")
 					(unit 1)
 				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "D14")
-					(unit 1)
-				)
 			)
 		)
 	)
@@ -2344,10 +2316,6 @@
 					(reference "R1")
 					(unit 1)
 				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "R2")
-					(unit 1)
-				)
 			)
 		)
 	)
@@ -2411,10 +2379,6 @@
 			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260/29a02cc6-3241-47b4-9274-5f8d1699ed7f"
 					(reference "#PWR022")
-					(unit 1)
-				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "#PWR034")
 					(unit 1)
 				)
 			)
@@ -2503,10 +2467,6 @@
 					(reference "D15")
 					(unit 1)
 				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "D16")
-					(unit 1)
-				)
 			)
 		)
 	)
@@ -2575,10 +2535,6 @@
 			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260/29a02cc6-3241-47b4-9274-5f8d1699ed7f"
 					(reference "SW1")
-					(unit 1)
-				)
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260/3650cd66-f58d-4df7-821f-1ce3127b1676"
-					(reference "SW2")
 					(unit 1)
 				)
 			)

@@ -1373,6 +1373,26 @@
 	)
 	(wire
 		(pts
+			(xy 158.75 86.36) (xy 158.75 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "09d7bb81-cc83-4cf2-bed3-ce0dd433142c")
+	)
+	(wire
+		(pts
+			(xy 161.29 110.49) (xy 137.16 110.49)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0a292f17-84b9-4621-9d1f-9ce0479632bf")
+	)
+	(wire
+		(pts
 			(xy 63.5 151.13) (xy 74.93 151.13)
 		)
 		(stroke
@@ -1403,6 +1423,16 @@
 	)
 	(wire
 		(pts
+			(xy 137.16 110.49) (xy 137.16 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2349f76a-96f5-4d09-b591-bbe0bfe0be79")
+	)
+	(wire
+		(pts
 			(xy 109.22 43.18) (xy 109.22 48.26)
 		)
 		(stroke
@@ -1410,6 +1440,16 @@
 			(type default)
 		)
 		(uuid "288a89ce-2396-48c5-a40d-6c63ab9faf25")
+	)
+	(wire
+		(pts
+			(xy 158.75 93.98) (xy 162.56 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "28c2eac5-a75c-4ad3-ad53-0c6b47e11133")
 	)
 	(wire
 		(pts
@@ -1430,6 +1470,26 @@
 			(type default)
 		)
 		(uuid "31cb5a3a-713c-498a-8219-49a7ec0b4253")
+	)
+	(wire
+		(pts
+			(xy 133.35 96.52) (xy 162.56 96.52)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "406e7dc6-3d25-4fcb-8c7c-f36a657e2138")
+	)
+	(wire
+		(pts
+			(xy 133.35 107.95) (xy 161.29 107.95)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4177cf88-2bd4-4405-b8ce-958b9ff310ee")
 	)
 	(wire
 		(pts
@@ -1473,7 +1533,7 @@
 	)
 	(wire
 		(pts
-			(xy 128.27 86.36) (xy 127 86.36)
+			(xy 127 86.36) (xy 158.75 86.36)
 		)
 		(stroke
 			(width 0)
@@ -1543,6 +1603,16 @@
 	)
 	(wire
 		(pts
+			(xy 162.56 99.06) (xy 139.7 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "74ab9062-7e67-44ce-966d-db7fc44cdca4")
+	)
+	(wire
+		(pts
 			(xy 72.39 133.35) (xy 72.39 88.9)
 		)
 		(stroke
@@ -1550,16 +1620,6 @@
 			(type default)
 		)
 		(uuid "79da1df3-4242-4e4c-8a15-8908b7ae1338")
-	)
-	(wire
-		(pts
-			(xy 128.27 96.52) (xy 128.27 86.36)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "7e78fa8f-006c-4c27-b42c-aa432a04e94f")
 	)
 	(wire
 		(pts
@@ -1633,16 +1693,6 @@
 	)
 	(wire
 		(pts
-			(xy 127 99.06) (xy 137.16 99.06)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "9d719f79-c79a-443e-bbb3-78da0fdccc6b")
-	)
-	(wire
-		(pts
 			(xy 66.04 88.9) (xy 66.04 76.2)
 		)
 		(stroke
@@ -1663,23 +1713,23 @@
 	)
 	(wire
 		(pts
-			(xy 137.16 105.41) (xy 134.62 105.41)
+			(xy 133.35 99.06) (xy 127 99.06)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "b64f90ce-d911-41b1-a52a-0ec4e4fa9fbe")
+		(uuid "aaa9c4d4-3975-40d4-9846-9f7676c91622")
 	)
 	(wire
 		(pts
-			(xy 133.35 107.95) (xy 137.16 107.95)
+			(xy 134.62 105.41) (xy 161.29 105.41)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "c084ef64-9bf3-4e56-ab70-0d478eb83d58")
+		(uuid "c1b6c918-c54a-4980-b5ec-0d22dc937341")
 	)
 	(wire
 		(pts
@@ -1693,13 +1743,23 @@
 	)
 	(wire
 		(pts
-			(xy 137.16 96.52) (xy 128.27 96.52)
+			(xy 133.35 96.52) (xy 133.35 99.06)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "c6fa72cb-6a23-4f0b-bb1b-f267521e6d42")
+		(uuid "ccfd7344-2e34-473e-a373-843b14172355")
+	)
+	(wire
+		(pts
+			(xy 137.16 83.82) (xy 127 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ce1e7eb2-545d-4706-8c5e-ccac122b89b4")
 	)
 	(wire
 		(pts
@@ -1753,6 +1813,16 @@
 	)
 	(wire
 		(pts
+			(xy 139.7 99.06) (xy 139.7 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "eaae5390-4e14-471d-a72c-7fd788642a22")
+	)
+	(wire
+		(pts
 			(xy 74.93 151.13) (xy 74.93 93.98)
 		)
 		(stroke
@@ -1760,6 +1830,16 @@
 			(type default)
 		)
 		(uuid "eb66d835-24b3-4b0c-a698-8000e9da3324")
+	)
+	(wire
+		(pts
+			(xy 127 81.28) (xy 139.7 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ed206018-d6f7-4407-af8a-81f3c2904259")
 	)
 	(wire
 		(pts
@@ -2200,7 +2280,7 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "11")
 				)
@@ -2253,135 +2333,9 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "5")
-				)
-			)
-		)
-	)
-	(sheet
-		(at 137.16 95.25)
-		(size 20.32 5.08)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0.0000)
-		)
-		(uuid "29a02cc6-3241-47b4-9274-5f8d1699ed7f")
-		(property "Sheetname" "continuous_input"
-			(at 137.16 94.5384 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "continuous_input.kicad_sch"
-			(at 137.16 100.9146 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(pin "ADC" input
-			(at 137.16 99.06 180)
-			(uuid "aec9b918-a2ab-4816-9db2-93197a97a780")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(pin "GPIO" input
-			(at 137.16 96.52 180)
-			(uuid "baea598d-3b81-4e65-a610-798bcf38d7a1")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(instances
-			(project "sc"
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
-					(page "3")
-				)
-			)
-		)
-	)
-	(sheet
-		(at 137.16 104.14)
-		(size 20.32 5.08)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0.0000)
-		)
-		(uuid "3650cd66-f58d-4df7-821f-1ce3127b1676")
-		(property "Sheetname" "continuous_input1"
-			(at 137.16 103.4284 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "continuous_input.kicad_sch"
-			(at 137.16 109.8046 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(pin "ADC" input
-			(at 137.16 107.95 180)
-			(uuid "2a14cd59-97d4-4f0e-b0ef-aa8269153f27")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(pin "GPIO" input
-			(at 137.16 105.41 180)
-			(uuid "d8b6c035-e499-4b25-b8dc-b2fb92dc3f68")
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(instances
-			(project "sc"
-				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
-					(page "13")
 				)
 			)
 		)
@@ -2432,9 +2386,82 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "7")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 161.29 104.14)
+		(size 21.59 7.62)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "73b8166d-f185-403b-9255-1b572b66e03f")
+		(property "Sheetname" "new_continuous"
+			(at 161.29 103.4284 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "new_continuous.kicad_sch"
+			(at 161.29 112.3446 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(pin "ADC" input
+			(at 161.29 107.95 180)
+			(uuid "4c09e889-1a2d-4929-8e8e-9562d7c8e215")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "GPIO_BUTTON" input
+			(at 161.29 105.41 180)
+			(uuid "46f6d045-3312-4372-a910-980cd4112067")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "GPIO_LED" input
+			(at 161.29 110.49 180)
+			(uuid "52d037ae-f0d1-4f17-a14b-f3b7a175fdba")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(instances
+			(project "switchcraft"
+				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
+					(page "14")
 				)
 			)
 		)
@@ -2485,7 +2512,7 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "12")
 				)
@@ -2538,7 +2565,7 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "6")
 				)
@@ -2591,7 +2618,7 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "9")
 				)
@@ -2644,7 +2671,7 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "8")
 				)
@@ -2697,9 +2724,82 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "4")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 162.56 92.71)
+		(size 21.59 7.62)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "c6e6e8dc-73ec-48e1-af45-d39a5f42bb61")
+		(property "Sheetname" "new_continuous1"
+			(at 162.56 91.9984 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "new_continuous.kicad_sch"
+			(at 162.56 100.9146 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(pin "ADC" input
+			(at 162.56 96.52 180)
+			(uuid "51d0fd7a-3f5a-4dec-9b49-942ce425f6c5")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "GPIO_BUTTON" input
+			(at 162.56 93.98 180)
+			(uuid "7ea9438f-1da2-4c8b-b08e-b7e94ce8a39a")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "GPIO_LED" input
+			(at 162.56 99.06 180)
+			(uuid "27faf16b-5b9f-4337-a2a1-b44effc43f87")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(instances
+			(project "switchcraft"
+				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
+					(page "13")
 				)
 			)
 		)
@@ -2750,7 +2850,7 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "2")
 				)
@@ -2803,7 +2903,7 @@
 			)
 		)
 		(instances
-			(project "sc"
+			(project "switchcraft"
 				(path "/32b25fb9-11f5-420f-9912-2217f2803260"
 					(page "10")
 				)
