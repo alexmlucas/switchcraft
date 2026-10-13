@@ -7,8 +7,10 @@
 #include "table.h"
 
 // Switches to a new table: silences everything, resets runtime state
-// (transpose, scale, sequences) and fires LOAD rules.
-void engine_load(const table_t *t);
+// (transpose, scale, sequences) and fires LOAD rules. `live` (an edit from
+// the page) instead keeps playing clock-mode sequences and transpose, and
+// doesn't fire LOAD rules (spec A.4).
+void engine_load(const table_t *t, bool live);
 
 const globals_t *engine_globals(void);
 

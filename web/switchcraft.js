@@ -120,6 +120,11 @@
     return 12 * (octave + 1) + root + 12 * oct + semis[idx];
   }
 
+  // Euclidean rhythm (spec B.6.1): position i is a hit if ((i + r) * k) % n < k.
+  function euclidHits(steps, hits, rotation = 0) {
+    return Array.from({ length: steps }, (_, i) => ((i + rotation) * hits) % steps < hits);
+  }
+
   function section(id, body) {
     return [id, 0, ...u16(body.length), ...body];
   }
@@ -159,6 +164,8 @@
       section(0x01, globalsBody(table.globals)),
       section(0x02, [table.rules.length, 0, 0, 0, ...table.rules.flatMap(rule)]),
       ...(table.sequences || []).map((s) => section(0x03, sequenceBody(s))),
+      ...(table.sequences || []).filter((s) => s.euclid)
+        .map((s) => section(0x04, [s.id, s.euclid.steps, s.euclid.hits, s.euclid.rotation])),
       ...(table.extra || []),
     ];
     const body = sections.flat();
@@ -169,6 +176,7 @@
   function parseTable(blob) {
     if (blob.length < 8 || rd16(blob, 0) !== 1) throw new Error('unsupported table format');
     const table = { globals: null, rules: [], sequences: [], extra: [] };
+    const rhythms = [];  // EUCLID sections, attached to their sequences below
     let off = 8;
     for (let i = 0; i < blob[4]; i++) {
       const id = blob[off];
@@ -201,12 +209,18 @@
         }
         table.sequences.push({
           id: b[0], advance: b[1], order: b[2], octaves: b[3], channel: b[4],
-          velocity: b[5], division: b[6], gate: b[7], noteMode, steps,
+          velocity: b[5], division: b[6], gate: b[7], noteMode, steps, euclid: null,
         });
+      } else if (id === 0x04) {
+        rhythms.push({ id: b[0], euclid: { steps: b[1], hits: b[2], rotation: b[3] } });
       } else {
         table.extra.push(Array.from(blob.subarray(off, off + 4 + len)));
       }
       off += 4 + len;
+    }
+    for (const r of rhythms) {
+      const q = table.sequences.find((s) => s.id === r.id);
+      if (q) q.euclid = r.euclid;
     }
     return table;
   }
@@ -227,6 +241,7 @@
     return {
       mode: 'clock', noteType: 'scale', notes: [], order: 'written', octaves: 1,
       division: 6, gate: 80,
+      rhythm: null,  // or {steps, hits, rotation}: a Euclidean rhythm (clock mode)
     };
   }
 
@@ -287,6 +302,7 @@
         steps: q.notes.map((n) => (n === null
           ? { note: 0, velocity: 0, rest: true, length: 1 }
           : { note: n, velocity: 0, rest: false, length: 1 })),
+        euclid: q.mode === 'clock' && q.rhythm ? { ...q.rhythm } : null,
       });
     });
     return { globals: { ...f }, rules, sequences };
@@ -314,6 +330,7 @@
         mode: q.advance ? 'clock' : 'press', noteType: q.noteMode ? 'scale' : 'fixed',
         notes: q.steps.map((st) => (st.rest ? null : st.note)),
         order: ORDERS[q.order], octaves: q.octaves, division: q.division, gate: q.gate,
+        rhythm: q.euclid ? { ...q.euclid } : null,
       };
     }
 
@@ -422,6 +439,25 @@
           { order: 'written', division: 12, gate: 50 });
         f.switches[10] = { action: 'seq-play', seq: 0, gate: 'latch', onBeat: true };
         f.switches[11] = { action: 'seq-play', seq: 1, gate: 'latch', onBeat: true };
+        f.analog = [{ cc: 7 }, { cc: null }];
+        return f;
+      },
+    },
+    {
+      id: 'euclid', name: 'Euclidean drums',
+      description: 'Four drum parts with Euclidean rhythms. Switches 1–4 start and stop them on the beat; 5–10 are drum pads. Best with a DAW drum kit.',
+      form: () => {
+        const f = defaultForm();
+        f.name = 'Euclid drums';
+        f.channel = 9;
+        f.tempo = 1000;
+        const part = (note, steps, hits, rotation) => seq('clock', 'fixed', [note],
+          { order: 'written', division: 6, gate: 50, rhythm: { steps, hits, rotation } });
+        f.sequences = [part(36, 16, 5, 0), part(38, 16, 3, 4), part(42, 8, 7, 0), part(45, 12, 4, 2)];
+        for (let i = 0; i < 4; i++) f.switches[i] = { action: 'seq-play', seq: i, gate: 'latch', onBeat: true };
+        [36, 38, 42, 46, 39, 49].forEach((note, i) => {
+          f.switches[4 + i] = { action: 'note', note, gate: 'oneshot' };
+        });
         f.analog = [{ cc: 7 }, { cc: null }];
         return f;
       },
@@ -598,11 +634,13 @@
       return blob;
     }
 
-    async writeTable(blob, save = false) {
+    // restart: start the preset afresh (template, opened file); otherwise an
+    // edit, which keeps playing sequences going (spec A.4).
+    async writeTable(blob, save = false, restart = false) {
       await this.request(CMD.WRITE_BEGIN, [...u16(blob.length), ...u32(crc32(blob))]);
       for (let off = 0; off < blob.length; off += CHUNK)
         await this.request(CMD.WRITE_DATA, [...u16(off), ...blob.subarray(off, off + CHUNK)]);
-      await this.request(CMD.WRITE_COMMIT, [save ? 1 : 0], 2000);
+      await this.request(CMD.WRITE_COMMIT, [(save ? 1 : 0) | (restart ? 2 : 0)], 2000);
     }
 
     saveSlot(slot) { return this.request(CMD.SLOT_SAVE, [slot], 2000); }
@@ -627,7 +665,7 @@
     CMD, REPORT, TRIG, ACT, GATE, FLAG, DEFAULT, SCALES, NOTE_NAMES,
     NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING, DEFAULT_CALIBRATION,
     encode, decode, crc32, noteName, degreeToNote,
-    ORDERS, MAX_FORM_STEPS, TEMPLATES,
+    ORDERS, MAX_FORM_STEPS, TEMPLATES, euclidHits,
     presetFile, readPresetFile, presetFileName,
     buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,
     tableFromForm, formFromTable,

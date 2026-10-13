@@ -189,7 +189,7 @@ static void cmd_write_commit(uint8_t seq, const uint8_t *p, uint16_t n) {
     if (n != 1)
         return reply_status(CMD_WRITE_COMMIT, seq, STATUS_ERR_BAD_LENGTH);
     uint8_t flags = p[0];
-    if (flags & 0xFE)
+    if (flags & 0xFC)
         return reply_status(CMD_WRITE_COMMIT, seq, STATUS_ERR_RANGE);
     if (!write_active || write_next != write_len)
         return reply_status(CMD_WRITE_COMMIT, seq, STATUS_ERR_SEQUENCE);
@@ -197,7 +197,8 @@ static void cmd_write_commit(uint8_t seq, const uint8_t *p, uint16_t n) {
     if (crc32(staging, write_len) != write_crc)
         return reply_status(CMD_WRITE_COMMIT, seq, STATUS_ERR_CRC);
     table_error_t err;
-    int status = config_apply(staging, write_len, &err);
+    // Bit 1 (RESTART): a new preset, so start it afresh; otherwise an edit (spec A.4).
+    int status = config_apply(staging, write_len, &err, !(flags & 2));
     if (status == STATUS_ERR_INVALID) {
         uint8_t d[3];
         wr16(d, err.offset);

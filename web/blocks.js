@@ -184,7 +184,7 @@
       [dropdown('DIVISION', DIVISION_OPTIONS)],
       'Runs the blocks inside in time with the tempo.'),
     eventBlock('sc_when_loaded', 'when this preset starts', [],
-      'Runs the blocks inside once, when the board loads this preset.'),
+      'Runs the blocks inside once when the preset starts: when the board switches to it or powers up, or when it comes from a template or file. Editing the blocks doesn’t restart it.'),
     eventBlock('sc_when_analog', 'when the %1 analog input moves',
       [dropdown('ANALOG', ANALOG_OPTIONS)],
       'Runs the blocks inside each time the pedal or trigger on this analog jack moves.'),
@@ -249,7 +249,12 @@
       message3: 'speed %1 note length %2 %%',
       args3: [dropdown('SPEED', SPEED_OPTIONS),
         { type: 'field_number', name: 'LENGTH', value: 80, min: 0, max: 100, precision: 1 }],
-      tooltip: 'The notes of a sequence. Scale steps: 1 is the key note, 3 and 5 make a chord, - is a rest. Fixed notes: C4 E4 G4. Length 0 holds each note until the next (one note per press only). Speed only matters when it plays in time.',
+      message4: 'rhythm %1 %2 hits in %3 steps, rotate %4',
+      args4: [dropdown('RHYTHM', [['every step', 'all'], ['euclidean', 'euclid']]),
+        { type: 'field_number', name: 'HITS', value: 3, min: 0, max: 32, precision: 1 },
+        { type: 'field_number', name: 'STEPS', value: 8, min: 1, max: 32, precision: 1 },
+        { type: 'field_number', name: 'ROTATE', value: 0, min: 0, max: 31, precision: 1 }],
+      tooltip: 'The notes of a sequence. Scale steps: 1 is the key note, 3 and 5 make a chord, - is a rest. Fixed notes: C4 E4 G4. Length 0 holds each note until the next (one note per press only). Speed only matters when it plays in time. A euclidean rhythm spreads the hits as evenly as possible over the steps: each hit plays the next note, the other steps are rests.',
     },
   ];
 
@@ -449,8 +454,19 @@
       const extra = (data.steps && data.steps[i]) || {};
       return { note: n === null ? 0 : n, rest: n === null, velocity: extra.velocity || 0, length: extra.length || 1 };
     });
+    let euclid = null;
+    if (block.getFieldValue('RHYTHM') === 'euclid') {
+      const steps = Number(block.getFieldValue('STEPS'));
+      let hits = Number(block.getFieldValue('HITS'));
+      if (hits > steps) {
+        warn(block, `${hits} hits don’t fit in ${steps} steps: using ${steps}.`);
+        hits = steps;
+      }
+      if (mode !== 'clock') warn(block, 'A euclidean rhythm only works when the sequence plays in time.');
+      euclid = { steps, hits, rotation: Number(block.getFieldValue('ROTATE')) % steps };
+    }
     return {
-      id: Number(block.getFieldValue('SEQ')), advance: mode === 'clock' ? 1 : 0,
+      id: Number(block.getFieldValue('SEQ')), advance: mode === 'clock' ? 1 : 0, euclid,
       order: S.ORDERS.indexOf(block.getFieldValue('ORDER')), octaves: Number(block.getFieldValue('OCTAVES')),
       channel: data.ch ?? DEFAULT, velocity: data.vel ?? 0,
       division: speed === 'custom' ? (data.division || 6) : Number(speed),
@@ -549,6 +565,9 @@
         SEQ: String(q.id), MODE: q.advance ? 'clock' : 'press', NOTE_TYPE: type,
         NOTES: formatNotes(notes, type), ORDER: S.ORDERS[q.order], OCTAVES: String(q.octaves),
         SPEED: SPEEDS.has(String(q.division)) ? String(q.division) : 'custom', LENGTH: q.gate,
+        RHYTHM: q.euclid ? 'euclid' : 'all',
+        HITS: q.euclid ? q.euclid.hits : 3, STEPS: q.euclid ? q.euclid.steps : 8,
+        ROTATE: q.euclid ? q.euclid.rotation : 0,
       },
     }, {
       ch: q.channel === DEFAULT ? undefined : q.channel,

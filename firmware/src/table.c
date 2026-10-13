@@ -185,6 +185,8 @@ bool table_load(const uint8_t *blob, uint16_t len, table_t *out, table_error_t *
     uint8_t sections = blob[4];
     uint16_t off = TABLE_HEADER_LEN;
     const uint8_t *rules = NULL;
+    uint16_t euclid_off[MAX_SEQS + 1];  // one more than allowed, to catch duplicates
+    int euclid_count = 0;
     uint16_t rules_len = 0, rules_off = 0;
     bool have_globals = false;
     for (int i = 0; i < sections; i++) {
@@ -216,6 +218,13 @@ bool table_load(const uint8_t *blob, uint16_t len, table_t *out, table_error_t *
             if (!load_sequence(blob + body, slen, body, out, err))
                 return false;
             break;
+        case SECTION_EUCLID:
+            if (slen != EUCLID_LEN)
+                FAIL(off, INVALID_SECTION_BOUNDS);
+            if (euclid_count > MAX_SEQS)
+                FAIL(off, INVALID_SEQUENCE);
+            euclid_off[euclid_count++] = body;
+            break;
         default:
             if (id < 0x10)
                 FAIL(off, INVALID_SECTION_ID);
@@ -227,6 +236,21 @@ bool table_load(const uint8_t *blob, uint16_t len, table_t *out, table_error_t *
         FAIL(off, INVALID_SECTION_BOUNDS);
     if (!have_globals || !rules)
         FAIL(0, INVALID_REQUIRED_SECTION);
+
+    for (int i = 0; i < euclid_count; i++) {
+        const uint8_t *e = blob + euclid_off[i];
+        uint8_t id = e[0], n = e[1], k = e[2], r = e[3];
+        if (id >= MAX_SEQS || !out->seqs[id].defined)
+            FAIL(euclid_off[i], INVALID_SEQ_REF);
+        seq_def_t *s = &out->seqs[id];
+        if (s->euclid_steps)
+            FAIL(euclid_off[i], INVALID_SEQUENCE);
+        if (n < 1 || n > EUCLID_MAX_STEPS || k > n || r >= n)
+            FAIL(euclid_off[i] + 1, INVALID_PARAM);
+        s->euclid_steps = n;
+        s->euclid_hits = k;
+        s->euclid_rotation = r;
+    }
 
     // Pass 2: rules (they may refer to sequences).
     if (rules_len < 4)

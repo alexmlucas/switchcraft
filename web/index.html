@@ -161,6 +161,13 @@
   .step select { min-height: 40px; padding: 4px 6px; }
   .step button { min-height: 40px; padding: 4px 10px; }
   .steps-empty { color: var(--muted); margin: 12px 0; }
+  .rhythm-row { margin-top: 16px; align-items: center; }
+  .rhythm-row input[type="number"] { width: 9ch; }
+  #rhythm-circle { flex: none; }
+  #rhythm-circle .hit { fill: var(--accent); }
+  #rhythm-circle .miss { fill: var(--card); stroke: var(--muted); stroke-width: 2; }
+  #rhythm-circle .ring { fill: none; stroke: var(--line); stroke-width: 2; }
+  #rhythm-circle .start { fill: var(--text); }
 
   .last-note { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; }
 
@@ -269,6 +276,14 @@
         <input type="number" id="tempo" min="40" max="240" step="1">
       </label>
     </div>
+    <div class="row rhythm-row" id="seq-rhythm-row">
+      <label class="field">Rhythm <select id="seq-rhythm"></select></label>
+      <label class="field euclid-field">Hits <input type="number" id="seq-hits" min="0" max="32"></label>
+      <label class="field euclid-field">Steps <input type="number" id="seq-esteps" min="1" max="32"></label>
+      <label class="field euclid-field">Rotate <input type="number" id="seq-rotate" min="0" max="31"></label>
+      <svg id="rhythm-circle" class="euclid-field" width="112" height="112" viewBox="-56 -56 112 112" role="img"></svg>
+    </div>
+    <p class="hint euclid-field" id="rhythm-hint">A euclidean rhythm spreads the hits as evenly as possible around the steps. Each hit plays the sequence’s next note; the other steps are rests. Changes are heard while it plays.</p>
   </section>
 
   <section class="card" id="blocks-card" aria-labelledby="blocks-h" hidden>
@@ -571,6 +586,42 @@ function renderSteps(focusIndex = null) {
   }
 }
 
+function renderRhythm() {
+  const q = form.sequences[currentSeq];
+  const clock = q.mode === 'clock';
+  $('seq-rhythm-row').hidden = !clock;
+  options($('seq-rhythm'), [['all', 'Every step'], ['euclid', 'Euclidean']], q.rhythm ? 'euclid' : 'all');
+  document.querySelectorAll('.euclid-field').forEach((e) => { e.hidden = !clock || !q.rhythm; });
+  if (!q.rhythm) return;
+  const { steps, hits, rotation } = q.rhythm;
+  $('seq-hits').value = hits;
+  $('seq-esteps').value = steps;
+  $('seq-rotate').value = rotation;
+  // Circle display: steps clockwise from the top, hits filled.
+  const pattern = S.euclidHits(steps, hits, rotation);
+  const svg = $('rhythm-circle');
+  const ns = 'http://www.w3.org/2000/svg';
+  const dot = (cls, x, y, r) => {
+    const c = document.createElementNS(ns, 'circle');
+    c.setAttribute('class', cls);
+    c.setAttribute('cx', x.toFixed(1));
+    c.setAttribute('cy', y.toFixed(1));
+    c.setAttribute('r', r);
+    return c;
+  };
+  const radius = 42;
+  const size = Math.max(3, Math.min(7, 110 / steps));
+  svg.replaceChildren(dot('ring', 0, 0, radius), dot('start', 0, -radius - size - 4, 2.5),
+    ...pattern.map((hit, i) => {
+      const a = (i / steps) * 2 * Math.PI - Math.PI / 2;
+      return dot(hit ? 'hit' : 'miss', radius * Math.cos(a), radius * Math.sin(a), size);
+    }));
+  const on = pattern.map((h, i) => (h ? i + 1 : 0)).filter(Boolean);
+  svg.setAttribute('aria-label', on.length
+    ? `Rhythm: hits on step${on.length === 1 ? '' : 's'} ${on.length > 1 ? on.slice(0, -1).join(', ') + ' and ' + on.at(-1) : on[0]} of ${steps}`
+    : `Rhythm: no hits in ${steps} steps`);
+}
+
 function renderSeq() {
   const q = form.sequences[currentSeq];
   options($('seq-mode'), MODE_CHOICES, q.mode);
@@ -583,6 +634,7 @@ function renderSeq() {
   options($('seq-length'), withValue(lengths, q.gate, `${q.gate}%`), q.gate);
   updateStepButtons();
   renderSteps();
+  renderRhythm();
 }
 
 // Sequence edits change the picker counts and the switches' labels too.
@@ -852,6 +904,26 @@ function buildStatic() {
     else addStep(last === undefined ? 60 : Math.min(last + 2, 96));
   });
   $('add-rest').addEventListener('click', () => addStep(null));
+  $('seq-rhythm').addEventListener('change', () => {
+    seq().rhythm = $('seq-rhythm').value === 'euclid' ? { steps: 8, hits: 3, rotation: 0 } : null;
+    renderRhythm();
+    changed();
+  });
+  // Typing a number updates the rhythm (and the board) as you go.
+  const rhythmInput = () => {
+    const q = seq();
+    const num = (id, lo, hi, fallback) => {
+      const v = Math.round(Number($(id).value));
+      return Number.isFinite(v) && $(id).value !== '' ? Math.min(hi, Math.max(lo, v)) : fallback;
+    };
+    const steps = num('seq-esteps', 1, 32, q.rhythm.steps);
+    const hits = num('seq-hits', 0, steps, Math.min(q.rhythm.hits, steps));
+    const rotation = ((num('seq-rotate', -99, 99, q.rhythm.rotation) % steps) + steps) % steps;
+    q.rhythm = { steps, hits, rotation };
+    renderRhythm();
+    changed();
+  };
+  for (const id of ['seq-hits', 'seq-esteps', 'seq-rotate']) $(id).addEventListener('change', rhythmInput);
   $('clear-steps').addEventListener('click', () => {
     seq().notes = [];
     renderSteps();
@@ -950,6 +1022,7 @@ let saveTimer = null;
 let writing = false;
 let dirty = false;
 let unsaved = false;
+let restartNext = false;  // the next write is a new preset, not an edit (spec A.4)
 
 function changed() {
   unsaved = true;
@@ -973,7 +1046,9 @@ async function flush() {
   try {
     do {
       dirty = false;
-      await board.writeTable(S.buildTable(currentTable()));
+      const restart = restartNext;
+      restartNext = false;
+      await board.writeTable(S.buildTable(currentTable()), false, restart);
     } while (dirty);
     setSave('Playing, not saved yet');
     clearTimeout(saveTimer);
@@ -1157,6 +1232,7 @@ function replaceWithForm(newForm) {
   setEditable(true);
   if (view === 'blocks') loadBlocks(S.tableFromForm(form));
   renderAll();
+  restartNext = true;
   changed();
 }
 
@@ -1273,6 +1349,7 @@ async function openFile(file) {
   } else {
     showTable(preset.table);
   }
+  restartNext = true;
   changed();
   if (!board) setSave('Opened. Not connected: connecting will show the board’s preset instead.');
 }

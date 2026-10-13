@@ -15,10 +15,13 @@ enum {
     SECTION_GLOBALS = 0x01,
     SECTION_RULES = 0x02,
     SECTION_SEQUENCE = 0x03,
+    SECTION_EUCLID = 0x04,
 };
 #define GLOBALS_LEN 40
 #define RULE_LEN 12
 #define SEQ_HEADER_LEN 12
+#define EUCLID_LEN 4
+#define EUCLID_MAX_STEPS 32
 #define STEP_LEN 3
 
 enum {
@@ -114,6 +117,8 @@ typedef struct {
     uint8_t note_mode;  // 0 = absolute, 1 = scale degree
     uint16_t step_count;
     const uint8_t *steps;  // points into the blob, STEP_LEN bytes each
+    // Euclidean rhythm (spec B.6.1); euclid_steps 0 = none.
+    uint8_t euclid_steps, euclid_hits, euclid_rotation;
 } seq_def_t;
 
 typedef struct {

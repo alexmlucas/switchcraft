@@ -48,7 +48,7 @@ function fakeBoard() {
   const dev = {
     working: S.buildTable(S.tableFromForm(S.defaultForm())),
     slots: [], staging: null, activeSlot: 0,
-    calibration: [3750, 3750, 2350, 2350], savedCalibration: null,
+    calibration: [3750, 3750, 2350, 2350], savedCalibration: null, commitFlags: [],
   };
   const input = { name: 'MIDIIN2 (Switchcraft)', onmidimessage: null };
   const reply = (m, status, data = []) => setTimeout(() =>
@@ -81,6 +81,7 @@ function fakeBoard() {
           return reply(m, 0, le16(dev.staging.length));
         case S.CMD.WRITE_COMMIT:
           dev.working = new Uint8Array(dev.staging);
+          dev.commitFlags.push(p[0]);
           if (p[0] & 1) dev.slots[dev.activeSlot] = dev.working;
           return reply(m, 0);
         case S.CMD.SLOT_LOAD:
@@ -187,6 +188,16 @@ function fakeBoard() {
     assertEq(Array.from(dev.slots[0]), Array.from(blob));
   });
 
+  await test('edits and restarts are flagged on commit', async () => {
+    const { dev, input, output } = fakeBoard();
+    const board = new S.Board(input, output);
+    const blob = S.buildTable(S.tableFromForm(S.defaultForm()));
+    await board.writeTable(blob);
+    await board.writeTable(blob, false, true);
+    await board.writeTable(blob, true, true);
+    assertEq(dev.commitFlags, [0, 2, 3]);
+  });
+
   await test('concurrent requests are queued, not interleaved', async () => {
     const { input, output } = fakeBoard();
     const board = new S.Board(input, output);
@@ -237,12 +248,13 @@ function fakeBoard() {
     const f = S.defaultForm();
     f.name = 'Sequences';
     f.tempo = 900;
-    f.sequences[0] = { mode: 'clock', noteType: 'scale', notes: [0, 2, 4], order: 'updown', octaves: 2, division: 6, gate: 60 };
-    f.sequences[1] = { mode: 'press', noteType: 'scale', notes: [0, 0, 4, 4, 5, 5, 4, null], order: 'written', octaves: 1, division: 6, gate: 0 };
-    f.sequences[2] = { mode: 'clock', noteType: 'fixed', notes: [36, null, 38, 36, 42, 42, null, 38], order: 'random', octaves: 1, division: 12, gate: 25 };
+    f.sequences[0] = { mode: 'clock', noteType: 'scale', notes: [0, 2, 4], order: 'updown', octaves: 2, division: 6, gate: 60, rhythm: null };
+    f.sequences[1] = { mode: 'press', noteType: 'scale', notes: [0, 0, 4, 4, 5, 5, 4, null], order: 'written', octaves: 1, division: 6, gate: 0, rhythm: null };
+    f.sequences[2] = { mode: 'clock', noteType: 'fixed', notes: [36, null, 38, 36, 42, 42, null, 38], order: 'random', octaves: 1, division: 12, gate: 25,
+      rhythm: { steps: 8, hits: 3, rotation: 1 } };
     f.sequences[3] = { mode: 'clock', noteType: 'scale',
       notes: Array.from({ length: S.MAX_FORM_STEPS }, (_, i) => (i % 7 === 6 ? null : i - 7)),
-      order: 'down', octaves: 4, division: 3, gate: 100 };
+      order: 'down', octaves: 4, division: 3, gate: 100, rhythm: null };
     f.switches[0] = { action: 'seq-play', seq: 0, gate: 'hold', onBeat: false };
     f.switches[1] = { action: 'seq-play', seq: 2, gate: 'latch', onBeat: true };
     f.switches[2] = { action: 'seq-play', seq: 3, gate: 'oneshot', onBeat: false };
@@ -392,6 +404,15 @@ function fakeBoard() {
   await test('presets no longer carry calibration (reserved bytes are zero)', () => {
     const blob = S.buildTable(S.tableFromForm(S.defaultForm()));
     assertEq(Array.from(blob.subarray(12 + 30, 12 + 40)), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  await test('euclidean rhythm patterns', () => {
+    const show = (n, k, r) => S.euclidHits(n, k, r).map((h) => (h ? 'x' : '.')).join('');
+    assertEq(show(8, 3, 0), 'x..x..x.');   // tresillo, as in tools/sc.py
+    assertEq(show(8, 3, 1), '..x..x.x');
+    assertEq(show(16, 4, 0), 'x...x...x...x...');
+    assertEq(show(5, 0, 0), '.....');
+    assertEq(show(5, 5, 2), 'xxxxx');
   });
 
   await test('templates build valid-looking tables and show in the form', () => {

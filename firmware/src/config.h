@@ -14,8 +14,9 @@ const uint8_t *config_blob(uint16_t *len, uint32_t *crc);
 uint8_t config_active_slot(void);
 
 // Validates `blob`, makes it the working table and restarts the engine.
-// Returns a protocol status; fills `err` on STATUS_ERR_INVALID.
-int config_apply(const uint8_t *blob, uint16_t len, table_error_t *err);
+// `live`: an edit, so playing sequences keep going. Returns a protocol
+// status; fills `err` on STATUS_ERR_INVALID.
+int config_apply(const uint8_t *blob, uint16_t len, table_error_t *err, bool live);
 
 // Board-wide analog calibration (spec B.10).
 const board_settings_t *config_settings(void);

@@ -10,7 +10,7 @@
 static uint8_t working[TABLE_MAX_LEN];
 static uint16_t working_len;
 static uint32_t working_crc;
-static table_t live;
+static table_t live_table;
 static table_t scratch;  // validation target; its pointers are never used
 static uint8_t active_slot;
 static board_settings_t settings;
@@ -40,14 +40,14 @@ uint8_t config_active_slot(void) {
     return active_slot;
 }
 
-int config_apply(const uint8_t *blob, uint16_t len, table_error_t *err) {
+int config_apply(const uint8_t *blob, uint16_t len, table_error_t *err, bool live) {
     if (!table_load(blob, len, &scratch, err))
         return STATUS_ERR_INVALID;
     memmove(working, blob, len);
     working_len = len;
     working_crc = crc32(working, len);
-    table_load(working, working_len, &live, NULL);
-    engine_load(&live);
+    table_load(working, working_len, &live_table, NULL);
+    engine_load(&live_table, live);
     return STATUS_OK;
 }
 
@@ -60,7 +60,7 @@ int config_load_slot(uint8_t slot) {
         return STATUS_ERR_SLOT_EMPTY;
     // A slot that passes its CRC but fails validation (e.g. written by newer
     // firmware) counts as empty.
-    if (config_apply(blob, len, NULL) != STATUS_OK)
+    if (config_apply(blob, len, NULL, false) != STATUS_OK)
         return STATUS_ERR_SLOT_EMPTY;
     active_slot = slot;
     if (settings.boot_slot != slot) {
@@ -82,11 +82,11 @@ void config_init(void) {
     uint16_t len;
     for (int i = 0; i < NUM_SLOTS; i++) {
         uint8_t s = (uint8_t)((boot + i) % NUM_SLOTS);
-        if (slot_read(s, &blob, &len, NULL) && config_apply(blob, len, NULL) == STATUS_OK) {
+        if (slot_read(s, &blob, &len, NULL) && config_apply(blob, len, NULL, false) == STATUS_OK) {
             active_slot = s;
             return;
         }
     }
     len = table_build_default(working);
-    config_apply(working, len, NULL);
+    config_apply(working, len, NULL, false);
 }

@@ -115,6 +115,16 @@ def sequence_section(seq_id, steps, advance=1, order=0, octaves=1, channel=DEFAU
     return section(0x03, body)
 
 
+def euclid_section(seq_id, steps, hits, rotation=0):
+    """Euclidean rhythm for a clock-mode sequence (spec B.6.1)."""
+    return section(0x04, bytes([seq_id, steps, hits, rotation]))
+
+
+def euclid_hits(steps, hits, rotation=0):
+    """Positions that are hits: ((i + r) * k) % n < k."""
+    return [((i + rotation) * hits) % steps < hits for i in range(steps)]
+
+
 def section(section_id, body):
     return struct.pack("<BBH", section_id, 0, len(body)) + body
 
@@ -182,6 +192,10 @@ def describe(blob):
                 out.append(f"  rule {i:3}: {names.get(t, t)} {s}"
                            f"{f' ({a})' if a else ''} -> {acts.get(act, act)} "
                            f"flags {fl:#04x} p {p0} {p1} {p2} {p3}")
+        elif sid == 0x04:
+            pattern = "".join("x" if h else "." for h in euclid_hits(body[1], body[2], body[3]))
+            out.append(f"euclid for sequence {body[0]}: {body[2]} hits in {body[1]} steps, "
+                       f"rotation {body[3]}: {pattern}")
         elif sid == 0x03:
             out.append(f"sequence {body[0]}: {struct.unpack_from('<H', body, 10)[0]} steps, "
                        f"{'clock' if body[1] else 'press'} mode, order {body[2]}")
@@ -263,11 +277,13 @@ class Board:
             raise BoardError("CRC mismatch reading table")
         return blob
 
-    def write_table(self, blob, save=False):
+    def write_table(self, blob, save=False, restart=True):
+        """restart: start the table afresh (a new preset); False = an edit, which
+        keeps playing sequences going (spec A.4)."""
         self.request("WRITE_BEGIN", struct.pack("<HI", len(blob), crc32(blob)))
         for off in range(0, len(blob), CHUNK):
             self.request("WRITE_DATA", struct.pack("<H", off) + blob[off:off + CHUNK])
-        self.request("WRITE_COMMIT", bytes([1 if save else 0]))
+        self.request("WRITE_COMMIT", bytes([(1 if save else 0) | (2 if restart else 0)]))
 
     def monitor(self):
         print("Listening (Ctrl+C to stop)...")
@@ -297,6 +313,8 @@ def selftest():
     assert (cmd, seq) == (0x42, 5)
     assert struct.unpack("<BHIH", payload) == (0, 0x0134, 0x1A2B3C4D, 1)
     assert crc32(b"123456789") == 0xCBF43926  # standard CRC-32 check value
+    assert "".join("x" if h else "." for h in euclid_hits(8, 3)) == "x..x..x."  # tresillo
+    assert "".join("x" if h else "." for h in euclid_hits(8, 3, 1)) == "..x..x.x"
 
     for name, blob in (("default", default_table()), ("demo", demo_table())):
         length = struct.unpack_from("<H", blob, 2)[0]

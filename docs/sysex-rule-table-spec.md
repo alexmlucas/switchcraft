@@ -92,16 +92,29 @@ Payload columns below show the **decoded** bytes.
    each reply before sending the next (this is the flow control). An offset
    other than the expected one gives `ERR_SEQUENCE`.
 3. `WRITE_COMMIT`. The device checks length, CRC and validity (B.8). On
-   success the new table replaces the working table immediately: notes
-   sounding from the old table get note-offs, sequencers stop, runtime state
-   (transpose, scale changes) resets to the table's defaults.
+   success the new table replaces the working table immediately, in one of
+   two ways (flag bit 1):
+   - **Edit** (bit 1 clear): the preset carries on with its new
+     definition. Notes from `NOTE` actions get note-offs; **clock-mode
+     sequences that are playing keep playing** (same position, gate mode and
+     owner) if the new table still defines them in clock mode, so a new
+     rhythm or tempo can be heard live; other sequences stop. Transpose is
+     kept; the key and scale come from the new table. `LOAD` rules don't
+     fire, since the preset didn't start.
+   - **Restart** (bit 1 set): as if the slot had just been loaded. Everything
+     stops, runtime state (transpose, scale changes) resets to the table's
+     defaults, and `LOAD` rules fire. For a whole new preset: a template, an
+     opened file.
+
+   Loading a slot (`SLOT_LOAD`, `PRESET`) always restarts.
 
 `WRITE_COMMIT` flags:
 
 | Bit | Meaning |
 |---|---|
 | 0 | Also save to the **active** slot after applying (same as a following `SLOT_SAVE active`) |
-| 1–7 | Reserved, must be 0 |
+| 1 | `RESTART`: start the preset afresh instead of editing it (see above) |
+| 2–7 | Reserved, must be 0 |
 
 The page should apply every edit immediately (flag 0 clear) and save
 (flag 0 set, or `SLOT_SAVE`) after edits have paused for about 2 s. A
@@ -282,7 +295,7 @@ section …
 | 0x02 | `RULES` | yes, once (may hold 0 rules) | v1 |
 | 0x03 | `SEQUENCE` | no, up to 4 | v1 |
 | 0x10 | `EDITOR` | no | v1, ignored by firmware (B.7) |
-| 0x04 | `EUCLID` | | reserved, priority 4 |
+| 0x04 | `EUCLID` | no, one per sequence | v1 (firmware 0.4.0), B.6.1 |
 | 0x05 | `MODULATOR` | | reserved, priority 5 |
 
 The firmware **rejects** a blob with an unknown section ID below 0x10 and
@@ -450,6 +463,27 @@ press-mode sequences: `SEQ_STEP` plays them. `SEQ_STEP` also works on a
 clock-mode sequence, to advance it by hand. Only one note per sequence
 sounds at a time.
 
+#### B.6.1 `EUCLID` section (0x04), 4 bytes
+
+Gives a clock-mode sequence a Euclidean rhythm.
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | sequence | `u8` | 0–3, must be defined, one `EUCLID` per sequence |
+| 1 | steps | `u8` | *n*, 1–32 |
+| 2 | hits | `u8` | *k*, 0–*n* |
+| 3 | rotation | `u8` | *r*, 0 to *n*−1 |
+
+Each time the sequence's step comes round (every `division` ticks), the
+rhythm moves on one position *i* (0 to *n*−1, wrapping; 0 when the
+sequence starts). Position *i* is a **hit** if `((i + r) * k) mod n < k`.
+A hit plays the sequence's next note (as written, up, down… as usual); a
+miss is a rest, and the order doesn't move on. So a one-note sequence
+becomes a drum pattern and a chord becomes a Euclidean arpeggio. Step
+lengths (step byte 2) are ignored in a rhythm: every position lasts one
+`division`. `ONESHOT` stops after one pass through the notes. On a
+press-mode sequence the section has no effect.
+
 ### B.7 `EDITOR` section (0x10)
 
 Opaque bytes for the page: e.g. a compressed Blockly workspace or a template
@@ -472,8 +506,8 @@ offset into the blob and one of these reasons, if:
 | 0x05 | unknown trigger type, or source out of range |
 | 0x06 | unknown action type, or a `PRESET` action on a `LOAD` trigger (it could chain loads forever) |
 | 0x07 | parameter out of range (channel, note, CC number, slot, root, mask without bit 0) |
-| 0x08 | action refers to a sequence ID that isn't defined |
-| 0x09 | duplicate sequence ID, or step_count out of range |
+| 0x08 | action or `EUCLID` section refers to a sequence ID that isn't defined |
+| 0x09 | duplicate sequence ID, step_count out of range, or two `EUCLID` sections for one sequence |
 
 The page should run the same checks before sending and show them in the
 editor; the firmware check is the safety net. A table that fails at boot is

@@ -75,6 +75,7 @@ typedef struct {
     uint32_t off_tick;
     uint64_t off_us;
     uint8_t step_owner;  // press mode, gate 0: input whose release ends the note
+    uint8_t slot;        // position in the Euclidean rhythm
 } seq_rt_t;
 static seq_rt_t seqs[MAX_SEQS];
 
@@ -262,6 +263,25 @@ static void seq_play_step(int i, uint8_t owner) {
     }
 }
 
+// A clock-mode step. With a Euclidean rhythm (spec B.6.1) only hits play
+// the next note; a miss is a rest and each position lasts one division.
+static void seq_clock_step(int i, uint8_t owner) {
+    const seq_def_t *d = &tab->seqs[i];
+    seq_rt_t *s = &seqs[i];
+    if (!d->euclid_steps) {
+        seq_play_step(i, owner);
+        return;
+    }
+    uint32_t n = d->euclid_steps, k = d->euclid_hits;
+    bool hit = ((s->slot + d->euclid_rotation) * k) % n < k;
+    s->slot = (uint8_t)((s->slot + 1) % n);
+    if (hit)
+        seq_play_step(i, owner);
+    else
+        seq_note_off(s);
+    s->next_tick = tick + d->division;
+}
+
 static void seq_start(int i, uint8_t gate_mode, uint8_t owner) {
     seq_rt_t *s = &seqs[i];
     seq_note_off(s);
@@ -270,7 +290,8 @@ static void seq_start(int i, uint8_t gate_mode, uint8_t owner) {
     s->finish = false;
     s->gate_mode = gate_mode;
     s->owner = owner;
-    seq_play_step(i, owner);
+    s->slot = 0;
+    seq_clock_step(i, owner);
 }
 
 static int seq_target(uint8_t p0) {
@@ -497,7 +518,7 @@ static void on_tick(void) {
             if (s->finish)
                 seq_stop(i);
             else
-                seq_play_step(i, s->owner);
+                seq_clock_step(i, s->owner);
         }
     }
 }
@@ -571,10 +592,30 @@ void engine_all_notes_off(void) {
         midi_cc(ch, 123, 0);
 }
 
-void engine_load(const table_t *t) {
+void engine_load(const table_t *t, bool live) {
+    // A live edit keeps clock-mode sequences playing if the new table still
+    // has them (spec A.4). Only running clock sequences are ever `running`.
+    struct {
+        bool running, finish;
+        uint8_t gate_mode, owner, slot;
+        uint16_t pos;
+        uint32_t next_tick;
+    } keep[MAX_SEQS];
+    for (int i = 0; i < MAX_SEQS; i++) {
+        const seq_rt_t *s = &seqs[i];
+        keep[i].running = live && s->running;
+        keep[i].finish = s->finish;
+        keep[i].gate_mode = s->gate_mode;
+        keep[i].owner = s->owner;
+        keep[i].slot = s->slot;
+        keep[i].pos = s->pos;
+        keep[i].next_tick = s->next_tick;
+    }
+
     silence();
     tab = t;
-    transpose = 0;
+    if (!live)
+        transpose = 0;  // an edit keeps it (spec A.4)
     root = t->g.scale_root;
     mask = t->g.scale_mask;
     tick_us = 25000000u / t->g.tempo;  // tempo is tenths of BPM, 24 ticks per beat
@@ -587,8 +628,20 @@ void engine_load(const table_t *t) {
             selected_seq = (uint8_t)i;
             seq_build_order(i);
         }
+        seq_rt_t *s = &seqs[i];
+        const seq_def_t *d = &t->seqs[i];
+        if (keep[i].running && d->defined && d->advance == ADVANCE_CLOCK && s->order_len) {
+            s->running = true;
+            s->finish = keep[i].finish;
+            s->gate_mode = keep[i].gate_mode;
+            s->owner = keep[i].owner;
+            s->pos = keep[i].pos % s->order_len;
+            s->slot = d->euclid_steps ? keep[i].slot % d->euclid_steps : 0;
+            s->next_tick = keep[i].next_tick;
+        }
     }
-    fire(TRIG_LOAD, 0, 0, NO_OWNER);
+    if (!live)
+        fire(TRIG_LOAD, 0, 0, NO_OWNER);  // an edit isn't the preset starting
 }
 
 const globals_t *engine_globals(void) {
