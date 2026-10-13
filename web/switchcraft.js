@@ -89,7 +89,7 @@
     SEQ_RESET: 0x13, SEQ_SELECT: 0x14, TRANSPOSE: 0x20, SET_SCALE: 0x21, PRESET: 0x30,
   };
   const GATE = { hold: 0, latch: 1, oneshot: 2 };
-  const FLAG = { QUANTIZE: 0x04, VALUE_FROM_TRIGGER: 0x08, DEGREE: 0x10 };
+  const FLAG = { QUANTIZE: 0x04, VALUE_FROM_TRIGGER: 0x08, DEGREE: 0x10, REVERSE: 0x20 };
   const DEFAULT = 0xff;
 
   const SCALES = [
@@ -270,7 +270,8 @@
     f.analog.forEach((a, i) => {
       if (a.cc !== null)
         rules.push({
-          trig: TRIG.ANALOG, src: i, act: ACT.CC, flags: FLAG.VALUE_FROM_TRIGGER,
+          trig: TRIG.ANALOG, src: i, act: ACT.CC,
+          flags: FLAG.VALUE_FROM_TRIGGER | (a.reversed ? FLAG.REVERSE : 0),
           p0: DEFAULT, p1: a.cc,
         });
     });
@@ -341,9 +342,10 @@
           continue;
         }
       }
-      if (r.trig === TRIG.ANALOG && r.act === ACT.CC && r.flags === FLAG.VALUE_FROM_TRIGGER &&
+      if (r.trig === TRIG.ANALOG && r.act === ACT.CC && (r.flags & ~FLAG.REVERSE) === FLAG.VALUE_FROM_TRIGGER &&
           r.p0 === DEFAULT && !usedAnalog.has(r.src)) {
-        f.analog[r.src] = { cc: r.p1 };
+        // {cc} normally, {cc, reversed: true} when this preset flips the input.
+        f.analog[r.src] = r.flags & FLAG.REVERSE ? { cc: r.p1, reversed: true } : { cc: r.p1 };
         usedAnalog.add(r.src);
         continue;
       }

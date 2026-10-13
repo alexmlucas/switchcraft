@@ -13,6 +13,9 @@
 <pre id="out"></pre>
 <script src="switchcraft.js"></script>
 <script src="synth.js"></script>
+<script src="vendor/blockly/blockly_compressed.js"></script>
+<script src="vendor/blockly/en.js"></script>
+<script src="blocks.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -133,6 +136,7 @@ function fakeBoard() {
     f.switches[3] = { action: 'note', note: 38, gate: 'oneshot' };
     f.switches[4] = { action: 'none' };
     f.switches[5] = { action: 'scale', degree: -3, gate: 'latch' };
+    f.analog[0] = { cc: 74, reversed: true };
     f.analog[1] = { cc: null };
     f.name = 'Drums';
     const back = S.formFromTable(S.parseTable(S.buildTable(S.tableFromForm(f))));
@@ -244,6 +248,7 @@ function fakeBoard() {
     f.switches[2] = { action: 'seq-play', seq: 3, gate: 'oneshot', onBeat: false };
     f.switches[3] = { action: 'seq-step', seq: 1 };
     f.switches[4] = { action: 'seq-restart', seq: 1 };
+    f.analog[1] = { cc: 11, reversed: true };
     return f;
   }
 
@@ -410,6 +415,78 @@ function fakeBoard() {
     assertEq(names(tune.sequences[1]).join(' '), 'C C G G A A G F F E E D D C');
     // The scale player template is the firmware's built-in table.
     assertEq(hex(S.crc32(S.buildTable(S.tableFromForm(S.TEMPLATES[0].form())))), 'c50b2b52');
+  });
+
+  // --- Blocks ---
+
+  const B = SwitchcraftBlocks;
+  B.define(Blockly);
+  const fromHex = (h) => new Uint8Array(h.match(/../g).map((x) => parseInt(x, 16)));
+  // tools/sc.py demo_table(): tap/hold, latch, presets, "selected"-free sequences.
+  const DEMO_HEX = '01005201040000000100280044656d6f00000000000000000000000000640004b50ab0040a000000f401000000000000000000000200c40010000000010000000110ff0000000000010100000110ff0001000000010200000110ff0002000000010300000110ff0003000000010400000110ff0004000000010500000110ff0005000000010600001100000000000000010700000111ff50f9ff0000070800001000010000000000030800001300010000000000070900003000010000000000030900002100ff00ad050000010a000020000100f4ff0000010b0000200001000c000000060000000208ff0100000000060100000208ff4a000000000300150000010302ff00063c010003000000010200010400010300390001000001ff00065a01000f00000001000001040001040001050001050001040001000081030001030001020001020001010001010001000001';
+
+  // table -> blocks (in a headless workspace) -> table
+  function throughBlocks(table) {
+    const ws = new Blockly.Workspace();
+    Blockly.serialization.workspaces.load(B.decompile(table), ws);
+    const result = B.compile(ws);
+    ws.dispose();
+    return result;
+  }
+
+  await test('blocks: notes as text', () => {
+    assertEq(B.parseNotes('1 3 5 - 8 -1', 'scale').notes, [0, 2, 4, null, 7, -1]);
+    assertEq(B.parseNotes('C4 E♭4 G4 r', 'fixed').notes, [60, 63, 67, null]);
+    assertEq(B.parseNotes('C4 E4 G4', 'scale').notes, [0, 2, 4]);  // names become scale steps
+    assertEq(B.parseNotes('Bb3 b3 F#4', 'fixed').notes, [58, 59, 66]);
+    assert(B.parseNotes('1 0 3', 'scale').error, '0 should be rejected');
+    assert(B.parseNotes('', 'scale').error, 'empty should be rejected');
+    assertEq(B.formatNotes([0, 2, 4, null, -1], 'scale'), '1 3 5 - -1');
+    assertEq(B.formatNotes([60, 63, null], 'fixed'), 'C4 E♭4 -');
+  });
+
+  const roundTrips = {
+    ...Object.fromEntries(S.TEMPLATES.map((t) => [`template ${t.id}`, S.tableFromForm(t.form())])),
+    'sequence form': S.tableFromForm(sequenceForm()),
+    'demo (sc.py)': S.parseTable(fromHex(DEMO_HEX)),
+  };
+  for (const [name, table] of Object.entries(roundTrips)) {
+    await test(`blocks: ${name} survives table -> blocks -> table`, () => {
+      const { table: back, problems } = throughBlocks(table);
+      assertEq(problems.map((p) => p.text), []);
+      assertEq(toHex(S.buildTable(back)), toHex(S.buildTable(table)));
+    });
+  }
+
+  await test('blocks: hidden values (channel, velocity, length, custom scale) survive', () => {
+    const t = S.tableFromForm(S.defaultForm());
+    t.globals.mask = 0x0891;  // not a named scale
+    t.rules[0] = { ...t.rules[0], p0: 9, p1: 33, flags: t.rules[0].flags | S.GATE.oneshot, p3: 120 };
+    t.rules.push({ trig: S.TRIG.HOLD, src: 3, arg: 1500, act: S.ACT.SET_SCALE, p0: 0xff, p2: 0x0123 });
+    t.rules.push({ trig: S.TRIG.CLOCK, src: 0, arg: 5, act: S.ACT.CC, p0: 2, p1: 20, p2: 99 });
+    t.sequences = [{ id: 2, advance: 1, order: 4, octaves: 3, channel: 4, velocity: 70, division: 5, gate: 33,
+      noteMode: 0, steps: [{ note: 40, velocity: 90, rest: false, length: 3 }, { note: 0, velocity: 0, rest: true, length: 1 }] }];
+    const { table: back, problems } = throughBlocks(t);
+    assertEq(problems.map((p) => p.text), []);
+    assertEq(toHex(S.buildTable(back)), toHex(S.buildTable(t)));
+  });
+
+  await test('blocks: problems are reported and left out of the table', () => {
+    const ws = new Blockly.Workspace();
+    Blockly.serialization.workspaces.load({ blocks: { languageVersion: 0, blocks: [
+      { type: 'sc_when_switch', x: 0, y: 0, fields: { SWITCH: '0', EVENT: 'PRESS' }, inputs: { DO: { block: {
+        type: 'sc_sequence', fields: { SEQ: '1', ACTION: 'step' },
+        next: { block: { type: 'sc_play_note', fields: { NOTE: '60', GATE: 'hold' } } } } } } },
+      { type: 'sc_when_loaded', x: 0, y: 200, inputs: { DO: { block: { type: 'sc_preset', fields: { PRESET: 'next' } } } } },
+      { type: 'sc_transpose', x: 0, y: 400 },
+      { type: 'sc_sequence_def', x: 0, y: 500, fields: { SEQ: '2', NOTES: '1 nope 3' } },
+    ] } }, ws);
+    const { table, problems } = B.compile(ws);
+    ws.dispose();
+    assertEq(problems.length, 4);
+    assertEq(table.rules.length, 1);  // only the note survives
+    assertEq(table.rules[0].act, S.ACT.NOTE);
+    assertEq(table.sequences.length, 0);
   });
 
   // Tables for tools/check_page_tables.py to send to a real board.

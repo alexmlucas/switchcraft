@@ -377,7 +377,8 @@ Other `action_flags` bits:
 | 2 | `QUANTIZE` | Wait for the next beat (24-tick boundary) before acting. Accessibility: "start on the next beat" |
 | 3 | `VALUE_FROM_TRIGGER` | Use the `ANALOG` trigger's value instead of the stored value (`CC` only) |
 | 4 | `DEGREE` | p2 is a signed scale degree, not an absolute MIDI note (`NOTE` only) |
-| 5–7 | | Reserved, 0 |
+| 5 | `REVERSE` | With `VALUE_FROM_TRIGGER`: send 127 minus the analog value, so the input works the other way round in this preset only (`CC` only). Board-wide direction is set by the calibration (B.10) |
+| 6–7 | | Reserved, 0 |
 
 Channel `0xFF` and velocity `0` mean "use the default from globals".
 

@@ -19,4 +19,4 @@ static const uint8_t ANALOG_LED_GPIO[NUM_ANALOG] = {19, 20};
 
 #define FW_VERSION_MAJOR 0
 #define FW_VERSION_MINOR 3
-#define FW_VERSION_PATCH 0
+#define FW_VERSION_PATCH 1

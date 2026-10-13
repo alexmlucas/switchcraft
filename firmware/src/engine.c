@@ -349,10 +349,13 @@ static void do_action(uint8_t ri, uint8_t value, uint8_t owner, bool from_queue)
     case ACT_NOTE:
         act_note(ri, r, owner);
         break;
-    case ACT_CC:
-        midi_cc(resolve_ch(r->p0), r->p1,
-                (r->flags & FLAG_VALUE_FROM_TRIGGER) ? value : (uint8_t)r->p2);
+    case ACT_CC: {
+        uint8_t v = (uint8_t)r->p2;
+        if (r->flags & FLAG_VALUE_FROM_TRIGGER)
+            v = (r->flags & FLAG_REVERSE) ? (uint8_t)(127 - value) : value;
+        midi_cc(resolve_ch(r->p0), r->p1, v);
         break;
+    }
     case ACT_SEQ_STEP:
         if ((i = seq_target(r->p0)) >= 0)
             seq_play_step(i, owner);

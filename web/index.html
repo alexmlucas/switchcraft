@@ -130,7 +130,9 @@
   .tile-controls select { width: 100%; min-width: 0; }
   .tile-controls .gate { grid-column: 1 / -1; }
 
-  .analog-row { display: grid; grid-template-columns: minmax(10ch, auto) minmax(0, 14rem) 1fr 4ch; gap: 12px; align-items: center; }
+  .analog-row { display: grid; grid-template-columns: minmax(10ch, auto) minmax(0, auto) 1fr 4ch; gap: 12px; align-items: center; }
+  .map-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .map-note { color: var(--muted); font-size: 15px; }
   .analog-cal { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 20px; }
   .analog-cal:last-child { margin-bottom: 0; }
   .cal-text { color: var(--muted); font-size: 15px; }
@@ -161,6 +163,15 @@
   .steps-empty { color: var(--muted); margin: 12px 0; }
 
   .last-note { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; }
+
+  /* View switch and Blocks */
+  .view-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .view-switch span { color: var(--muted); }
+  .view-switch button { min-width: 7rem; font-weight: 600; }
+  .view-switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  #blockly { height: 72vh; min-height: 480px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .problems { margin: 12px 0 0; padding-left: 1.2em; color: var(--warn); }
+  .problems:empty { display: none; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   @media (max-width: 640px) {
@@ -189,9 +200,18 @@
     <p><strong>This browser can’t talk to MIDI devices.</strong> Open this page in Chrome or Edge on a laptop.</p>
   </div>
 
+  <div class="view-switch" role="group" aria-label="Edit the preset with">
+    <span>Edit with</span>
+    <button type="button" id="view-form" aria-pressed="true">Form</button>
+    <button type="button" id="view-blocks" aria-pressed="false">Blocks</button>
+  </div>
+
   <div class="notice" id="foreign" hidden>
     <p id="foreign-text"></p>
-    <p><button id="replace">Replace it with a scale player</button></p>
+    <p class="row">
+      <button id="foreign-blocks">Edit it with Blocks</button>
+      <button id="replace">Replace it with a scale player</button>
+    </p>
   </div>
 
   <section class="card" aria-labelledby="preset-h">
@@ -200,7 +220,7 @@
       <label class="field">Preset slot
         <select id="slot" disabled></select>
       </label>
-      <label class="field">Name
+      <label class="field form-only">Name
         <input type="text" id="name" maxlength="16" autocomplete="off" spellcheck="false">
       </label>
       <label class="field">Start from a template
@@ -212,7 +232,7 @@
     <p class="hint">Changes play on the board straight away and are saved to the preset a moment later. The board remembers its last preset when unplugged.</p>
   </section>
 
-  <section class="card" aria-labelledby="scale-h">
+  <section class="card form-only" aria-labelledby="scale-h">
     <h2 id="scale-h">Key and scale</h2>
     <div class="row">
       <label class="field">Key <select id="root"></select></label>
@@ -223,7 +243,7 @@
     <p class="hint">Switches set to a scale note follow the key and scale: change them here and every switch moves with it.</p>
   </section>
 
-  <section class="card" aria-labelledby="seq-h">
+  <section class="card form-only" aria-labelledby="seq-h">
     <h2 id="seq-h">Sequences and arpeggios</h2>
     <p class="hint" style="margin: -4px 0 12px;">Make up to four. Then choose a switch below and set it to play, step through or restart one.</p>
     <div class="seq-picker" id="seq-picker" role="group" aria-label="Choose a sequence to edit"></div>
@@ -248,7 +268,17 @@
     </div>
   </section>
 
-  <section class="card" aria-labelledby="switches-h">
+  <section class="card" id="blocks-card" aria-labelledby="blocks-h" hidden>
+    <div class="row" style="justify-content: space-between; align-items: baseline;">
+      <h2 id="blocks-h">Blocks</h2>
+      <span class="last-note" id="last-note-blocks" aria-hidden="true"></span>
+    </div>
+    <p class="hint" style="margin: -4px 0 12px;">Drag blocks out of the categories on the left. Each “when …” block runs the blocks inside it, from the top. The name, key and tempo are in the “Preset settings” block. Changes play on the board straight away. With a keyboard: Tab into the blocks area, then use the arrow keys and Enter.</p>
+    <div id="blockly"></div>
+    <ul class="problems" id="block-problems" aria-live="polite"></ul>
+  </section>
+
+  <section class="card form-only" aria-labelledby="switches-h">
     <div class="row" style="justify-content: space-between; align-items: baseline;">
       <h2 id="switches-h">Switches</h2>
       <span class="last-note" id="last-note" aria-hidden="true"></span>
@@ -262,10 +292,10 @@
   <section class="card" aria-labelledby="analog-h">
     <h2 id="analog-h">Analog inputs</h2>
     <div id="analog"></div>
-    <p class="hint">For the Logitech variable triggers, expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. The range starts set for the Logitech triggers. For anything else, use <strong>Set range</strong> so it covers the whole bar, and <strong>Invert</strong> if it moves the wrong way. The range belongs to the board, so it applies to every preset.</p>
+    <p class="hint">For the Logitech variable triggers, expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. The range starts set for the Logitech triggers. For anything else, use <strong>Set range</strong> so it covers the whole bar, and <strong>Invert</strong> if it moves the wrong way. The range belongs to the board, so it applies to every preset. <strong>Reversed</strong> flips an input in this preset only.</p>
   </section>
 
-  <section class="card" aria-labelledby="settings-h">
+  <section class="card form-only" aria-labelledby="settings-h">
     <h2 id="settings-h">Settings</h2>
     <div class="row">
       <label class="field">MIDI channel <select id="channel"></select></label>
@@ -298,6 +328,9 @@
 
 <script src="switchcraft.js"></script>
 <script src="synth.js"></script>
+<script src="vendor/blockly/blockly_compressed.js"></script>
+<script src="vendor/blockly/en.js"></script>
+<script src="blocks.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -590,16 +623,19 @@ function renderAll() {
   for (let i = 0; i < S.NUM_INPUTS; i++) renderSwitch(i);
   form.analog.forEach((a, i) => {
     options($(`cc-${i}`), withValue(CC_CHOICES, a.cc, `CC ${a.cc}`), a.cc);
+    $(`rev-${i}`).checked = !!a.reversed;
     renderCalibration(i);
   });
   setEditable(editable);
+  // "Reversed" means nothing for an input that's off.
+  form.analog.forEach((a, i) => { if (a.cc === null) $(`rev-${i}`).disabled = true; });
   renderSeqPicker();
   renderSeq();
 }
 
 function setEditable(on) {
   editable = on;
-  document.querySelectorAll("main section:not(#sound-card) :is(select, input, button)")
+  document.querySelectorAll("main section:not(#sound-card):not(#blocks-card) :is(select, input, button)")
     .forEach((c) => {
       // Preset slot, templates and the board-wide analog range aren't part of the preset.
       if (!['slot', 'template', 'use-template'].includes(c.id) && !c.closest('.analog-cal')) c.disabled = !on;
@@ -687,9 +723,23 @@ function buildStatic() {
     const sel = el('select', { id: `cc-${i}` });
     sel.setAttribute('aria-label', `${label} controller`);
     sel.addEventListener('change', () => {
-      form.analog[i].cc = sel.value === '' ? null : Number(sel.value);
+      const cc = sel.value === '' ? null : Number(sel.value);
+      form.analog[i] = cc !== null && form.analog[i].reversed ? { cc, reversed: true } : { cc };
+      renderAll();
       changed();
     });
+    // Per preset: pressing further sends lower values (calibration stays board-wide).
+    const rev = el('input', { type: 'checkbox', id: `rev-${i}` });
+    rev.setAttribute('aria-label', `${label}: reversed in this preset`);
+    rev.addEventListener('change', () => {
+      form.analog[i] = rev.checked ? { cc: form.analog[i].cc, reversed: true } : { cc: form.analog[i].cc };
+      changed();
+    });
+    // The form chooses the controller; in Blocks, the blocks do.
+    const mapping = el('div', { className: 'analog-map' },
+      el('div', { className: 'form-only map-controls' }, sel, el('label', { className: 'check' }, rev, 'Reversed')),
+      el('span', { className: 'blocks-only map-note', hidden: true,
+        textContent: 'Set by “when the analog input moves” blocks' }));
     const meter = el('div', { className: 'meter', id: `meter-${i}` }, el('div'));
     meter.setAttribute('role', 'meter');
     meter.setAttribute('aria-label', `${label} level`);
@@ -697,7 +747,7 @@ function buildStatic() {
     meter.setAttribute('aria-valuemax', '127');
     meter.setAttribute('aria-valuenow', '0');
     $('analog').append(el('div', { className: 'analog-row' },
-      el('span', { textContent: label }), sel, meter,
+      el('span', { textContent: label }), mapping, meter,
       el('span', { className: 'value', id: `val-${i}`, textContent: '0' })));
 
     // Calibration line
@@ -817,14 +867,10 @@ function buildStatic() {
   $('use-template').addEventListener('click', () => {
     const t = chosenTemplate();
     if (!t) return;
-    const where = board ? `preset ${activeSlot + 1} (“${form.name || 'Untitled'}”)` : 'the settings on this page';
+    const name = currentTable().globals.name || 'Untitled';
+    const where = board ? `preset ${activeSlot + 1} (“${name}”)` : 'the settings on this page';
     if (!confirm(`Replace ${where} with the “${t.name}” template?`)) return;
-    form = t.form();
-    currentSeq = 0;
-    $('foreign').hidden = true;
-    setEditable(true);
-    renderAll();
-    changed();
+    replaceWithForm(t.form());
     $('template').value = '';
     $('template').dispatchEvent(new Event('change'));
   });
@@ -880,13 +926,10 @@ function buildStatic() {
     if (board) board.allNotesOff().catch(showError);
   });
   $('slot').addEventListener('change', () => switchSlot(Number($('slot').value)));
-  $('replace').addEventListener('click', () => {
-    form = S.defaultForm();
-    $('foreign').hidden = true;
-    setEditable(true);
-    renderAll();
-    changed();
-  });
+  $('replace').addEventListener('click', () => replaceWithForm(S.defaultForm()));
+  $('foreign-blocks').addEventListener('click', () => switchView('blocks'));
+  $('view-form').addEventListener('click', () => switchView('form'));
+  $('view-blocks').addEventListener('click', () => switchView('blocks'));
 }
 
 // --- Sending edits: apply quickly, save after a pause (spec A.4) ---
@@ -919,7 +962,7 @@ async function flush() {
   try {
     do {
       dirty = false;
-      await board.writeTable(S.buildTable(S.tableFromForm(form)));
+      await board.writeTable(S.buildTable(currentTable()));
     } while (dirty);
     setSave('Playing, not saved yet');
     clearTimeout(saveTimer);
@@ -940,7 +983,7 @@ async function save() {
   try {
     await board.saveSlot(activeSlot);
     unsaved = false;
-    slotNames[activeSlot] = form.name;
+    slotNames[activeSlot] = currentTable().globals.name;
     renderSlots();
     setSave(`Saved to preset ${activeSlot + 1}`);
   } catch (e) {
@@ -1047,24 +1090,199 @@ async function loadFromBoard() {
 
 async function loadWorking() {
   const table = S.parseTable(await board.readTable());
-  const result = S.formFromTable(table);
   renderSlots();
   unsaved = false;
+  setSave(slotNames[activeSlot] === undefined ? 'Preset slot is empty: edits will save here' : '');
+  showTable(table);
+}
+
+// --- Form and Blocks views ---
+// Both edit the same rule table. The form can't show every table (tap/hold,
+// presets...); the blocks can show any table.
+
+let view = 'form';
+let ws = null;            // Blockly workspace, created the first time it's shown
+let foreignTable = null;  // table the form can't show, kept as-is
+let loadingBlocks = false;
+
+// The table to send to the board, from whichever view is showing.
+function currentTable() {
+  if (view === 'blocks' && ws) return SwitchcraftBlocks.compile(ws).table;
+  if (foreignTable) return foreignTable;
+  return S.tableFromForm(form);
+}
+
+function showTable(table) {
+  synth.setTempo(table.globals.tempo / 10);
+  if (view === 'blocks') {
+    foreignTable = null;
+    loadBlocks(table);
+    return;
+  }
+  const result = S.formFromTable(table);
   if (result.form) {
     form = result.form;
+    foreignTable = null;
     $('foreign').hidden = true;
     setEditable(true);
-    setSave(slotNames[activeSlot] === undefined ? 'Preset slot is empty: edits will save here' : '');
   } else {
     form = S.formFromTable({ ...table, rules: [], sequences: [], extra: [] }).form;
+    foreignTable = table;
     $('foreign-text').textContent =
-      `Preset ${activeSlot + 1} (“${table.globals.name || 'Untitled'}”) was made with another editor: ` +
-      `${result.reason}. This page can’t show it. Replacing it overwrites the preset.`;
+      `“${table.globals.name || 'Untitled'}” uses things the form can’t show: ${result.reason}. ` +
+      'Edit it with Blocks, or replace it.';
     $('foreign').hidden = false;
     setEditable(false);
-    setSave('');
   }
   renderAll();
+}
+
+// Templates and "replace": a fresh form-made preset, in either view.
+function replaceWithForm(newForm) {
+  foreignTable = null;
+  form = newForm;
+  currentSeq = 0;
+  $('foreign').hidden = true;
+  setEditable(true);
+  if (view === 'blocks') loadBlocks(S.tableFromForm(form));
+  renderAll();
+  changed();
+}
+
+function switchView(next) {
+  if (next === view) return;
+  const table = currentTable();
+  view = next;
+  try {
+    localStorage.setItem('switchcraft.view', view);
+  } catch (e) { /* not important */ }
+  $('view-form').setAttribute('aria-pressed', String(view === 'form'));
+  $('view-blocks').setAttribute('aria-pressed', String(view === 'blocks'));
+  document.querySelectorAll('.form-only').forEach((e) => { e.hidden = view !== 'form'; });
+  document.querySelectorAll('.blocks-only').forEach((e) => { e.hidden = view !== 'blocks'; });
+  $('blocks-card').hidden = view !== 'blocks';
+  $('foreign').hidden = true;
+  if (view === 'blocks') ensureWorkspace();
+  showTable(table);
+}
+
+function blocklyTheme() {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const name = dark ? 'switchcraft-dark' : 'switchcraft-light';
+  return Blockly.registry.hasItem(Blockly.registry.Type.THEME, name)
+    ? Blockly.registry.getObject(Blockly.registry.Type.THEME, name)
+    : Blockly.Theme.defineTheme(name, {
+      base: Blockly.Themes.Classic,
+      componentStyles: dark ? {
+        workspaceBackgroundColour: '#1b1b1b', toolboxBackgroundColour: '#262626',
+        toolboxForegroundColour: '#eeece8', flyoutBackgroundColour: '#2d2d2d',
+        flyoutForegroundColour: '#eeece8', flyoutOpacity: 1, scrollbarColour: '#666',
+        insertionMarkerColour: '#ffffff', cursorColour: '#a9c0ff',
+      } : {
+        workspaceBackgroundColour: '#fbfaf8', toolboxBackgroundColour: '#f0eee9',
+        toolboxForegroundColour: '#1d1d1b', flyoutBackgroundColour: '#e8e5df',
+        flyoutOpacity: 1, scrollbarColour: '#b8b4ab', cursorColour: '#2f5fd0',
+      },
+    });
+}
+
+function ensureWorkspace() {
+  if (ws) {
+    Blockly.svgResize(ws);
+    return;
+  }
+  SwitchcraftBlocks.define(Blockly);
+  try {
+    Blockly.ShortcutItems.registerNavigationShortcuts();  // jump keys (Home, End...)
+  } catch (e) { /* already registered */ }
+  ws = Blockly.inject($('blockly'), {
+    toolbox: SwitchcraftBlocks.TOOLBOX,
+    renderer: 'zelos',  // large, Scratch-style blocks
+    theme: blocklyTheme(),
+    trashcan: true,
+    sounds: false,
+    zoom: { controls: true, wheel: false, startScale: 0.85 },
+    move: { scrollbars: true, drag: true, wheel: true },
+  });
+  ws.addChangeListener(onBlocksChange);
+}
+
+function loadBlocks(table) {
+  loadingBlocks = true;
+  Blockly.Events.disable();
+  try {
+    ws.clear();
+    Blockly.serialization.workspaces.load(SwitchcraftBlocks.decompile(table), ws);
+    arrangeBlocks();  // events are off here, so moving blocks doesn't write to the board
+  } finally {
+    Blockly.Events.enable();
+    loadingBlocks = false;
+  }
+  ws.scroll(0, 0);
+  showProblems(SwitchcraftBlocks.compile(ws).problems);
+}
+
+// Two columns using the blocks' real sizes: what the switches do on the
+// left, the preset settings and sequences on the right.
+function arrangeBlocks() {
+  const setup = ['sc_settings', 'sc_sequence_def'];
+  const columns = [[], []];
+  for (const b of ws.getTopBlocks(true)) columns[setup.includes(b.type) ? 1 : 0].push(b);
+  const gap = 24;
+  let x = 0;
+  for (const column of columns) {
+    let y = 0, width = 0;
+    for (const b of column) {
+      const size = b.getHeightWidth();
+      b.moveTo(new Blockly.utils.Coordinate(x, y));
+      y += size.height + gap;
+      width = Math.max(width, size.width);
+    }
+    if (column.length) x += width + 2 * gap;
+  }
+}
+
+// Note names in "play scale note" menus follow the key, scale and octave.
+function relabelScaleNotes() {
+  Blockly.Events.disable();
+  try {
+    for (const b of ws.getBlocksByType('sc_play_scale_note', false)) {
+      const f = b.getField('NOTE');
+      const v = f.getValue();
+      f.setValue(v === '0' ? '1' : '0');
+      f.setValue(v);
+    }
+  } finally {
+    Blockly.Events.enable();
+  }
+}
+
+function showProblems(problems) {
+  for (const b of ws.getAllBlocks(false)) b.setWarningText(null);
+  const list = $('block-problems');
+  list.replaceChildren();
+  for (const p of problems) {
+    const b = p.id && ws.getBlockById(p.id);
+    if (b) b.setWarningText(p.text);
+    list.append(el('li', { textContent: p.text }));
+  }
+}
+
+function onBlocksChange(e) {
+  if (e.isUiEvent || loadingBlocks) return;
+  const block = e.blockId && ws.getBlockById(e.blockId);
+  if (block && block.type === 'sc_settings' && e.type === Blockly.Events.BLOCK_CHANGE) relabelScaleNotes();
+  const { table, problems } = SwitchcraftBlocks.compile(ws);
+  showProblems(problems);
+  synth.setTempo(table.globals.tempo / 10);
+  changed();
+}
+
+// Pressing a switch lights up its "when switch ..." blocks.
+function highlightSwitchBlocks(input, down) {
+  if (view !== 'blocks' || !ws) return;
+  for (const b of ws.getBlocksByType('sc_when_switch', false))
+    if (Number(b.getFieldValue('SWITCH')) === input) b.setHighlighted(down);
 }
 
 async function switchSlot(slot) {
@@ -1096,6 +1314,7 @@ async function switchSlot(slot) {
 
 const eventTimers = [];
 function showInput(i, ev) {
+  if (ev === 'press' || ev === 'release') highlightSwitchBlocks(i, ev === 'press');
   const tile = $(`sw-${i}`);
   if (!tile) return;
   if (ev === 'press') tile.classList.add('down');
@@ -1191,11 +1410,14 @@ function showAnalog(i, raw, value) {
 function showMidi(d) {
   if (synth.running) synth.handleMidi(d);
   if ((d[0] & 0xf0) === 0x90 && d[2] > 0)
-    $('last-note').textContent = `Last note: ${S.noteName(d[1])}`;
+    $('last-note').textContent = $('last-note-blocks').textContent = `Last note: ${S.noteName(d[1])}`;
 }
 
 buildStatic();
 renderAll();
+try {
+  if (localStorage.getItem('switchcraft.view') === 'blocks') switchView('blocks');
+} catch (e) { /* not important */ }
 renderSlots();
 setSave('');
 if (!navigator.requestMIDIAccess) {
