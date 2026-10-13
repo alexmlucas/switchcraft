@@ -303,9 +303,9 @@
       analog: Array.from({ length: NUM_ANALOG }, () => ({ cc: null })),
       sequences: Array.from({ length: 4 }, defaultSequence),
     };
-    if (table.extra.length) return { reason: 'it has sections the form doesn’t edit' };
+    if ((table.extra || []).length) return { reason: 'it has sections the form doesn’t edit' };
 
-    for (const q of table.sequences) {
+    for (const q of table.sequences || []) {
       const simple = q.id < 4 && q.channel === DEFAULT && q.velocity === 0 &&
         q.steps.length <= MAX_FORM_STEPS &&
         q.steps.every((st) => st.velocity === 0 && st.length <= 1);
@@ -427,6 +427,62 @@
       },
     },
   ];
+
+  // --- Preset files ---
+  // A JSON file holding the rule table (hex, exactly what the board runs) and
+  // the Blockly workspace (layout and unfinished blocks included).
+
+  const FILE_FORMAT = 'switchcraft-preset';
+  const FILE_VERSION = 1;
+  const MAX_TABLE_LEN = 4080;
+
+  const toHexString = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  function presetFile(table, blocks) {
+    return {
+      format: FILE_FORMAT,
+      version: FILE_VERSION,
+      name: table.globals.name,
+      saved: new Date().toISOString(),
+      tableFormat: 1,
+      table: toHexString(buildTable(table)),
+      blocks: blocks || null,
+    };
+  }
+
+  // Returns {name, table, blocks} or throws an Error with a message for people.
+  function readPresetFile(text) {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error('This isn’t a Switchcraft preset file.');
+    }
+    if (!data || typeof data !== 'object' || data.format !== FILE_FORMAT)
+      throw new Error('This isn’t a Switchcraft preset file.');
+    if (!Number.isInteger(data.version) || data.version > FILE_VERSION)
+      throw new Error('This file was saved by a newer version of the Switchcraft page. Update the page to open it.');
+    const hex = typeof data.table === 'string' ? data.table : '';
+    if (!/^([0-9a-f]{2})+$/i.test(hex) || hex.length / 2 > MAX_TABLE_LEN)
+      throw new Error('The preset in this file is damaged.');
+    const bytes = new Uint8Array(hex.match(/../g).map((h) => parseInt(h, 16)));
+    let table;
+    try {
+      table = parseTable(bytes);
+    } catch (e) {
+      table = null;
+    }
+    if (!table || !table.globals || rd16(bytes, 2) !== bytes.length)
+      throw new Error('The preset in this file is damaged or was made for newer firmware.');
+    const blocks = data.blocks && typeof data.blocks === 'object' && !Array.isArray(data.blocks) ? data.blocks : null;
+    return { name: table.globals.name, table, blocks };
+  }
+
+  // A file name from the preset name: "Chord arp" -> "chord-arp.switchcraft.json".
+  function presetFileName(name) {
+    const base = String(name || '').replace(/[^A-Za-z0-9 _-]/g, '').trim().replace(/\s+/g, '-').toLowerCase();
+    return `${base || 'preset'}.switchcraft.json`;
+  }
 
   // --- Board connection over Web MIDI ---
 
@@ -572,6 +628,7 @@
     NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING, DEFAULT_CALIBRATION,
     encode, decode, crc32, noteName, degreeToNote,
     ORDERS, MAX_FORM_STEPS, TEMPLATES,
+    presetFile, readPresetFile, presetFileName,
     buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,
     tableFromForm, formFromTable,
     Board, BoardError,

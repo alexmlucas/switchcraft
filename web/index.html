@@ -218,15 +218,18 @@
     <h2 id="preset-h">Preset</h2>
     <div class="row">
       <label class="field">Preset slot
-        <select id="slot" disabled></select>
+        <select id="slot" class="keep-enabled" disabled></select>
       </label>
       <label class="field form-only">Name
         <input type="text" id="name" maxlength="16" autocomplete="off" spellcheck="false">
       </label>
       <label class="field">Start from a template
-        <select id="template"></select>
+        <select id="template" class="keep-enabled"></select>
       </label>
-      <button id="use-template" disabled>Use template</button>
+      <button id="use-template" class="keep-enabled" disabled>Use template</button>
+      <button id="save-file" class="keep-enabled">Save to file</button>
+      <button id="open-file" class="keep-enabled">Open file…</button>
+      <input type="file" id="file-input" class="keep-enabled" accept=".json,application/json" hidden>
     </div>
     <p class="hint" id="template-text" hidden></p>
     <p class="hint">Changes play on the board straight away and are saved to the preset a moment later. The board remembers its last preset when unplugged.</p>
@@ -637,8 +640,9 @@ function setEditable(on) {
   editable = on;
   document.querySelectorAll("main section:not(#sound-card):not(#blocks-card) :is(select, input, button)")
     .forEach((c) => {
-      // Preset slot, templates and the board-wide analog range aren't part of the preset.
-      if (!['slot', 'template', 'use-template'].includes(c.id) && !c.closest('.analog-cal')) c.disabled = !on;
+      // Controls marked keep-enabled (slot, templates, files) and the board-wide
+      // analog range aren't part of the preset's own settings.
+      if (!c.classList.contains('keep-enabled') && !c.closest('.analog-cal')) c.disabled = !on;
     });
 }
 
@@ -927,6 +931,13 @@ function buildStatic() {
   });
   $('slot').addEventListener('change', () => switchSlot(Number($('slot').value)));
   $('replace').addEventListener('click', () => replaceWithForm(S.defaultForm()));
+  $('save-file').addEventListener('click', saveFile);
+  $('open-file').addEventListener('click', () => $('file-input').click());
+  $('file-input').addEventListener('change', async () => {
+    const file = $('file-input').files[0];
+    $('file-input').value = '';  // so the same file can be opened again
+    if (file) await openFile(file);
+  });
   $('foreign-blocks').addEventListener('click', () => switchView('blocks'));
   $('view-form').addEventListener('click', () => switchView('form'));
   $('view-blocks').addEventListener('click', () => switchView('blocks'));
@@ -1207,19 +1218,63 @@ function ensureWorkspace() {
   ws.addChangeListener(onBlocksChange);
 }
 
-function loadBlocks(table) {
+// From a table, or from a saved workspace state (which keeps its layout).
+function loadBlocks(table, state = null) {
   loadingBlocks = true;
   Blockly.Events.disable();
   try {
     ws.clear();
-    Blockly.serialization.workspaces.load(SwitchcraftBlocks.decompile(table), ws);
-    arrangeBlocks();  // events are off here, so moving blocks doesn't write to the board
+    Blockly.serialization.workspaces.load(state || SwitchcraftBlocks.decompile(table), ws);
+    if (!state) arrangeBlocks();  // events are off here, so moving blocks doesn't write to the board
   } finally {
     Blockly.Events.enable();
     loadingBlocks = false;
   }
   ws.scroll(0, 0);
   showProblems(SwitchcraftBlocks.compile(ws).problems);
+}
+
+// --- Preset files ---
+
+function saveFile() {
+  const table = currentTable();
+  const blocks = view === 'blocks' && ws
+    ? Blockly.serialization.workspaces.save(ws)
+    : SwitchcraftBlocks.decompile(table);
+  const data = S.presetFile(table, blocks);
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  const a = el('a', { href: url, download: S.presetFileName(table.globals.name) });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function openFile(file) {
+  let preset;
+  try {
+    if (file.size > 1_000_000) throw new Error('This file is too big to be a Switchcraft preset.');
+    preset = S.readPresetFile(await file.text());
+  } catch (e) {
+    setSave(e.message, true);
+    return;
+  }
+  const current = currentTable().globals.name || 'Untitled';
+  const where = board ? `preset ${activeSlot + 1} (“${current}”)` : 'the settings on this page';
+  if (!confirm(`Replace ${where} with “${preset.name || 'Untitled'}” from the file?`)) return;
+  foreignTable = null;
+  if (view === 'blocks') {
+    synth.setTempo(preset.table.globals.tempo / 10);
+    try {
+      loadBlocks(preset.table, preset.blocks);
+    } catch (e) {
+      loadBlocks(preset.table);  // the saved blocks wouldn't load: rebuild them from the table
+    }
+  } else {
+    showTable(preset.table);
+  }
+  changed();
+  if (!board) setSave('Opened. Not connected: connecting will show the board’s preset instead.');
 }
 
 // Two columns using the blocks' real sizes: what the switches do on the

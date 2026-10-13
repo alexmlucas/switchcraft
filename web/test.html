@@ -458,6 +458,17 @@ function fakeBoard() {
     });
   }
 
+  await test('blocks: switching back to the form gives the same form', () => {
+    for (const t of S.TEMPLATES) {
+      const f = t.form();
+      const back = S.formFromTable(throughBlocks(S.tableFromForm(f)).table);
+      assert(back.form, `${t.id}: ${back.reason}`);
+      assertEq(back.form.switches, f.switches);
+      assertEq(back.form.analog, f.analog);
+      assertEq(back.form.sequences, f.sequences);
+    }
+  });
+
   await test('blocks: hidden values (channel, velocity, length, custom scale) survive', () => {
     const t = S.tableFromForm(S.defaultForm());
     t.globals.mask = 0x0891;  // not a named scale
@@ -487,6 +498,40 @@ function fakeBoard() {
     assertEq(table.rules.length, 1);  // only the note survives
     assertEq(table.rules[0].act, S.ACT.NOTE);
     assertEq(table.sequences.length, 0);
+  });
+
+  await test('preset files: save and open again, with blocks', () => {
+    const table = S.tableFromForm(S.TEMPLATES.find((t) => t.id === 'arp').form());
+    const blocks = B.decompile(table);
+    const text = JSON.stringify(S.presetFile(table, blocks));
+    const back = S.readPresetFile(text);
+    assertEq(back.name, 'Chord arp');
+    assertEq(toHex(S.buildTable(back.table)), toHex(S.buildTable(table)));
+    assertEq(back.blocks, blocks);
+    assertEq(S.presetFileName('Chord arp'), 'chord-arp.switchcraft.json');
+    assertEq(S.presetFileName('  ∆∆ '), 'preset.switchcraft.json');
+  });
+
+  await test('preset files: bad files are refused with a clear message', () => {
+    const good = S.presetFile(S.tableFromForm(S.defaultForm()), null);
+    const cases = [
+      ['not json {', /isn’t a Switchcraft/],
+      [JSON.stringify({ hello: 1 }), /isn’t a Switchcraft/],
+      [JSON.stringify({ ...good, version: 99 }), /newer version/],
+      [JSON.stringify({ ...good, table: 'zz' }), /damaged/],
+      [JSON.stringify({ ...good, table: good.table.slice(0, -2) }), /damaged/],  // length no longer matches
+      [JSON.stringify({ ...good, table: '0200' + good.table.slice(4) }), /damaged|newer/],  // table format 2
+    ];
+    for (const [text, expected] of cases) {
+      try {
+        S.readPresetFile(text);
+        throw new Error(`accepted: ${text.slice(0, 40)}`);
+      } catch (e) {
+        assert(expected.test(e.message), e.message);
+      }
+    }
+    // A file without blocks is fine; strange "blocks" are ignored.
+    assertEq(S.readPresetFile(JSON.stringify({ ...good, blocks: [1, 2] })).blocks, null);
   });
 
   // Tables for tools/check_page_tables.py to send to a real board.
