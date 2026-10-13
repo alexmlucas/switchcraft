@@ -164,6 +164,18 @@
   .rhythm-row { margin-top: 16px; align-items: center; }
   .rhythm-row input[type="number"] { width: 9ch; }
   #rhythm-circle { flex: none; }
+
+  /* Modulator graph: an envelope with drag handles, or an LFO preview */
+  .mod-graph { margin-top: 16px; }
+  .mod-env input[type="number"], .mod-lfo input[type="number"] { width: 10ch; }
+  .mod-graph svg { display: block; width: 100%; max-width: 680px; height: auto; touch-action: none; user-select: none; }
+  .mod-graph .frame { fill: none; stroke: var(--line); stroke-width: 1; }
+  .mod-graph .shape { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; }
+  .mod-graph .held { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+  .mod-graph text { fill: var(--muted); font-size: 13px; font-family: inherit; }
+  .mod-graph .handle { fill: var(--card); stroke: var(--accent); stroke-width: 3; cursor: grab; }
+  .mod-graph .handle:focus { outline: none; }
+  .mod-graph .handle:focus-visible, .mod-graph .handle.dragging { stroke: var(--focus); stroke-width: 5; }
   #rhythm-circle .hit { fill: var(--accent); }
   #rhythm-circle .miss { fill: var(--card); stroke: var(--muted); stroke-width: 2; }
   #rhythm-circle .ring { fill: none; stroke: var(--line); stroke-width: 2; }
@@ -310,6 +322,7 @@
       <label class="field">Release (ms) <input type="number" id="mod-release" min="0" max="60000" step="10"></label>
       <label class="field">Follows <select id="mod-follow"></select></label>
     </div>
+    <div class="mod-graph mod-on" id="mod-graph"></div>
     <p class="hint mod-on" id="mod-hint"></p>
   </section>
 
@@ -710,6 +723,210 @@ const LFO_SPEEDS = [
 ];
 const MOD_CC_CHOICES = CC_CHOICES.filter(([v]) => v !== null);
 
+// The graph: an envelope with handles to drag (or move with the arrow
+// keys), or a preview of an LFO's wave. Drawn in a 680 x 190 box.
+const G = { w: 680, h: 190, left: 58, right: 16, top: 18, bottom: 150, hold: 110 };
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs = {}, text) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+const curveOf = (m) => (v) => (m.exponential ? v * v : v);
+const yOf = (m, v) => G.bottom - (G.bottom - G.top) * curveOf(m)(v);
+
+// Milliseconds per pixel, so attack + decay + release fill the width
+// (kept fixed while dragging so the handle stays under the pointer).
+function envScale(m) {
+  const width = G.w - G.left - G.right - G.hold;
+  return width / Math.max(400, m.attack + m.decay + m.release);
+}
+
+function envPoints(m, scale) {
+  const s = m.sustain / 100;
+  const x1 = G.left + m.attack * scale;
+  const x2 = x1 + m.decay * scale;
+  const x3 = x2 + G.hold;
+  const x4 = x3 + m.release * scale;
+  return { x0: G.left, x1, x2, x3, x4, s };
+}
+
+// A segment from value a to b, sampled so curves look right.
+function segment(m, xa, xb, a, b) {
+  const pts = [];
+  for (let i = 1; i <= 16; i++) {
+    const t = i / 16;
+    pts.push(`${(xa + (xb - xa) * t).toFixed(1)},${yOf(m, a + (b - a) * t).toFixed(1)}`);
+  }
+  return pts.join(' L');
+}
+
+function envPath(m, p) {
+  return `M${p.x0},${G.bottom} L${segment(m, p.x0, p.x1, 0, 1)} L${segment(m, p.x1, p.x2, 1, p.s)} ` +
+    `L${p.x3},${yOf(m, p.s).toFixed(1)} L${segment(m, p.x3, p.x4, p.s, 0)} L${p.x0},${G.bottom} Z`;
+}
+
+function lfoPath(m) {
+  const cycles = 2;
+  const width = G.w - G.left - G.right;
+  // A fixed "random" pattern, just to show the steps.
+  const randoms = [0.7, 0.2, 0.9, 0.4];
+  const wave = (ph, cycle) => {
+    switch (m.wave) {
+      case 'sine': return 0.5 - 0.5 * Math.cos(2 * Math.PI * ph);
+      case 'triangle': return ph < 0.5 ? 2 * ph : 2 - 2 * ph;
+      case 'saw': return ph;
+      case 'square': return ph < 0.5 ? 1 : 0;
+      default: return randoms[cycle % randoms.length];
+    }
+  };
+  const pts = [];
+  const n = 240;
+  for (let i = 0; i <= n; i++) {
+    const pos = (i / n) * cycles;
+    const cycle = Math.min(cycles - 1, Math.floor(pos));
+    const ph = pos - cycle;
+    // Vertical edges for square and random steps.
+    pts.push(`${(G.left + (i / n) * width).toFixed(1)},${yOf(m, wave(i === n ? 0.999 : ph, cycle)).toFixed(1)}`);
+  }
+  return `M${pts.join(' L')}`;
+}
+
+function axisLabels(svg, m) {
+  const label = (v) => (m.output === 'bend' ? (v === 64 ? 'middle' : String(v)) : String(v));
+  svg.append(
+    svgEl('rect', { class: 'frame', x: G.left, y: G.top, width: G.w - G.left - G.right, height: G.bottom - G.top }),
+    svgEl('text', { x: G.left - 8, y: G.top + 5, 'text-anchor': 'end' }, `to ${label(m.to)}`),
+    svgEl('text', { x: G.left - 8, y: G.bottom + 4, 'text-anchor': 'end' }, `from ${label(m.from)}`));
+}
+
+function renderModGraph() {
+  const m = form.modulators[currentMod];
+  const box = $('mod-graph');
+  box.replaceChildren();
+  if (m.kind === 'off') return;
+  const svg = svgEl('svg', { viewBox: `0 0 ${G.w} ${G.h}`, role: 'group' });
+  axisLabels(svg, m);
+  box.append(svg);
+
+  if (m.kind === 'lfo') {
+    svg.setAttribute('aria-label', `Preview of the ${m.wave} wave, two cycles`);
+    svg.append(svgEl('path', { class: 'shape', d: lfoPath(m), fill: 'none', style: 'fill: none' }),
+      svgEl('text', { x: G.left, y: G.bottom + 26 }, 'two cycles'));
+    return;
+  }
+
+  svg.setAttribute('aria-label', 'Envelope shape. Drag the handles, or focus one and use the arrow keys.');
+  let scale = envScale(m);
+  const shape = svgEl('path', { class: 'shape' });
+  const held = svgEl('line', { class: 'held' });
+  const labels = ['attack', 'decay', 'held', 'release'].map(() => svgEl('text', { 'text-anchor': 'middle' }));
+  const handles = {
+    attack: svgEl('circle', { class: 'handle', r: 10, tabindex: 0, role: 'slider', 'aria-label': 'Attack time' }),
+    decay: svgEl('circle', { class: 'handle', r: 10, tabindex: 0, role: 'slider',
+      'aria-label': 'Decay time and sustain level: left and right for decay, up and down for sustain' }),
+    release: svgEl('circle', { class: 'handle', r: 10, tabindex: 0, role: 'slider', 'aria-label': 'Release time' }),
+  };
+  svg.append(shape, held, ...labels, handles.attack, handles.decay, handles.release);
+
+  const draw = () => {
+    const p = envPoints(m, scale);
+    shape.setAttribute('d', envPath(m, p));
+    const ys = yOf(m, p.s);
+    Object.entries({ x1: p.x2, y1: ys, x2: p.x2, y2: G.bottom }).forEach(([k, v]) => held.setAttribute(k, v));
+    const place = (h, x, y) => { h.setAttribute('cx', x.toFixed(1)); h.setAttribute('cy', y.toFixed(1)); };
+    place(handles.attack, p.x1, G.top);
+    // With no decay and full sustain the two handles would sit on top of each
+    // other: show the decay one just to the right (dragging is relative).
+    const overlap = p.x2 - p.x1 < 18 && ys - G.top < 18;
+    place(handles.decay, overlap ? p.x1 + 22 : p.x2, ys);
+    place(handles.release, p.x4, G.bottom);
+    const text = [[p.x0, p.x1, `A ${m.attack} ms`], [p.x1, p.x2, `D ${m.decay} ms`],
+      [p.x2, p.x3, 'while held'], [p.x3, p.x4, `R ${m.release} ms`]];
+    text.forEach(([a, b, t], i) => {
+      labels[i].setAttribute('x', ((a + b) / 2).toFixed(1));
+      labels[i].setAttribute('y', G.bottom + 26);
+      // Too narrow to label: the value is in the box above anyway.
+      labels[i].textContent = b - a >= 60 ? t : '';
+    });
+    handles.attack.setAttribute('aria-valuetext', `${m.attack} ms`);
+    handles.decay.setAttribute('aria-valuetext', `decay ${m.decay} ms, sustain ${m.sustain}%`);
+    handles.release.setAttribute('aria-valuetext', `${m.release} ms`);
+    $('mod-attack').value = m.attack;
+    $('mod-decay').value = m.decay;
+    $('mod-sustain').value = m.sustain;
+    $('mod-release').value = m.release;
+  };
+  draw();
+
+  const clampMs = (v) => Math.max(0, Math.min(60000, Math.round(v / 5) * 5));
+  const toSvg = (e) => {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  };
+  const sustainAt = (y) => {
+    const v = Math.max(0, Math.min(1, (G.bottom - y) / (G.bottom - G.top)));
+    return Math.round((m.exponential ? Math.sqrt(v) : v) * 100);
+  };
+
+  for (const [name, h] of Object.entries(handles)) {
+    h.addEventListener('pointerdown', (e) => {
+      if (!editable) return;
+      e.preventDefault();
+      try {
+        h.setPointerCapture(e.pointerId);  // keep the drag even off the handle
+      } catch (err) { /* not available for this pointer: dragging still works over the handle */ }
+      h.classList.add('dragging');
+      h.focus();
+      const start = toSvg(e);
+      const was = { attack: m.attack, decay: m.decay, release: m.release };
+      const move = (ev) => {
+        const pos = toSvg(ev);
+        const dms = (pos.x - start.x) / scale;
+        if (name === 'attack') m.attack = clampMs(was.attack + dms);
+        if (name === 'decay') {
+          m.decay = clampMs(was.decay + dms);
+          m.sustain = sustainAt(pos.y);
+        }
+        if (name === 'release') m.release = clampMs(was.release + dms);
+        draw();
+        changed();  // heard while dragging (sent a moment later)
+      };
+      const up = () => {
+        h.removeEventListener('pointermove', move);
+        h.classList.remove('dragging');
+        scale = envScale(m);  // rescale once the drag is over
+        draw();
+      };
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up, { once: true });
+      h.addEventListener('pointercancel', up, { once: true });
+    });
+    h.addEventListener('keydown', (e) => {
+      if (!editable) return;
+      const step = e.shiftKey ? 100 : 10;
+      const dx = { ArrowRight: step, ArrowLeft: -step }[e.key] || 0;
+      const dy = { ArrowUp: e.shiftKey ? 10 : 1, ArrowDown: e.shiftKey ? -10 : -1 }[e.key] || 0;
+      if (!dx && !dy) return;
+      e.preventDefault();
+      if (name === 'attack') m.attack = clampMs(m.attack + dx);
+      if (name === 'decay') {
+        m.decay = clampMs(m.decay + dx);
+        m.sustain = Math.max(0, Math.min(100, m.sustain + dy));
+      }
+      if (name === 'release') m.release = clampMs(m.release + dx);
+      scale = envScale(m);
+      draw();
+      changed();
+    });
+  }
+}
+
 function renderModPicker() {
   $('mod-picker').replaceChildren(...[0, 1, 2, 3].map((id) => {
     const b = el('button', { type: 'button' },
@@ -748,6 +965,7 @@ function renderMod() {
   document.querySelectorAll('.mod-env').forEach((e) => { e.hidden = m.kind !== 'env'; });
   document.querySelectorAll('.mod-cc').forEach((e) => { e.hidden = m.kind === 'off' || m.output !== 'cc'; });
   document.querySelectorAll('.mod-free').forEach((e) => { e.hidden = m.kind !== 'lfo' || m.synced; });
+  renderModGraph();
   $('mod-hint').textContent = m.output === 'bend'
     ? 'For pitch bend, 64 is the middle (no bend), 0 is fully down and 127 fully up.'
     : m.kind === 'env'
