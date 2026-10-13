@@ -1,9 +1,11 @@
 # Switchcraft
 
-Custom RP2040 board (16 MB W25Q128 flash, no WiFi) that turns access switches
-into USB MIDI. Repo layout: `electronics/` (KiCad), `mechanical/` (OpenSCAD),
-`pd/` (Pure Data prototypes, including a step sequencer), plus early GTK
-experiments at the root. The original Pico SDK firmware is still to be added.
+A board built around a stock Raspberry Pi Pico (RP2040, 2 MB flash, no WiFi)
+that turns access switches into USB MIDI: 10 switch inputs and 2 analog
+inputs, see [docs/pin-map.md](docs/pin-map.md). Repo layout: `electronics/`
+(KiCad), `mechanical/` (OpenSCAD), `pd/` (Pure Data prototypes, including a
+step sequencer), plus early GTK experiments at the root. The original
+firmware is lost; the new firmware is written from scratch.
 
 ## Current work: configuration interface
 
@@ -18,6 +20,9 @@ Read it before working on firmware or the config page. Key constraints:
   `bcdDevice` on every descriptor change.
 - Firmware core: a versioned **rule table** ("when trigger do action") in
   flash, plus preset slots. Arpeggiator and step sequencer share one engine.
+  The SysEx protocol and table layout are fixed in
+  [docs/sysex-rule-table-spec.md](docs/sysex-rule-table-spec.md); change the
+  spec first, then the firmware and page.
 - Editors: form view first, then a Blockly view; both write the same rule table.
 - Deadline: conference demo and workshop on **2026-11-27**. Follow the
   priority list in the plan and don't add features beyond it.

@@ -14,7 +14,7 @@ their own switch interactions within two hours.
 
 ### Configuration runs in a browser page and reaches the board over USB MIDI
 
-The board is a bare RP2040 with no WiFi, so it can't serve its own web page.
+The board is a stock Raspberry Pi Pico (RP2040) with no WiFi, so it can't serve its own web page.
 Instead, a static web page (Chrome/Edge) talks to the board over USB MIDI
 using **SysEx messages via WebMIDI**:
 
@@ -35,7 +35,8 @@ Web Serial (extra interface, Chrome-only).
 
 ### Firmware: Pico SDK (C) + TinyUSB
 
-Same stack as the original Switchcraft firmware.
+Same stack as the original Switchcraft firmware. That firmware is lost, so
+the new firmware is written from scratch.
 
 ### Two USB MIDI ports (virtual cables)
 
@@ -105,7 +106,7 @@ an advance source.
   holding both the Blockly blocks and the generated rule table; recent
   configs in browser storage as a convenience only.
 - **On the board:** 4–8 preset slots, one 4 KB flash sector each, in the
-  last sectors of the 16 MB flash. A rule action "switch to preset N" lets
+  last sectors of the Pico's 2 MB flash. A rule action "switch to preset N" lets
   a switch cycle presets without a laptop.
 - **Every template and slot carries a format version number** from day one.
 
@@ -141,7 +142,8 @@ synth or DAW for polished live playing.
 
 ## Firmware notes (Pico SDK)
 
-- Custom board: set `PICO_FLASH_SIZE_BYTES` to 16 MB in the board header.
+- Stock Pico: build with `PICO_BOARD=pico` (2 MB flash); no custom board
+  header needed.
 - Wrap flash erase/program in `flash_safe_execute` (`pico_flash`). Each slot
   header has a magic number, version and CRC, so a half-written slot is
   detected and skipped rather than loaded.
@@ -152,7 +154,7 @@ synth or DAW for polished live playing.
 
 ## Priority order (cut from the bottom if late)
 
-1. Rule table, flash slots, SysEx protocol, two-port USB descriptor, note/scale form *(guaranteed demo)*
+1. Rule table (including tap/hold triggers and analog inputs → CC), flash slots, SysEx protocol, two-port USB descriptor, note/scale form *(guaranteed demo)*
 2. Shared engine: press mode, clock mode, arpeggio patterns
 3. Blockly view, starter templates, built-in browser synth *(workshop essentials)*
 4. Euclidean rhythms
@@ -175,7 +177,7 @@ No new features before 27 November beyond this list.
 
 ## Next step
 
-Once the original firmware is in the repo, write a spec for (a) the SysEx
-messages: identify, read/write rule table, read/write/select slot, live
-switch report; and (b) the rule-table binary layout: trigger types,
-action types, parameters. Firmware and page are both built against it.
+Done: the pin map ([pin-map.md](pin-map.md)) and the SysEx and rule-table
+spec ([sysex-rule-table-spec.md](sysex-rule-table-spec.md)). Next, start the
+firmware from scratch against the spec: two-port USB descriptor first, so
+the Windows two-port test can run in week 1.
