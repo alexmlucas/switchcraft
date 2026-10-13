@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switchcraft</title>
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --card: #ffffff;
+    --text: #1d1d1b;
+    --muted: #63615c;
+    --line: #dddad3;
+    --accent: #2f5fd0;
+    --accent-text: #ffffff;
+    --ok: #1d7a3a;
+    --warn: #9a5b00;
+    --error: #b42318;
+    --pressed: #ffd54a;
+    --pressed-text: #1d1d1b;
+    --meter: #2f5fd0;
+    --focus: #2f5fd0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161616;
+      --card: #212121;
+      --text: #eeece8;
+      --muted: #a8a59f;
+      --line: #3a3a38;
+      --accent: #7ea2ff;
+      --accent-text: #10172b;
+      --ok: #5cc27a;
+      --warn: #e0a84a;
+      --error: #ff8a7a;
+      --pressed: #ffd54a;
+      --meter: #7ea2ff;
+      --focus: #a9c0ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161616; --card: #212121; --text: #eeece8; --muted: #a8a59f; --line: #3a3a38;
+    --accent: #7ea2ff; --accent-text: #10172b; --ok: #5cc27a; --warn: #e0a84a;
+    --error: #ff8a7a; --pressed: #ffd54a; --meter: #7ea2ff; --focus: #a9c0ff;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    padding: 12px 16px;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: 0.01em; }
+  .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--line); flex: none; }
+  .dot.on { background: var(--ok); }
+  .dot.busy { background: var(--warn); }
+  .spacer { flex: 1; }
+  #save-status { color: var(--muted); min-width: 10ch; }
+  #save-status.error { color: var(--error); }
+
+  main {
+    max-width: 1040px; margin: 0 auto; padding: 16px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px;
+  }
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 20px 20px;
+  }
+  h2 { font-size: 19px; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; }
+  label.field { display: grid; gap: 4px; font-size: 15px; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
+
+  select, input, button {
+    font: inherit;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    min-height: 44px;
+    padding: 6px 10px;
+  }
+  input[type="text"] { width: 18ch; }
+  input[type="number"] { width: 8ch; }
+  button { cursor: pointer; padding: 6px 16px; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled, select:disabled, input:disabled { opacity: 0.5; cursor: default; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .notice {
+    border-radius: 12px; padding: 14px 18px;
+    border: 1px solid var(--warn);
+    background: color-mix(in srgb, var(--warn) 10%, var(--card));
+  }
+  .notice.error { border-color: var(--error); background: color-mix(in srgb, var(--error) 10%, var(--card)); }
+  .notice p { margin: 0 0 10px; }
+  .notice p:last-child { margin-bottom: 0; }
+
+  /* Switch panel: two columns, like the board */
+  .panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+  .column { display: grid; gap: 12px; align-content: start; }
+  .column h3 { margin: 0; font-size: 15px; color: var(--muted); font-weight: 600; }
+  .tile {
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px 12px;
+    display: grid; gap: 8px;
+    transition: background-color 60ms, border-color 60ms;
+  }
+  .tile.down { background: var(--pressed); border-color: var(--pressed); color: var(--pressed-text); }
+  .tile.down select { color: var(--text); }
+  /* Fixed height, centred: the event label appearing must not resize the tile. */
+  .tile-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; height: 26px; }
+  .tile-head strong { font-size: 17px; line-height: 26px; }
+  .tile-event { font-size: 14px; line-height: 26px; color: var(--muted); white-space: nowrap; }
+  .tile.down .tile-event { color: var(--pressed-text); }
+  .tile-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile-controls select { width: 100%; min-width: 0; }
+  .tile-controls .gate { grid-column: 1 / -1; }
+
+  .analog-row { display: grid; grid-template-columns: minmax(10ch, auto) minmax(0, 14rem) 1fr 4ch; gap: 12px; align-items: center; }
+  .analog-row + .analog-row { margin-top: 12px; }
+  .meter { height: 14px; border-radius: 7px; background: var(--line); overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--meter); }
+  .value { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+  .last-note { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .panel { grid-template-columns: minmax(0, 1fr); }
+    .analog-row { grid-template-columns: minmax(0, 1fr) 4ch; }
+    .analog-row select { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Switchcraft</h1>
+  <div class="status" role="status" aria-live="polite">
+    <span class="dot" id="dot"></span><span id="conn-text">Not connected</span>
+  </div>
+  <button class="primary" id="connect">Connect</button>
+  <span class="spacer"></span>
+  <span id="save-status" role="status" aria-live="polite"></span>
+  <button id="panic" disabled title="Send note-off for every sounding note">All notes off</button>
+</header>
+
+<main>
+  <div class="notice error" id="no-midi" hidden>
+    <p><strong>This browser can’t talk to MIDI devices.</strong> Open this page in Chrome or Edge on a laptop.</p>
+  </div>
+
+  <div class="notice" id="foreign" hidden>
+    <p id="foreign-text"></p>
+    <p><button id="replace">Replace it with a scale player</button></p>
+  </div>
+
+  <section class="card" aria-labelledby="preset-h">
+    <h2 id="preset-h">Preset</h2>
+    <div class="row">
+      <label class="field">Preset slot
+        <select id="slot" disabled></select>
+      </label>
+      <label class="field">Name
+        <input type="text" id="name" maxlength="16" autocomplete="off" spellcheck="false">
+      </label>
+    </div>
+    <p class="hint">Changes play on the board straight away and are saved to the preset a moment later. The board remembers its last preset when unplugged.</p>
+  </section>
+
+  <section class="card" aria-labelledby="scale-h">
+    <h2 id="scale-h">Key and scale</h2>
+    <div class="row">
+      <label class="field">Key <select id="root"></select></label>
+      <label class="field">Scale <select id="scale"></select></label>
+      <label class="field">Starting octave <select id="octave"></select></label>
+      <button id="fill">Fill switches 1–10 up the scale</button>
+    </div>
+    <p class="hint">Switches set to a scale note follow the key and scale: change them here and every switch moves with it.</p>
+  </section>
+
+  <section class="card" aria-labelledby="switches-h">
+    <div class="row" style="justify-content: space-between; align-items: baseline;">
+      <h2 id="switches-h">Switches</h2>
+      <span class="last-note" id="last-note" aria-hidden="true"></span>
+    </div>
+    <div class="panel">
+      <div class="column" id="col-left"><h3>Left</h3></div>
+      <div class="column" id="col-right"><h3>Right</h3></div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="analog-h">
+    <h2 id="analog-h">Analog inputs</h2>
+    <div id="analog"></div>
+    <p class="hint">For expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves.</p>
+  </section>
+
+  <section class="card" aria-labelledby="settings-h">
+    <h2 id="settings-h">Settings</h2>
+    <div class="row">
+      <label class="field">MIDI channel <select id="channel"></select></label>
+      <label class="field">Velocity (loudness)
+        <input type="number" id="velocity" min="1" max="127">
+      </label>
+      <label class="field">Ignore repeat presses within <select id="lockout"></select></label>
+    </div>
+    <p class="hint">“Ignore repeat presses” helps if a switch gets pressed twice by accident, for example with a tremor.</p>
+  </section>
+</main>
+
+<script src="switchcraft.js"></script>
+<script>
+'use strict';
+const S = Switchcraft;
+const $ = (id) => document.getElementById(id);
+
+// Panel layout (docs/pin-map.md): input numbers in each column, top to bottom.
+const COLUMNS = { 'col-left': [0, 1, 2, 3, 4, 10], 'col-right': [5, 6, 7, 8, 9, 11] };
+const SWITCH_LABEL = (i) => (i < 10 ? `Switch ${i + 1}` : i === 10 ? 'Left button' : 'Right button');
+const ANALOG_LABEL = ['Left analog jack', 'Right analog jack'];
+const CC_CHOICES = [
+  [null, 'Off'], [1, 'Modulation (CC 1)'], [2, 'Breath (CC 2)'], [7, 'Volume (CC 7)'],
+  [10, 'Pan (CC 10)'], [11, 'Expression (CC 11)'], [71, 'Resonance (CC 71)'],
+  [74, 'Brightness (CC 74)'],
+];
+const TRANSPOSE_CHOICES = [[-12, 'Octave down'], [-1, 'Semitone down'], [1, 'Semitone up'], [12, 'Octave up']];
+const GATE_CHOICES = [['hold', 'Sounds while held'], ['latch', 'Press on, press off'], ['oneshot', 'Short note']];
+const ACTION_CHOICES = [['scale', 'Scale note'], ['note', 'Fixed note'], ['transpose', 'Transpose'], ['none', 'Nothing']];
+
+let form = S.defaultForm();
+let board = null;
+let midiAccess = null;
+let activeSlot = 0;
+let slotNames = [];
+let editable = true;
+
+// --- Small DOM helpers ---
+
+function options(select, choices, value) {
+  select.replaceChildren(...choices.map(([v, text]) => {
+    const o = document.createElement('option');
+    o.value = v === null ? '' : String(v);
+    o.textContent = text;
+    return o;
+  }));
+  select.value = value === null ? '' : String(value);
+}
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  Object.assign(e, attrs);
+  e.append(...children);
+  return e;
+}
+
+// --- Status ---
+
+function setConn(state, text) {
+  $('dot').className = 'dot' + (state === 'on' ? ' on' : state === 'busy' ? ' busy' : '');
+  $('conn-text').textContent = text;
+  $('connect').hidden = state === 'on';
+  $('panic').disabled = state !== 'on';
+  $('slot').disabled = state !== 'on';
+}
+
+function setSave(text, isError = false) {
+  $('save-status').textContent = text;
+  $('save-status').className = isError ? 'error' : '';
+}
+
+// --- Rendering ---
+
+function scaleNoteChoices() {
+  const out = [];
+  for (let d = -7; d <= 14; d++) {
+    const n = S.degreeToNote(d, form.root, form.octave, form.mask);
+    if (n >= 0 && n <= 127) out.push([d, S.noteName(n)]);
+  }
+  return out;
+}
+
+function fixedNoteChoices() {
+  const out = [];
+  for (let n = 24; n <= 96; n++) out.push([n, `${S.noteName(n)}  (${n})`]);
+  return out;
+}
+
+function renderSwitch(i) {
+  const s = form.switches[i];
+  const tile = $(`sw-${i}`);
+  const action = tile.querySelector('.action');
+  const value = tile.querySelector('.value-select');
+  const gate = tile.querySelector('.gate');
+  options(action, ACTION_CHOICES, s.action);
+  value.hidden = s.action === 'none';
+  gate.hidden = !(s.action === 'scale' || s.action === 'note');
+  if (s.action === 'scale') {
+    options(value, scaleNoteChoices(), s.degree);
+    value.setAttribute('aria-label', `${SWITCH_LABEL(i)} note`);
+  } else if (s.action === 'note') {
+    options(value, fixedNoteChoices(), s.note);
+    value.setAttribute('aria-label', `${SWITCH_LABEL(i)} note`);
+  } else if (s.action === 'transpose') {
+    const choices = TRANSPOSE_CHOICES.some(([v]) => v === s.semitones)
+      ? TRANSPOSE_CHOICES : [...TRANSPOSE_CHOICES, [s.semitones, `${s.semitones > 0 ? '+' : ''}${s.semitones} semitones`]];
+    options(value, choices, s.semitones);
+    value.setAttribute('aria-label', `${SWITCH_LABEL(i)} transpose amount`);
+  }
+  if (!gate.hidden) options(gate, GATE_CHOICES, s.gate);
+}
+
+function renderAll() {
+  $('name').value = form.name;
+  $('root').value = String(form.root);
+  const known = S.SCALES.some((sc) => sc.mask === form.mask);
+  options($('scale'),
+    [...S.SCALES.map((sc) => [sc.mask, sc.name]), ...(known ? [] : [[form.mask, 'Custom scale']])],
+    form.mask);
+  $('octave').value = String(form.octave);
+  $('channel').value = String(form.channel);
+  $('velocity').value = form.velocity;
+  if (![...$('lockout').options].some((o) => o.value === String(form.lockoutMs)))
+    $('lockout').append(el('option', { value: String(form.lockoutMs), textContent: `${form.lockoutMs} ms` }));
+  $('lockout').value = String(form.lockoutMs);
+  for (let i = 0; i < S.NUM_INPUTS; i++) renderSwitch(i);
+  form.analog.forEach((a, i) => {
+    const sel = $(`cc-${i}`);
+    const choices = CC_CHOICES.some(([v]) => v === a.cc) ? CC_CHOICES : [...CC_CHOICES, [a.cc, `CC ${a.cc}`]];
+    options(sel, choices, a.cc);
+  });
+  setEditable(editable);
+}
+
+function setEditable(on) {
+  editable = on;
+  document.querySelectorAll('main section select, main section input, main section button')
+    .forEach((c) => { if (c.id !== 'slot') c.disabled = !on; });
+}
+
+function renderSlots() {
+  if (!board) {
+    options($('slot'), [[0, 'Connect to see presets']], 0);
+    return;
+  }
+  options($('slot'),
+    Array.from({ length: S.NUM_SLOTS }, (_, i) =>
+      [i, `${i + 1}: ${slotNames[i] === undefined ? '(empty)' : slotNames[i] || 'Untitled'}`]),
+    activeSlot);
+}
+
+// --- Building the page ---
+
+function buildStatic() {
+  options($('root'), S.NOTE_NAMES.map((n, i) => [i, n]), 0);
+  options($('octave'), [1, 2, 3, 4, 5, 6].map((o) => [o, `${o} (from ${S.NOTE_NAMES[0]}${o})`]), 4);
+  options($('channel'), Array.from({ length: 16 }, (_, i) => [i, String(i + 1)]), 0);
+  options($('lockout'), [[0, 'Off'], [100, '0.1 s'], [250, '0.25 s'], [500, '0.5 s'], [1000, '1 s'], [2000, '2 s']], 0);
+
+  for (const [col, inputs] of Object.entries(COLUMNS)) {
+    for (const i of inputs) {
+      const action = el('select', { className: 'action' });
+      action.setAttribute('aria-label', `${SWITCH_LABEL(i)} action`);
+      const value = el('select', { className: 'value-select' });
+      const gate = el('select', { className: 'gate' });
+      gate.setAttribute('aria-label', `${SWITCH_LABEL(i)} how the note plays`);
+      const tile = el('div', { className: 'tile', id: `sw-${i}` },
+        el('div', { className: 'tile-head' },
+          el('strong', { textContent: SWITCH_LABEL(i) }),
+          el('span', { className: 'tile-event', id: `ev-${i}` })),
+        el('div', { className: 'tile-controls' }, action, value, gate));
+      $(col).append(tile);
+
+      action.addEventListener('change', () => {
+        const s = form.switches[i];
+        const a = action.value;
+        if (a === 'scale') form.switches[i] = { action: a, degree: i < 10 ? i : 0, gate: s.gate || 'hold' };
+        else if (a === 'note') form.switches[i] = { action: a, note: 60, gate: s.gate || 'hold' };
+        else if (a === 'transpose') form.switches[i] = { action: a, semitones: i === 10 ? -12 : 12 };
+        else form.switches[i] = { action: 'none' };
+        renderSwitch(i);
+        changed();
+      });
+      value.addEventListener('change', () => {
+        const s = form.switches[i];
+        const v = Number(value.value);
+        if (s.action === 'scale') s.degree = v;
+        else if (s.action === 'note') s.note = v;
+        else if (s.action === 'transpose') s.semitones = v;
+        changed();
+      });
+      gate.addEventListener('change', () => {
+        form.switches[i].gate = gate.value;
+        changed();
+      });
+    }
+  }
+
+  ANALOG_LABEL.forEach((label, i) => {
+    const sel = el('select', { id: `cc-${i}` });
+    sel.setAttribute('aria-label', `${label} controller`);
+    sel.addEventListener('change', () => {
+      form.analog[i].cc = sel.value === '' ? null : Number(sel.value);
+      changed();
+    });
+    const meter = el('div', { className: 'meter', id: `meter-${i}` }, el('div'));
+    meter.setAttribute('role', 'meter');
+    meter.setAttribute('aria-label', `${label} level`);
+    meter.setAttribute('aria-valuemin', '0');
+    meter.setAttribute('aria-valuemax', '127');
+    meter.setAttribute('aria-valuenow', '0');
+    $('analog').append(el('div', { className: 'analog-row' },
+      el('span', { textContent: label }), sel, meter,
+      el('span', { className: 'value', id: `val-${i}`, textContent: '0' })));
+  });
+
+  $('name').addEventListener('input', () => {
+    // The board stores 16 plain ASCII characters.
+    const clean = $('name').value.replace(/[^\x20-\x7e]/g, '').slice(0, 16);
+    if (clean !== $('name').value) $('name').value = clean;
+    form.name = clean;
+    changed();
+  });
+  $('root').addEventListener('change', () => { form.root = Number($('root').value); renderAll(); changed(); });
+  $('scale').addEventListener('change', () => { form.mask = Number($('scale').value); renderAll(); changed(); });
+  $('octave').addEventListener('change', () => { form.octave = Number($('octave').value); renderAll(); changed(); });
+  $('fill').addEventListener('click', () => {
+    for (let i = 0; i < 10; i++)
+      form.switches[i] = { action: 'scale', degree: i, gate: form.switches[i].gate || 'hold' };
+    renderAll();
+    changed();
+  });
+  $('channel').addEventListener('change', () => { form.channel = Number($('channel').value); changed(); });
+  $('velocity').addEventListener('change', () => {
+    const v = Math.min(127, Math.max(1, Math.round(Number($('velocity').value)) || 100));
+    $('velocity').value = v;
+    form.velocity = v;
+    changed();
+  });
+  $('lockout').addEventListener('change', () => { form.lockoutMs = Number($('lockout').value); changed(); });
+
+  $('connect').addEventListener('click', connect);
+  $('panic').addEventListener('click', () => board && board.allNotesOff().catch(showError));
+  $('slot').addEventListener('change', () => switchSlot(Number($('slot').value)));
+  $('replace').addEventListener('click', () => {
+    form = S.defaultForm();
+    $('foreign').hidden = true;
+    setEditable(true);
+    renderAll();
+    changed();
+  });
+}
+
+// --- Sending edits: apply quickly, save after a pause (spec A.4) ---
+
+let writeTimer = null;
+let saveTimer = null;
+let writing = false;
+let dirty = false;
+let unsaved = false;
+
+function changed() {
+  unsaved = true;
+  if (!board) {
+    setSave('Not connected: changes stay on this page');
+    return;
+  }
+  setSave('Sending…');
+  clearTimeout(saveTimer);
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(flush, 120);
+}
+
+async function flush() {
+  if (!board) return;
+  if (writing) {
+    dirty = true;
+    return;
+  }
+  writing = true;
+  try {
+    do {
+      dirty = false;
+      await board.writeTable(S.buildTable(S.tableFromForm(form)));
+    } while (dirty);
+    setSave('Playing, not saved yet');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 2000);
+  } catch (e) {
+    showError(e);
+  } finally {
+    writing = false;
+  }
+}
+
+async function save() {
+  if (!board || !unsaved) return;
+  if (writing) {
+    saveTimer = setTimeout(save, 500);
+    return;
+  }
+  try {
+    await board.saveSlot(activeSlot);
+    unsaved = false;
+    slotNames[activeSlot] = form.name;
+    renderSlots();
+    setSave(`Saved to preset ${activeSlot + 1}`);
+  } catch (e) {
+    showError(e);
+  }
+}
+
+// Saves now if anything is waiting (before switching presets).
+async function saveNow() {
+  clearTimeout(writeTimer);
+  clearTimeout(saveTimer);
+  if (!unsaved) return;
+  await flush();
+  await save();
+}
+
+function showError(e) {
+  console.error(e);
+  setSave(e.message || String(e), true);
+}
+
+// --- Board ---
+
+async function connect() {
+  if (!navigator.requestMIDIAccess) {
+    $('no-midi').hidden = false;
+    return;
+  }
+  try {
+    setConn('busy', 'Asking for MIDI access…');
+    if (!midiAccess) {
+      midiAccess = await navigator.requestMIDIAccess({ sysex: true });
+      midiAccess.onstatechange = onPortChange;
+    }
+    setConn('busy', 'Looking for the board…');
+    const found = await S.Board.find(midiAccess);
+    if (!found) {
+      setConn('off', 'Board not found. Is it plugged in?');
+      return;
+    }
+    attach(found);
+    await loadFromBoard();
+  } catch (e) {
+    if (e.name === 'SecurityError' || e.name === 'NotAllowedError')
+      setConn('off', 'MIDI access was blocked. Allow it in the address bar and try again.');
+    else {
+      setConn('off', 'Connection failed');
+      showError(e);
+    }
+  }
+}
+
+function attach(b) {
+  board = b;
+  activeSlot = b.info.activeSlot;
+  setConn('on', `Connected · firmware ${b.info.firmware}`);
+  b.onInput = showInput;
+  b.onAnalog = showAnalog;
+  b.onMidi = showMidi;
+  b.onSlot = async (slot) => {
+    activeSlot = slot;
+    await loadWorking();
+  };
+}
+
+function detach(reason) {
+  if (board) board.close();
+  board = null;
+  clearTimeout(writeTimer);
+  clearTimeout(saveTimer);
+  setConn('off', reason);
+  renderSlots();
+  setSave(unsaved ? 'Not connected: some changes weren’t saved' : '');
+}
+
+let reconnectTimer = null;
+function onPortChange(e) {
+  if (board && e.port.state === 'disconnected' &&
+      (e.port.id === board.input.id || e.port.id === board.output.id)) {
+    detach('Board unplugged');
+  } else if (!board && e.port.state === 'connected' && /switchcraft/i.test(e.port.name)) {
+    // Plugged back in: both ports appear in quick succession.
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 800);
+  }
+}
+
+async function loadFromBoard() {
+  setSave('Reading presets…');
+  slotNames = [];
+  for (let s = 0; s < S.NUM_SLOTS; s++) {
+    try {
+      slotNames[s] = S.parseTable(await board.readTable(s)).globals.name;
+    } catch (e) {
+      if (!(e instanceof S.BoardError) || e.status !== 0x09) throw e;
+    }
+  }
+  await loadWorking();
+}
+
+async function loadWorking() {
+  const table = S.parseTable(await board.readTable());
+  const result = S.formFromTable(table);
+  renderSlots();
+  unsaved = false;
+  if (result.form) {
+    form = result.form;
+    $('foreign').hidden = true;
+    setEditable(true);
+    setSave(slotNames[activeSlot] === undefined ? 'Preset slot is empty: edits will save here' : '');
+  } else {
+    form = S.formFromTable({ ...table, rules: [], sequences: [], extra: [] }).form;
+    $('foreign-text').textContent =
+      `Preset ${activeSlot + 1} (“${table.globals.name || 'Untitled'}”) was made with another editor: ` +
+      `${result.reason}. This page can’t show it. Replacing it overwrites the preset.`;
+    $('foreign').hidden = false;
+    setEditable(false);
+    setSave('');
+  }
+  renderAll();
+}
+
+async function switchSlot(slot) {
+  try {
+    await saveNow();
+    setSave('Loading…');
+    try {
+      await board.loadSlot(slot);
+      activeSlot = slot;
+    } catch (e) {
+      if (!(e instanceof S.BoardError) || e.status !== 0x09) throw e;
+      // Empty slot: start a new scale player there.
+      form = S.defaultForm();
+      form.name = `Preset ${slot + 1}`;
+      await board.writeTable(S.buildTable(S.tableFromForm(form)));
+      await board.saveSlot(slot);
+      await board.loadSlot(slot);
+      activeSlot = slot;
+      slotNames[slot] = form.name;
+    }
+    await loadWorking();
+  } catch (e) {
+    showError(e);
+    renderSlots();
+  }
+}
+
+// --- Live feedback from the board ---
+
+const eventTimers = [];
+function showInput(i, ev) {
+  const tile = $(`sw-${i}`);
+  if (!tile) return;
+  if (ev === 'press') tile.classList.add('down');
+  if (ev === 'release') tile.classList.remove('down');
+  const label = $(`ev-${i}`);
+  label.textContent = ev === 'press' ? 'pressed' : ev === 'hold' ? 'held' : ev === 'tap' ? 'tapped' : 'released';
+  clearTimeout(eventTimers[i]);
+  eventTimers[i] = setTimeout(() => { label.textContent = ''; }, 1500);
+}
+
+function showAnalog(i, raw, value) {
+  const meter = $(`meter-${i}`);
+  if (!meter) return;
+  meter.firstChild.style.width = `${(value / 127) * 100}%`;
+  meter.setAttribute('aria-valuenow', String(value));
+  $(`val-${i}`).textContent = value;
+}
+
+function showMidi(d) {
+  if ((d[0] & 0xf0) === 0x90 && d[2] > 0)
+    $('last-note').textContent = `Last note: ${S.noteName(d[1])}`;
+}
+
+buildStatic();
+renderAll();
+renderSlots();
+setSave('');
+if (!navigator.requestMIDIAccess) {
+  $('no-midi').hidden = false;
+  $('connect').disabled = true;
+} else if (navigator.permissions) {
+  // Reconnect without a click if MIDI access was allowed before.
+  navigator.permissions.query({ name: 'midi', sysex: true })
+    .then((p) => { if (p.state === 'granted') connect(); })
+    .catch(() => {});
+}
+</script>
+</body>
+</html>

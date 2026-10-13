@@ -17,7 +17,11 @@ Read it before working on firmware or the config page. Key constraints:
   [firmware/README.md](firmware/README.md). `tools/sc.py` talks to the board
   from Python (`python tools/sc.py selftest` runs without one).
 - Config UI: an offline-capable browser page (Chrome/Edge) using **WebMIDI +
-  SysEx**. Nothing is hosted on the board.
+  SysEx**. Nothing is hosted on the board. Lives in `web/`: open
+  `web/index.html` straight from disk (WebMIDI works over `file://`).
+  Protocol/table logic is in `web/switchcraft.js` (no UI code); unit tests
+  in `web/test.html` run in headless Chrome
+  (`chrome --headless=new --dump-dom file:///.../web/test.html`).
 - USB: **two MIDI virtual cables**. Port 1 carries music for a DAW; port 2
   carries config SysEx plus a copy of all musical output. Increment
   `bcdDevice` on every descriptor change.

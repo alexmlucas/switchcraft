@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Switchcraft tests</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; }
+  .pass { color: #1a7f37; } .fail { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Switchcraft page tests</h1>
+<pre id="out"></pre>
+<script src="switchcraft.js"></script>
+<script>
+'use strict';
+const S = Switchcraft;
+const out = document.getElementById('out');
+let failed = 0, passed = 0;
+
+function log(cls, text) {
+  const span = document.createElement('span');
+  span.className = cls;
+  span.textContent = text + '\n';
+  out.append(span);
+}
+function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+async function test(name, fn) {
+  try {
+    await fn();
+    passed++;
+    log('pass', 'PASS ' + name);
+  } catch (e) {
+    failed++;
+    log('fail', 'FAIL ' + name + ': ' + e.message);
+  }
+}
+function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
+function assertEq(a, b) { assert(eq(a, b), `${JSON.stringify(a)} != ${JSON.stringify(b)}`); }
+const hex = (n) => n.toString(16).padStart(8, '0');
+
+// A fake board: answers protocol requests like the firmware does.
+function fakeBoard() {
+  const dev = {
+    working: S.buildTable(S.tableFromForm(S.defaultForm())),
+    slots: [], staging: null, activeSlot: 0,
+  };
+  const input = { name: 'MIDIIN2 (Switchcraft)', onmidimessage: null };
+  const reply = (m, status, data = []) => setTimeout(() =>
+    input.onmidimessage({ data: new Uint8Array(S.encode(m.cmd | 0x40, m.seq, [status, ...data])) }), 1);
+  const le16 = (v) => [v & 0xff, v >> 8];
+  const output = {
+    name: 'MIDIOUT2 (Switchcraft)',
+    send(bytes) {
+      const m = S.decode(bytes);
+      const p = m.payload;
+      const src = (s) => (s === 0xff ? dev.working : dev.slots[s]);
+      switch (m.cmd) {
+        case S.CMD.IDENTIFY:
+          return reply(m, 0, [1, 0, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 1, 0, 12, 2, 8, dev.activeSlot, 0xf0, 0x0f, 128, 4]);
+        case S.CMD.TABLE_INFO: {
+          const b = src(p[0]);
+          if (!b) return reply(m, 0x09);
+          const c = S.crc32(b);
+          return reply(m, 0, [...le16(b.length), c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff, c >>> 24, 1, 0]);
+        }
+        case S.CMD.TABLE_READ: {
+          const off = p[1] | (p[2] << 8);
+          return reply(m, 0, [p[1], p[2], ...src(p[0]).subarray(off, off + p[3])]);
+        }
+        case S.CMD.WRITE_BEGIN:
+          dev.staging = [];
+          return reply(m, 0);
+        case S.CMD.WRITE_DATA:
+          dev.staging.push(...p.subarray(2));
+          return reply(m, 0, le16(dev.staging.length));
+        case S.CMD.WRITE_COMMIT:
+          dev.working = new Uint8Array(dev.staging);
+          if (p[0] & 1) dev.slots[dev.activeSlot] = dev.working;
+          return reply(m, 0);
+        case S.CMD.SLOT_LOAD:
+          if (!dev.slots[p[0]]) return reply(m, 0x09);
+          dev.working = dev.slots[p[0]];
+          dev.activeSlot = p[0];
+          return reply(m, 0);
+        default:
+          return reply(m, 0x01);
+      }
+    },
+  };
+  return { dev, input, output };
+}
+
+(async () => {
+  await test('encode matches spec example', () => {
+    assertEq(S.encode(0x02, 5, [0xff]), [0xf0, 0x7d, 0x53, 0x43, 0x01, 0x02, 0x05, 0x0f, 0x0f, 0xf7]);
+  });
+
+  await test('decode spec A.8 worked example', () => {
+    const m = S.decode([0xf0, 0x7d, 0x53, 0x43, 0x01, 0x42, 0x05, 0, 0, 3, 4, 0, 1,
+      4, 0xd, 3, 0xc, 2, 0xb, 1, 0xa, 0, 1, 0, 0, 0xf7]);
+    assertEq([m.cmd, m.seq], [0x42, 5]);
+    assertEq(Array.from(m.payload), [0, 0x34, 0x01, 0x4d, 0x3c, 0x2b, 0x1a, 1, 0]);
+  });
+
+  await test('decode rejects other manufacturers and odd payloads', () => {
+    assert(S.decode([0xf0, 0x7e, 0x53, 0x43, 1, 2, 3, 0xf7]) === null);
+    assert(S.decode([0xf0, 0x7d, 0x53, 0x43, 1, 2, 3, 4, 0xf7]) === null);
+  });
+
+  await test('crc32 standard check value', () => {
+    assertEq(hex(S.crc32(new TextEncoder().encode('123456789'))), 'cbf43926');
+  });
+
+  await test('default form builds the firmware\'s built-in table byte for byte', () => {
+    const blob = S.buildTable(S.tableFromForm(S.defaultForm()));
+    assertEq(blob.length, 228);
+    assertEq(hex(S.crc32(blob)), 'b931023f');  // as read back from the board
+  });
+
+  await test('form -> table -> form round trip', () => {
+    const f = S.defaultForm();
+    f.switches[3] = { action: 'note', note: 38, gate: 'oneshot' };
+    f.switches[4] = { action: 'none' };
+    f.switches[5] = { action: 'scale', degree: -3, gate: 'latch' };
+    f.analog[1] = { cc: null };
+    f.name = 'Drums';
+    const back = S.formFromTable(S.parseTable(S.buildTable(S.tableFromForm(f))));
+    assert(back.form, back.reason);
+    assertEq(back.form.switches, f.switches);
+    assertEq(back.form.analog, f.analog);
+    assertEq(back.form.name, 'Drums');
+  });
+
+  await test('tables the form can\'t show are recognised', () => {
+    const t = S.tableFromForm(S.defaultForm());
+    t.rules.push({ trig: S.TRIG.TAP, src: 0, act: S.ACT.PRESET, p0: 1 });
+    const r = S.formFromTable(S.parseTable(S.buildTable(t)));
+    assert(!r.form && /tap/.test(r.reason), JSON.stringify(r));
+    const t2 = S.tableFromForm(S.defaultForm());
+    t2.rules.push(t2.rules[0]);  // two rules on one switch
+    assert(!S.formFromTable(S.parseTable(S.buildTable(t2))).form);
+  });
+
+  await test('scale degrees match the notes the board played', () => {
+    const major = Array.from({ length: 10 }, (_, d) => S.degreeToNote(d, 0, 4, 0x0ab5));
+    assertEq(major, [60, 62, 64, 65, 67, 69, 71, 72, 74, 76]);
+    assertEq(S.degreeToNote(-7, 0, 4, 0x0ab5), 48);   // demo drone
+    assertEq(S.degreeToNote(2, 0, 4, 0x05ad), 63);    // E flat in C minor
+    assertEq(S.degreeToNote(-1, 0, 4, 0x0ab5), 59);
+    assertEq(S.noteName(63), 'E♭4');
+  });
+
+  await test('Board.find picks the port pair that answers IDENTIFY', async () => {
+    const { input, output } = fakeBoard();
+    const silentOut = { name: 'Switchcraft', send() {} };
+    const silentIn = { name: 'Switchcraft', onmidimessage: null };
+    const access = { outputs: new Map([[1, silentOut], [2, output]]), inputs: new Map([[1, silentIn], [2, input]]) };
+    const board = await S.Board.find(access);
+    assert(board && board.output === output && board.input === input, 'wrong ports');
+    assertEq(board.info.firmware, '0.1.1');
+    assertEq(board.info.uniqueId, '0102030405060708');
+  });
+
+  await test('write, read back and save a table through the fake board', async () => {
+    const { dev, input, output } = fakeBoard();
+    const board = new S.Board(input, output);
+    const f = S.defaultForm();
+    f.name = 'Test';
+    const blob = S.buildTable(S.tableFromForm(f));
+    await board.writeTable(blob, true);
+    assertEq(Array.from(await board.readTable()), Array.from(blob));
+    assertEq(Array.from(dev.slots[0]), Array.from(blob));
+  });
+
+  await test('concurrent requests are queued, not interleaved', async () => {
+    const { input, output } = fakeBoard();
+    const board = new S.Board(input, output);
+    const results = await Promise.all([board.tableInfo(0xff), board.identify(), board.tableInfo(0xff)]);
+    assertEq(results[0].length, 228);
+    assertEq(results[1].activeSlot, 0);
+  });
+
+  await test('error replies become BoardErrors with the status', async () => {
+    const { input, output } = fakeBoard();
+    const board = new S.Board(input, output);
+    try {
+      await board.loadSlot(5);
+      throw new Error('no error');
+    } catch (e) {
+      assert(e instanceof S.BoardError && e.status === 0x09, e.message);
+    }
+  });
+
+  await test('reports are delivered to callbacks', async () => {
+    const { input, output } = fakeBoard();
+    const board = new S.Board(input, output);
+    const seen = [];
+    board.onInput = (i, ev) => seen.push([i, ev]);
+    board.onMidi = (d) => seen.push(Array.from(d));
+    input.onmidimessage({ data: new Uint8Array(S.encode(0x60, 0, [7, 4])) });
+    input.onmidimessage({ data: new Uint8Array([0x90, 60, 100]) });
+    assertEq(seen, [[7, 'tap'], [0x90, 60, 100]]);
+  });
+
+  log(failed ? 'fail' : 'pass', `\n${passed} passed, ${failed} failed`);
+  document.title = failed ? 'FAILED' : 'PASSED';
+})();
+</script>
+</body>
+</html>
