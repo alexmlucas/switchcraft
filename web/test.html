@@ -28,7 +28,14 @@ function log(cls, text) {
   span.textContent = text + '\n';
   out.append(span);
 }
-function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+// Compares as JSON with object keys sorted, so key order doesn't matter.
+function canonical(v) {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v && typeof v === 'object' && !(v instanceof Uint8Array))
+    return Object.fromEntries(Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => [k, canonical(v[k])]));
+  return v;
+}
+function eq(a, b) { return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b)); }
 async function test(name, fn) {
   try {
     await fn();
@@ -588,8 +595,96 @@ function fakeBoard() {
     assertEq(toHex(S.buildTable(viaBlocks.table)), toHex(S.buildTable(table)));
   });
 
+  // --- MIDI files ---
+
+  // Builds a standard MIDI file. tracks: [[delta, ...bytes], ...] per track.
+  function smf(tracks, ppq = 480) {
+    const vlq = (n) => {
+      const out = [n & 0x7f];
+      while ((n >>= 7)) out.unshift((n & 0x7f) | 0x80);
+      return out;
+    };
+    const chunk = (id, body) => [...id].map((c) => c.charCodeAt(0))
+      .concat([(body.length >>> 24) & 255, (body.length >> 16) & 255, (body.length >> 8) & 255, body.length & 255], body);
+    const header = chunk('MThd', [0, 1, 0, tracks.length, ppq >> 8, ppq & 255]);
+    const trks = tracks.map((evs) => chunk('MTrk', evs.flatMap(([d, ...b]) => [...vlq(d), ...b]).concat([0, 0xff, 0x2f, 0])));
+    return new Uint8Array(header.concat(...trks));
+  }
+
+  // At 480 ticks a beat a sixteenth is 120 ticks.
+  const TUNE = smf([
+    [[0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20]],  // tempo 500000 us = 120 BPM
+    [
+      [0, 0xff, 0x03, 5, ...[...'Melody'].slice(0, 5).map((c) => c.charCodeAt(0))],  // name "Melod"
+      [0, 0x90, 60, 100], [240, 0x80, 60, 0], // C4 for 2 steps
+      [0, 0x90, 64, 90],                     // E4 on
+      [0, 67, 90],                           // running status: G4 on too (a chord: top note wins)
+      [120, 64, 0], [0, 67, 0],              // both off (note-on velocity 0) after 1 step
+      [120, 69, 80],                         // a 1-step gap, then A4
+      [480, 0x80, 69, 0],                    // A4 lasts 4 steps
+      [0, 0x99, 36, 100], [120, 0x89, 36, 0],  // a drum on channel 10
+    ],
+  ]);
+
+  await test('MIDI files: tempo, name, running status, velocity-0 note-offs, parts by channel', () => {
+    const file = S.parseMidiFile(TUNE);
+    assertEq(file.ppq, 480);
+    assertEq(file.bpm, 120);
+    const parts = S.midiParts(file);
+    assertEq(parts.map((p) => [p.name, p.notes.length]), [['Melod, channel 1', 4], ['Melod, channel 10 (drums)', 1]]);
+    assertEq(parts[0].notes.map((n) => [n.note, n.start, n.end]), [[60, 0, 240], [67, 240, 360], [64, 240, 360], [69, 480, 960]]);
+  });
+
+  await test('MIDI files: melody with lengths, rests and trimming', () => {
+    const notes = S.midiParts(S.parseMidiFile(TUNE))[0].notes;
+    const seq = S.midiToSequence(notes, 480, { division: 6 });
+    assertEq(seq.notes, [60, 67, null, 69]);
+    assertEq(seq.lengths, [2, 1, 1, 4]);
+    // A note played a little short is phrasing, not a rest.
+    const phrased = S.midiToSequence([{ start: 0, end: 400, note: 60 }, { start: 480, end: 960, note: 62 }], 480);
+    assertEq([phrased.notes, phrased.lengths], [[60, 62], [4, 4]]);
+    const eighths = S.midiToSequence(notes, 480, { division: 12 });  // coarser grid
+    assertEq([eighths.notes, eighths.lengths], [[60, 67, 69], [1, 1, 2]]);
+    const noRests = S.midiToSequence(notes, 480, { rests: false });  // one note per press
+    assertEq([noRests.notes, noRests.lengths], [[60, 67, 69], [2, 2, 4]]);
+    const trimmed = S.midiToSequence(notes, 480, { from: 1, count: 1 });
+    assertEq([trimmed.notes, trimmed.lengths], [[67], [1]]);
+  });
+
+  await test('MIDI files: not a MIDI file', () => {
+    for (const bad of [new Uint8Array([1, 2, 3]), new TextEncoder().encode('MThd0000 not really')]) {
+      try {
+        S.parseMidiFile(bad);
+        throw new Error('accepted');
+      } catch (e) {
+        assert(/MIDI file|damaged|SMPTE|no tracks/.test(e.message), e.message);
+      }
+    }
+  });
+
+  // An imported tune: fixed notes with lengths, playing in time.
+  function importedForm() {
+    const f = S.defaultForm();
+    f.sequences[0] = { ...S.defaultSequence(), noteType: 'fixed', notes: [60, 67, null, 69], lengths: [2, 1, 1, 4] };
+    f.switches[0] = { action: 'seq-play', seq: 0, gate: 'latch', onBeat: true };
+    return f;
+  }
+
+  await test('step lengths survive the form and the blocks', () => {
+    const f = importedForm();
+    const table = S.tableFromForm(f);
+    assertEq(table.sequences[0].steps.map((st) => st.length), [2, 1, 1, 4]);
+    const back = S.formFromTable(S.parseTable(S.buildTable(table)));
+    assertEq(back.form.sequences[0], f.sequences[0]);
+    const viaBlocks = throughBlocks(table);
+    assertEq(viaBlocks.problems.map((p) => p.text), []);
+    assertEq(toHex(S.buildTable(viaBlocks.table)), toHex(S.buildTable(table)));
+    assertEq(B.formatNotes([60, 67, null, 69], 'fixed', [2, 1, 1, 4]), 'C4:2 G4 -:1 A4:4'.replace('-:1', '-'));
+    assertEq(B.parseNotes('C4:2 G4 - A4:4', 'fixed').lengths, [2, 1, 1, 4]);
+  });
+
   // Tables for tools/check_page_tables.py to send to a real board.
-  const samples = { default: S.defaultForm(), sequences: sequenceForm(), modulators: modulatorForm() };
+  const samples = { default: S.defaultForm(), sequences: sequenceForm(), modulators: modulatorForm(), imported: importedForm() };
   for (const t of S.TEMPLATES) samples[`template ${t.id}`] = t.form();
   const blobs = document.createElement('pre');
   blobs.id = 'blobs';

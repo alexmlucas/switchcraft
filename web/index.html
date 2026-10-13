@@ -162,6 +162,16 @@
   .step select { min-height: 40px; padding: 4px 6px; }
   .step button { min-height: 40px; padding: 4px 10px; }
   .steps-empty { color: var(--muted); margin: 12px 0; }
+  .step .len { grid-column: 1 / -1; min-height: 34px; padding: 2px 6px; font-size: 14px; }
+
+  dialog#midi-dialog {
+    border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px;
+    background: var(--card); color: var(--text); width: min(640px, calc(100vw - 32px));
+  }
+  dialog#midi-dialog::backdrop { background: rgb(0 0 0 / 0.4); }
+  dialog#midi-dialog h2 { margin-top: 0; }
+  #midi-preview { font-family: ui-monospace, Consolas, monospace; font-size: 15px; color: var(--muted);
+    background: var(--bg); border-radius: 8px; padding: 10px 12px; margin: 12px 0; max-height: 7.5em; overflow: auto; white-space: pre-wrap; }
   .rhythm-row { margin-top: 16px; align-items: center; }
   .rhythm-row input[type="number"] { width: 9ch; }
   #rhythm-circle { flex: none; }
@@ -280,6 +290,7 @@
       <button id="add-note">Add note</button>
       <button id="add-rest">Add rest</button>
       <button id="clear-steps">Clear</button>
+      <button id="import-midi">Import a MIDI file…</button>
     </div>
     <div class="row" style="margin-top: 16px;">
       <label class="field">Order <select id="seq-order"></select></label>
@@ -331,6 +342,7 @@
   <section class="card" id="blocks-card" aria-labelledby="blocks-h" hidden>
     <div class="row" style="justify-content: space-between; align-items: baseline;">
       <h2 id="blocks-h">Blocks</h2>
+      <button id="import-midi-blocks" class="keep-enabled">Import a MIDI file into a sequence…</button>
       <span class="last-note" id="last-note-blocks" aria-hidden="true"></span>
     </div>
     <p class="hint" style="margin: -4px 0 12px;">Drag blocks out of the categories on the left. Each “when …” block runs the blocks inside it, from the top. The name, key and tempo are in the “Preset settings” block. Changes play on the board straight away. With a keyboard: Tab into the blocks area, then use the arrow keys and Enter.</p>
@@ -386,6 +398,33 @@
     <p class="hint">Turn on with the <strong>Sound</strong> button at the top. The browser plays everything the board sends, including sequences. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74): set an analog input to one of these to hear it move. A DAW or synth on the board’s first MIDI port still gets everything as well. Settings here only affect this browser and are not saved to the board.</p>
   </section>
 </main>
+
+<input type="file" id="midi-input" accept=".mid,.midi,audio/midi" hidden>
+<dialog id="midi-dialog" aria-labelledby="midi-h">
+  <form method="dialog">
+    <h2 id="midi-h">Import a MIDI file</h2>
+    <p class="hint" id="midi-file" style="margin-top: -8px;"></p>
+    <div class="row">
+      <label class="field">Part <select id="midi-part"></select></label>
+      <label class="field">Into <select id="midi-seq"></select></label>
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <label class="field">Start at note <input type="number" id="midi-from" min="1" value="1"></label>
+      <label class="field">Number of notes <input type="number" id="midi-count" min="1" max="64" value="32"></label>
+      <label class="field">Snap to <select id="midi-grid"></select></label>
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <label class="field">Plays <select id="midi-mode"></select></label>
+      <label class="check" id="midi-tempo-label" style="min-height: 44px;"><input type="checkbox" id="midi-tempo"> <span></span></label>
+    </div>
+    <div id="midi-preview" aria-live="polite"></div>
+    <p class="hint" style="margin: 0 0 12px;">Chords keep their top note, so a sequence plays the melody. Note lengths are kept when it plays in time.</p>
+    <div class="row">
+      <button value="import" class="primary" id="midi-ok">Import</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="switchcraft.js"></script>
 <script src="synth.js"></script>
@@ -626,15 +665,31 @@ function renderSteps(focusIndex = null) {
       q.notes[i] = sel.value === 'rest' ? null : Number(sel.value);
       seqChanged();
     });
+    // Length in steps (from imported tunes), when it plays in time.
+    let len = null;
+    if (q.mode === 'clock') {
+      len = el('select', { className: 'len' });
+      len.setAttribute('aria-label', `Note ${i + 1} length in steps`);
+      const value = (q.lengths && q.lengths[i]) || 1;
+      options(len, withValue([1, 2, 3, 4, 6, 8, 12, 16].map((v) => [v, `× ${v}`]), value, `× ${value}`), value);
+      len.disabled = !editable;
+      len.addEventListener('change', () => {
+        q.lengths = q.lengths || q.notes.map(() => 1);
+        q.lengths[i] = Number(len.value);
+        if (q.lengths.every((v) => v === 1)) delete q.lengths;
+        changed();
+      });
+    }
     const remove = el('button', { type: 'button', textContent: '✕', className: 'remove' });
     remove.setAttribute('aria-label', `Remove note ${i + 1}`);
     remove.disabled = !editable;
     remove.addEventListener('click', () => {
       q.notes.splice(i, 1);
+      if (q.lengths) q.lengths.splice(i, 1);
       renderSteps(Math.min(i, q.notes.length - 1));
       seqChanged();
     });
-    return el('div', { className: 'step' }, el('span', { textContent: String(i + 1) }), sel, remove);
+    return el('div', { className: 'step' }, el('span', { textContent: String(i + 1) }), sel, remove, ...(len ? [len] : []));
   }));
   // Keep keyboard focus in place after removing a note.
   if (focusIndex !== null) {
@@ -1210,7 +1265,7 @@ function buildStatic() {
     const q = seq();
     q.mode = $('seq-mode').value;
     if (q.mode === 'clock' && q.gate === 0) q.gate = 80;  // "until the next note" is press-only
-    renderSeq();
+    renderSeq();  // (also shows or hides the step lengths)
     seqChanged();
   });
   $('seq-type').addEventListener('change', () => {
@@ -1226,6 +1281,7 @@ function buildStatic() {
     const q = seq();
     if (q.notes.length >= S.MAX_FORM_STEPS) return;
     q.notes.push(note);
+    if (q.lengths) q.lengths.push(1);
     renderSteps();
     seqChanged();
   };
@@ -1302,6 +1358,7 @@ function buildStatic() {
   for (const id of ['seq-hits', 'seq-esteps', 'seq-rotate']) $(id).addEventListener('change', rhythmInput);
   $('clear-steps').addEventListener('click', () => {
     seq().notes = [];
+    delete seq().lengths;
     renderSteps();
     seqChanged();
     $('add-note').focus();
@@ -1380,6 +1437,18 @@ function buildStatic() {
   $('slot').addEventListener('change', () => switchSlot(Number($('slot').value)));
   $('replace').addEventListener('click', () => replaceWithForm(S.defaultForm()));
   $('save-file').addEventListener('click', saveFile);
+  // MIDI file import
+  for (const id of ['import-midi', 'import-midi-blocks']) $(id).addEventListener('click', () => $('midi-input').click());
+  $('midi-input').addEventListener('change', async () => {
+    const file = $('midi-input').files[0];
+    $('midi-input').value = '';
+    if (file) await openMidiFile(file);
+  });
+  for (const id of ['midi-part', 'midi-from', 'midi-count', 'midi-grid', 'midi-mode'])
+    $(id).addEventListener('input', midiPreview);
+  $('midi-dialog').addEventListener('close', () => {
+    if ($('midi-dialog').returnValue === 'import') importMidi();
+  });
   $('open-file').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', async () => {
     const file = $('file-input').files[0];
@@ -1686,6 +1755,88 @@ function loadBlocks(table, state = null) {
   }
   ws.scroll(0, 0);
   showProblems(SwitchcraftBlocks.compile(ws).problems);
+}
+
+// --- MIDI file import (priority item 7) ---
+
+let midiFile = null;   // parsed file
+let midiParts = [];
+
+function midiOptions() {
+  const part = midiParts[Number($('midi-part').value)];
+  const from = Math.max(1, Math.round(Number($('midi-from').value) || 1)) - 1;
+  const count = Math.max(1, Math.min(S.MAX_FORM_STEPS, Math.round(Number($('midi-count').value) || 32)));
+  const mode = $('midi-mode').value;
+  // A rest in a press-mode sequence would be a press that plays nothing.
+  return { part, from, count, division: Number($('midi-grid').value), mode, rests: mode === 'clock' };
+}
+
+function midiPreview() {
+  const o = midiOptions();
+  const seq = S.midiToSequence(o.part.notes, midiFile.ppq, o);
+  const shown = seq.notes.map((n, i) => {
+    const name = n === null ? '–' : S.noteName(n);
+    return o.mode === 'clock' && seq.lengths[i] > 1 ? `${name}×${seq.lengths[i]}` : name;
+  });
+  const notes = seq.notes.filter((n) => n !== null).length;
+  $('midi-preview').textContent = seq.notes.length
+    ? `${notes} notes, ${seq.notes.length} steps${seq.truncated ? ' (cut at 64 steps)' : ''}:\n${shown.join('  ')}`
+    : 'No notes here: try starting earlier.';
+  $('midi-ok').disabled = !seq.notes.length;
+  return seq;
+}
+
+async function openMidiFile(file) {
+  try {
+    if (file.size > 2_000_000) throw new Error('This file is too big for a sequence.');
+    midiFile = S.parseMidiFile(new Uint8Array(await file.arrayBuffer()));
+    midiParts = S.midiParts(midiFile);
+    if (!midiParts.length) throw new Error('This MIDI file has no notes.');
+  } catch (e) {
+    setSave(e.message, true);
+    return;
+  }
+  $('midi-file').textContent = file.name;
+  // Tuned parts before drums, then most notes first: usually the tune.
+  const order = midiParts.map((p, i) => i).sort((a, b) =>
+    midiParts[a].drums - midiParts[b].drums || midiParts[b].notes.length - midiParts[a].notes.length);
+  options($('midi-part'), order.map((i) => [i, `${midiParts[i].name} (${midiParts[i].notes.length} notes)`]), order[0]);
+  options($('midi-seq'), SEQ_NAMES.map((n, id) => [id, `Sequence ${n}${(view === 'form' ? form.sequences[id].notes.length : 0) ? ' (replaces it)' : ''}`]), currentSeq);
+  options($('midi-grid'), [[3, 'Thirty-second notes'], [6, 'Sixteenth notes'], [12, 'Eighth notes'], [24, 'Beats']], 6);
+  options($('midi-mode'), [['press', 'One note per press'], ['clock', 'By itself, in time']], 'press');
+  $('midi-from').value = 1;
+  $('midi-count').value = 32;
+  $('midi-tempo-label').hidden = !midiFile.bpm;
+  $('midi-tempo').checked = false;
+  $('midi-tempo-label').querySelector('span').textContent = midiFile.bpm ? `Use the file’s tempo (${midiFile.bpm} BPM)` : '';
+  midiPreview();
+  $('midi-dialog').showModal();
+}
+
+function importMidi() {
+  const o = midiOptions();
+  const seq = midiPreview();
+  const id = Number($('midi-seq').value);
+  const q = {
+    ...S.defaultSequence(), mode: o.mode, noteType: 'fixed', notes: seq.notes, order: 'written',
+    division: o.division, gate: o.mode === 'press' ? 0 : 90,
+    lengths: o.mode === 'clock' && seq.lengths.some((v) => v > 1) ? seq.lengths : undefined,
+  };
+  if (q.lengths === undefined) delete q.lengths;
+  const bpm = $('midi-tempo').checked && midiFile.bpm ? Math.min(240, Math.max(40, midiFile.bpm)) : null;
+  if (view === 'blocks' && ws) {
+    const table = SwitchcraftBlocks.compile(ws).table;
+    table.sequences = [...table.sequences.filter((t) => t.id !== id), S.sequenceToTable(q, id)].sort((a, b) => a.id - b.id);
+    if (bpm) table.globals.tempo = Math.round(bpm * 10);
+    loadBlocks(table);
+  } else {
+    form.sequences[id] = q;
+    if (bpm) form.tempo = Math.round(bpm * 10);
+    currentSeq = id;
+    renderAll();
+  }
+  changed();
+  setSave(`Imported ${seq.notes.filter((n) => n !== null).length} notes into sequence ${SEQ_NAMES[id]}`);
 }
 
 // --- Preset files ---

@@ -250,7 +250,8 @@
   const ORDERS = ['written', 'up', 'down', 'updown', 'random'];
   const WAVES = ['sine', 'triangle', 'saw', 'square', 'random'];
   const MOD_OUTPUTS = ['cc', 'bend', 'pressure'];
-  const MAX_FORM_STEPS = 32;
+  const MAX_FORM_STEPS = 64;
+  const MAX_STEP_LENGTH = 127;  // steps (spec B.6 step byte 2)
   const SEQ_ACTIONS = { 'seq-play': ACT.SEQ_RUN, 'seq-step': ACT.SEQ_STEP, 'seq-restart': ACT.SEQ_RESET };
   const MOD_ACTIONS = { 'mod-run': ACT.MOD_RUN, 'mod-stop': ACT.MOD_STOP };
 
@@ -294,6 +295,24 @@
     return f.sequences[id] && f.sequences[id].notes.length > 0;
   }
 
+  // One form sequence as a table sequence (spec B.6).
+  function sequenceToTable(q, id) {
+    return {
+      id, advance: q.mode === 'clock' ? 1 : 0, order: ORDERS.indexOf(q.order),
+      octaves: q.octaves, channel: DEFAULT, velocity: 0, division: q.division,
+      // Clock mode needs a length; "until the next note" only exists in press mode.
+      gate: q.mode === 'clock' && q.gate === 0 ? 100 : q.gate,
+      noteMode: q.noteType === 'scale' ? 1 : 0,
+      steps: q.notes.map((n, i) => {
+        const length = (q.lengths && q.lengths[i]) || 1;
+        return n === null
+          ? { note: 0, velocity: 0, rest: true, length }
+          : { note: n, velocity: 0, rest: false, length };
+      }),
+      euclid: q.mode === 'clock' && q.rhythm ? { ...q.rhythm } : null,
+    };
+  }
+
   function tableFromForm(f) {
     const rules = [];
     f.switches.forEach((s, i) => {
@@ -324,18 +343,7 @@
     });
     const sequences = [];
     (f.sequences || []).forEach((q, id) => {
-      if (!q.notes.length) return;
-      sequences.push({
-        id, advance: q.mode === 'clock' ? 1 : 0, order: ORDERS.indexOf(q.order),
-        octaves: q.octaves, channel: DEFAULT, velocity: 0, division: q.division,
-        // Clock mode needs a length; "until the next note" only exists in press mode.
-        gate: q.mode === 'clock' && q.gate === 0 ? 100 : q.gate,
-        noteMode: q.noteType === 'scale' ? 1 : 0,
-        steps: q.notes.map((n) => (n === null
-          ? { note: 0, velocity: 0, rest: true, length: 1 }
-          : { note: n, velocity: 0, rest: false, length: 1 })),
-        euclid: q.mode === 'clock' && q.rhythm ? { ...q.rhythm } : null,
-      });
+      if (q.notes.length) sequences.push(sequenceToTable(q, id));
     });
     const modulators = [];
     (f.modulators || []).forEach((m, id) => {
@@ -373,11 +381,13 @@
     for (const q of table.sequences || []) {
       const simple = q.id < 4 && q.channel === DEFAULT && q.velocity === 0 &&
         q.steps.length <= MAX_FORM_STEPS &&
-        q.steps.every((st) => st.velocity === 0 && st.length <= 1);
+        q.steps.every((st) => st.velocity === 0);
       if (!simple) return { reason: 'its sequences use settings the form doesn’t show' };
       f.sequences[q.id] = {
         mode: q.advance ? 'clock' : 'press', noteType: q.noteMode ? 'scale' : 'fixed',
         notes: q.steps.map((st) => (st.rest ? null : st.note)),
+        // Step lengths (from imported tunes): only kept when some step is longer than 1.
+        lengths: q.steps.some((st) => st.length > 1) ? q.steps.map((st) => st.length || 1) : undefined,
         order: ORDERS[q.order], octaves: q.octaves, division: q.division, gate: q.gate,
         rhythm: q.euclid ? { ...q.euclid } : null,
       };
@@ -552,6 +562,139 @@
       },
     },
   ];
+
+  // --- MIDI files (priority item 7) ---
+  // Standard MIDI files, format 0 or 1. Returns {ppq, bpm (or null), tracks:
+  // [{name, notes: [{start, end, note, velocity, channel}]}]}. Times in file ticks.
+
+  function parseMidiFile(bytes) {
+    const fail = (msg) => { throw new Error(msg); };
+    const u32 = (p) => ((bytes[p] << 24) | (bytes[p + 1] << 16) | (bytes[p + 2] << 8) | bytes[p + 3]) >>> 0;
+    const tag = (p) => String.fromCharCode(...bytes.subarray(p, p + 4));
+    if (bytes.length < 14 || tag(0) !== 'MThd') fail('This isn’t a MIDI file.');
+    const ntracks = (bytes[10] << 8) | bytes[11];
+    const division = (bytes[12] << 8) | bytes[13];
+    if (division & 0x8000) fail('This MIDI file uses SMPTE timing, which isn’t supported.');
+    if (!division) fail('This MIDI file is damaged.');
+    const headerLength = u32(4);
+    if (headerLength < 6 || 8 + headerLength > bytes.length) fail('This MIDI file is damaged.');
+    let pos = 8 + headerLength;
+    let tempo = null;
+    const tracks = [];
+    for (let t = 0; t < ntracks && pos + 8 <= bytes.length; t++) {
+      const id = tag(pos);
+      const start = pos + 8;
+      const end = Math.min(bytes.length, start + u32(pos + 4));
+      pos = end;
+      if (id !== 'MTrk') continue;
+      let p = start, tick = 0, status = 0, name = '';
+      const open = new Map();  // channel * 128 + note -> [{start, velocity}], oldest first
+      const notes = [];
+      const vlq = () => {
+        let v = 0, b;
+        do { b = bytes[p++]; v = (v << 7) | (b & 0x7f); } while (b & 0x80 && p < end);
+        return v;
+      };
+      const close = (ch, note, at) => {
+        const list = open.get(ch * 128 + note);
+        if (!list || !list.length) return;
+        const on = list.shift();
+        notes.push({ start: on.start, end: Math.max(at, on.start), note, velocity: on.velocity, channel: ch });
+      };
+      while (p < end) {
+        tick += vlq();
+        let st = bytes[p];
+        if (st & 0x80) {
+          p++;
+          if (st < 0xf0) status = st;
+        } else {
+          if (!status) fail('This MIDI file is damaged.');
+          st = status;  // running status: this is a data byte
+        }
+        if (st === 0xff) {
+          const type = bytes[p++];
+          const len = vlq();
+          if (type === 0x03 && !name) name = String.fromCharCode(...bytes.subarray(p, p + len)).replace(/[^\x20-\x7e]/g, '').trim();
+          if (type === 0x51 && tempo === null && len === 3) tempo = (bytes[p] << 16) | (bytes[p + 1] << 8) | bytes[p + 2];
+          p += len;
+          if (type === 0x2f) break;
+        } else if (st === 0xf0 || st === 0xf7) {
+          p += vlq();
+        } else {
+          const kind = st & 0xf0, ch = st & 0x0f;
+          const d1 = bytes[p++];
+          const d2 = kind === 0xc0 || kind === 0xd0 ? 0 : bytes[p++];
+          if (kind === 0x90 && d2 > 0) {
+            const key = ch * 128 + d1;
+            if (!open.has(key)) open.set(key, []);
+            open.get(key).push({ start: tick, velocity: d2 });
+          } else if (kind === 0x80 || kind === 0x90) {
+            close(ch, d1, tick);
+          }
+        }
+      }
+      for (const [key, list] of open) while (list.length) close(Math.floor(key / 128), key % 128, tick);
+      notes.sort((a, b) => a.start - b.start || b.note - a.note);
+      tracks.push({ name, notes });
+    }
+    if (!tracks.length) fail('This MIDI file has no tracks.');
+    return { ppq: division, bpm: tempo ? Math.round(60e7 / tempo) / 10 : null, tracks };
+  }
+
+  // The parts to choose from: each track's notes, split by channel.
+  function midiParts(file) {
+    const parts = [];
+    file.tracks.forEach((t, i) => {
+      const channels = [...new Set(t.notes.map((n) => n.channel))].sort((a, b) => a - b);
+      for (const ch of channels) {
+        const notes = t.notes.filter((n) => n.channel === ch);
+        parts.push({
+          track: i, channel: ch, notes,
+          name: `${t.name || `Track ${i + 1}`}${channels.length > 1 ? `, channel ${ch + 1}` : ''}` +
+            `${ch === 9 && !/drum/i.test(t.name) ? ' (drums)' : ''}`,
+          drums: ch === 9,
+        });
+      }
+    });
+    return parts;
+  }
+
+  // One note at a time, snapped to a grid of `division` clock ticks (6 =
+  // sixteenths): chords keep their top note, notes keep their length, gaps
+  // become rests. `from` and `count` count notes (not rests). At most
+  // MAX_FORM_STEPS steps. With rests: false (stepping through a tune one
+  // press at a time) gaps are dropped. Returns {notes: [midi | null], lengths, truncated}.
+  function midiToSequence(notes, ppq, { division = 6, from = 0, count = MAX_FORM_STEPS, rests = true } = {}) {
+    const grid = (ppq * division) / 24;  // file ticks per step
+    const onsets = new Map();
+    for (const n of notes) {
+      const g = Math.round(n.start / grid);
+      const endG = Math.max(g + 1, Math.round(n.end / grid));
+      const was = onsets.get(g);
+      if (!was || n.note > was.note) onsets.set(g, { g, note: n.note, endG });
+    }
+    const events = [...onsets.values()].sort((a, b) => a.g - b.g).slice(from, from + count);
+    const out = { notes: [], lengths: [], truncated: false };
+    const push = (note, length) => {
+      if (out.notes.length >= MAX_FORM_STEPS) {
+        out.truncated = true;
+        return;
+      }
+      out.notes.push(note);
+      out.lengths.push(Math.max(1, Math.min(MAX_STEP_LENGTH, length)));
+    };
+    events.forEach((e, i) => {
+      const next = events[i + 1];
+      if (!next) return push(e.note, e.endG - e.g);
+      const sounding = Math.min(e.endG, next.g) - e.g;
+      const gap = next.g - e.g - sounding;
+      // A short gap is just phrasing (a note played a little short), not a rest.
+      const restAfter = rests && gap >= 1 && gap * 2 >= sounding;
+      push(e.note, restAfter ? sounding : next.g - e.g);
+      if (restAfter) push(null, gap);
+    });
+    return out;
+  }
 
   // --- Preset files ---
   // A JSON file holding the rule table (hex, exactly what the board runs) and
@@ -757,6 +900,7 @@
     NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING, DEFAULT_CALIBRATION,
     encode, decode, crc32, noteName, degreeToNote,
     ORDERS, MAX_FORM_STEPS, TEMPLATES, euclidHits, WAVES, defaultModulator,
+    parseMidiFile, midiParts, midiToSequence, sequenceToTable,
     presetFile, readPresetFile, presetFileName,
     buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,
     tableFromForm, formFromTable,

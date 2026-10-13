@@ -116,6 +116,7 @@
   // --- Sequence notes as text ---
   // Scale steps: 1 = the key note, 2 = the next note up... and -1 = the note
   // below the key note. Fixed notes: names like C4, F♯3, Bb2. Rests: "-".
+  // A note or rest can last several steps: "C4:2", "-:3" (from MIDI files).
 
   const NAME_RE = /^([A-Ga-g])([#♯b♭]?)(-?\d)?$/;
   const PITCH = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
@@ -137,13 +138,19 @@
     return best;
   }
 
-  // Returns {notes} or {error}. notes: degrees or MIDI notes, null = rest.
+  // Returns {notes, lengths} or {error}. notes: degrees or MIDI notes, null = rest.
   function parseNotes(text, type, settings = DEFAULT_SETTINGS) {
     const tokens = String(text).trim().split(/[\s,]+/).filter(Boolean);
     if (!tokens.length) return { error: 'Add some notes.' };
     if (tokens.length > MAX_NOTES) return { error: `At most ${MAX_NOTES} notes.` };
     const notes = [];
-    for (const tok of tokens) {
+    const lengths = [];
+    for (let tok of tokens) {
+      const m = /^(.*):(\d+)$/.exec(tok);
+      const length = m ? Number(m[2]) : 1;
+      if (m) tok = m[1];
+      if (length < 1 || length > 127) return { error: `“${tok}:${length}”: a length is 1 to 127 steps.` };
+      lengths.push(length);
       if (/^(-|\.|r|rest)$/i.test(tok)) {
         notes.push(null);
       } else if (type === 'scale' && /^-?\d+$/.test(tok)) {
@@ -158,14 +165,13 @@
         notes.push(type === 'scale' ? nearestDegree(midi, settings) : midi);
       }
     }
-    return { notes };
+    return { notes, lengths };
   }
 
-  function formatNotes(notes, type) {
-    return notes.map((n) => {
-      if (n === null) return '-';
-      if (type === 'scale') return String(n >= 0 ? n + 1 : n);
-      return S.noteName(n);
+  function formatNotes(notes, type, lengths = []) {
+    return notes.map((n, i) => {
+      const name = n === null ? '-' : type === 'scale' ? String(n >= 0 ? n + 1 : n) : S.noteName(n);
+      return lengths[i] > 1 ? `${name}:${lengths[i]}` : name;
     }).join(' ');
   }
 
@@ -323,7 +329,7 @@
         const block = this.getSourceBlock();
         const type = block.getFieldValue('NOTE_TYPE');
         const r = parseNotes(text, type, settingsOf(block.workspace));
-        return r.error ? text : formatNotes(r.notes, type);
+        return r.error ? text : formatNotes(r.notes, type, r.lengths);
       });
     };
   }
@@ -562,7 +568,7 @@
     if (mode === 'clock' && gate === 0) gate = 100;  // "until the next note" is press-only
     const steps = parsed.notes.map((n, i) => {
       const extra = (data.steps && data.steps[i]) || {};
-      return { note: n === null ? 0 : n, rest: n === null, velocity: extra.velocity || 0, length: extra.length || 1 };
+      return { note: n === null ? 0 : n, rest: n === null, velocity: extra.velocity || 0, length: parsed.lengths[i] };
     });
     let euclid = null;
     if (block.getFieldValue('RHYTHM') === 'euclid') {
@@ -682,12 +688,13 @@
   function sequenceState(q) {
     const type = q.noteMode ? 'scale' : 'fixed';
     const notes = q.steps.map((st) => (st.rest ? null : st.note));
-    const stepExtras = q.steps.map((st) => (st.velocity || st.length > 1 ? { velocity: st.velocity, length: st.length } : null));
+    const lengths = q.steps.map((st) => st.length || 1);
+    const stepExtras = q.steps.map((st) => (st.velocity ? { velocity: st.velocity } : null));
     return stateWithData({
       type: 'sc_sequence_def',
       fields: {
         SEQ: String(q.id), MODE: q.advance ? 'clock' : 'press', NOTE_TYPE: type,
-        NOTES: formatNotes(notes, type), ORDER: S.ORDERS[q.order], OCTAVES: String(q.octaves),
+        NOTES: formatNotes(notes, type, lengths), ORDER: S.ORDERS[q.order], OCTAVES: String(q.octaves),
         SPEED: SPEEDS.has(String(q.division)) ? String(q.division) : 'custom', LENGTH: q.gate,
         RHYTHM: q.euclid ? 'euclid' : 'all',
         HITS: q.euclid ? q.euclid.hits : 3, STEPS: q.euclid ? q.euclid.steps : 8,
