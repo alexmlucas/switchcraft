@@ -5,6 +5,7 @@
 #include "board.h"
 #include "config.h"
 #include "midi.h"
+#include "modulators.h"
 #include "protocol.h"
 #include "slots.h"
 
@@ -209,6 +210,7 @@ static void seq_note_off(seq_rt_t *s) {
     if (s->sounding) {
         note_off(s->snd_ch, s->snd_note);
         s->sounding = false;
+        mods_seq_note((int)(s - seqs), false);
     }
 }
 
@@ -249,6 +251,7 @@ static void seq_play_step(int i, uint8_t owner) {
     uint8_t vel = st[1] ? st[1] : resolve_vel(d->velocity);
     note_on(s->snd_ch, s->snd_note, vel);
     s->sounding = true;
+    mods_seq_note(i, true);
     s->off_by_tick = false;
     s->off_us = 0;
     s->step_owner = NO_OWNER;
@@ -362,7 +365,7 @@ static void do_action(uint8_t ri, uint8_t value, uint8_t owner, bool from_queue)
     // A held note or sequence whose switch was released before the beat.
     if (from_queue && owner != NO_OWNER && !pressed[owner] &&
         (r->flags & GATE_MASK) == GATE_HOLD &&
-        (r->act_type == ACT_NOTE || r->act_type == ACT_SEQ_RUN))
+        (r->act_type == ACT_NOTE || r->act_type == ACT_SEQ_RUN || r->act_type == ACT_MOD_RUN))
         return;
 
     int i;
@@ -408,6 +411,16 @@ static void do_action(uint8_t ri, uint8_t value, uint8_t owner, bool from_queue)
         if (r->p2)
             mask = r->p2;
         break;
+    case ACT_MOD_RUN: {
+        uint8_t gate = r->flags & GATE_MASK;
+        if (gate == GATE_HOLD && owner == NO_OWNER)
+            gate = GATE_ONESHOT;
+        mods_run(r->p0, gate, owner, tick);
+        break;
+    }
+    case ACT_MOD_STOP:
+        mods_stop(r->p0);
+        break;
     case ACT_PRESET:
         // Applied after the current event, since loading replaces the table.
         pending_preset_mode = r->p0;
@@ -441,6 +454,7 @@ static void release_owned(uint8_t input) {
         else if (s->sounding && s->step_owner == input)
             seq_note_off(s);
     }
+    mods_release_owned(input);
 }
 
 void engine_input(uint8_t input, bool down, uint64_t now) {
@@ -569,6 +583,10 @@ void engine_task(uint64_t now) {
         if (seqs[i].sounding && seqs[i].off_us && now >= seqs[i].off_us)
             seq_note_off(&seqs[i]);
 
+    // Synced LFOs follow the clock between ticks too.
+    float frac = 1.0f - (float)(int64_t)(next_tick_us - now) / (float)tick_us;
+    mods_task(now, (float)tick + (frac < 0 ? 0 : frac > 1 ? 1 : frac));
+
     if (pending_preset_mode >= 0)
         apply_pending_preset();
 }
@@ -588,6 +606,7 @@ static void silence(void) {
 
 void engine_all_notes_off(void) {
     silence();
+    mods_silence();
     for (uint8_t ch = 0; ch < 16; ch++)
         midi_cc(ch, 123, 0);
 }
@@ -640,6 +659,7 @@ void engine_load(const table_t *t, bool live) {
             s->next_tick = keep[i].next_tick;
         }
     }
+    mods_load(t, live);
     if (!live)
         fire(TRIG_LOAD, 0, 0, NO_OWNER);  // an edit isn't the preset starting
 }

@@ -98,8 +98,10 @@ Payload columns below show the **decoded** bytes.
      definition. Notes from `NOTE` actions get note-offs; **clock-mode
      sequences that are playing keep playing** (same position, gate mode and
      owner) if the new table still defines them in clock mode, so a new
-     rhythm or tempo can be heard live; other sequences stop. Transpose is
-     kept; the key and scale come from the new table. `LOAD` rules don't
+     rhythm or tempo can be heard live; other sequences stop. Running
+     modulators (B.6.2) likewise keep running if the new table still has
+     them with the same type. Transpose is kept; the key and scale come from
+     the new table. `LOAD` rules don't
      fire, since the preset didn't start.
    - **Restart** (bit 1 set): as if the slot had just been loaded. Everything
      stops, runtime state (transpose, scale changes) resets to the table's
@@ -296,7 +298,7 @@ section …
 | 0x03 | `SEQUENCE` | no, up to 4 | v1 |
 | 0x10 | `EDITOR` | no | v1, ignored by firmware (B.7) |
 | 0x04 | `EUCLID` | no, one per sequence | v1 (firmware 0.4.0), B.6.1 |
-| 0x05 | `MODULATOR` | | reserved, priority 5 |
+| 0x05 | `MODULATOR` | no, up to 4 | v1 (firmware 0.5.0), B.6.2 |
 
 The firmware **rejects** a blob with an unknown section ID below 0x10 and
 **skips** unknown IDs from 0x10 up. So adding editor-only data later never
@@ -375,13 +377,13 @@ trigger matches an event fires (no "first match wins").
 
 #### Actions
 
-**Gate modes** (bits 0–1 of `action_flags`, used by `NOTE` and `SEQ_RUN`):
+**Gate modes** (bits 0–1 of `action_flags`, used by `NOTE`, `SEQ_RUN` and `MOD_RUN`):
 
 | Value | Mode | Behaviour |
 |---|---|---|
 | 0 | `HOLD` | On until the triggering input is released (with `PRESS` or `HOLD` triggers; with any other trigger it behaves as `ONESHOT`) |
 | 1 | `LATCH` | Each firing toggles on/off |
-| 2 | `ONESHOT` | On for a fixed time (`NOTE`: p3 ms; `SEQ_RUN`: one pass through the sequence) |
+| 2 | `ONESHOT` | On for a fixed time (`NOTE`: p3 ms; `SEQ_RUN`: one pass through the sequence; `MOD_RUN`: one LFO cycle, or an envelope's attack and decay then release) |
 
 Other `action_flags` bits:
 
@@ -408,7 +410,16 @@ Channel `0xFF` and velocity `0` mean "use the default from globals".
 | 0x20 | `TRANSPOSE` | mode: 0 = set, 1 = add | 0 | `i16` semitones, −48…48 (the running total is also kept within ±48) | 0 |
 | 0x21 | `SET_SCALE` | root 0–11, or `0xFF` = unchanged | 0 | scale_mask, or 0 = unchanged | 0 |
 | 0x30 | `PRESET` | mode: 0 = slot p1, 1 = next, 2 = previous | slot 0–7 | 0 | 0 |
-| 0x40–0x4F | | reserved: modulators (LFO/envelope start, stop, trigger) | | | |
+| 0x40 | `MOD_RUN` | modulator 0–3 | 0 | 0 | 0 |
+| 0x41 | `MOD_STOP` | modulator 0–3 | 0 | 0 | 0 |
+| 0x42–0x4F | | reserved: modulators | | | |
+
+**`MOD_RUN`** starts an LFO from the start of its cycle, or opens an
+envelope (attack, from wherever its value is now). Gate modes as for
+`SEQ_RUN`: `HOLD` runs while the input is held, `LATCH` toggles, `ONESHOT`
+runs one LFO cycle or an envelope's attack and decay followed by its
+release. **`MOD_STOP`** stops an LFO (it sends its “from” value) or releases
+an envelope.
 
 **Scale-degree notes.** Degree 0 is `12 * (base_octave + 1) + scale_root`.
 Positive degrees walk up through the set bits of `scale_mask`, wrapping into
@@ -484,6 +495,45 @@ lengths (step byte 2) are ignored in a rhythm: every position lasts one
 `division`. `ONESHOT` stops after one pass through the notes. On a
 press-mode sequence the section has no effect.
 
+#### B.6.2 `MODULATOR` section (0x05), 16 bytes
+
+A modulator generates a value that moves over time and sends it as a CC,
+pitch bend or channel pressure.
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | id | `u8` | 0–3, unique |
+| 1 | type | `u8` | 0 = LFO, 1 = envelope |
+| 2 | output | `u8` | 0 = CC, 1 = pitch bend, 2 = channel pressure |
+| 3 | controller | `u8` | 0–119, for output 0 (otherwise 0) |
+| 4 | channel | `u8` | 0–15, `0xFF` = default |
+| 5 | from | `u8` | 0–127: what the output sends at the bottom of the movement |
+| 6 | to | `u8` | 0–127: at the top. May be less than `from` (upside down). For pitch bend, 0–127 spans the whole bend range; 64 is the middle |
+| 7 | flags | `u8` | bit 0 `EXPONENTIAL`: curve the movement (value²); bit 1 `SYNCED` (LFO): `rate` is in clock ticks; bits 2–7 reserved, 0 |
+| 8 | LFO: wave / envelope: sustain | `u8` | LFO: 0 sine, 1 triangle, 2 saw (rising), 3 square, 4 random (a new random value each cycle). Envelope: sustain level 0–100 % |
+| 9 | LFO: reserved / envelope: follow | `u8` | LFO: 0. Envelope: sequence 0–3 whose notes open and close it, or `0xFF` = none |
+| 10 | LFO: rate / envelope: attack | `u16` | LFO free: speed in hundredths of a hertz, 1–2000 (0.01–20 Hz). LFO synced: clock ticks per cycle, 1–65535 (24 = one beat). Envelope: attack ms, 0–60000 |
+| 12 | LFO: reserved / envelope: decay | `u16` | Envelope: decay ms, 0–60000 |
+| 14 | LFO: reserved / envelope: release | `u16` | Envelope: release ms, 0–60000 |
+
+**Movement.** Each modulator has a value from 0 (bottom) to 1 (top). The
+output sends `from + (to − from) × value` (`value²` with `EXPONENTIAL`).
+
+- **LFO**, while running: sine and triangle start at the bottom; saw rises
+  from the bottom; square starts at the top. A free LFO's phase follows
+  time; a synced one follows the clock from when it was started.
+- **Envelope**: when opened it rises to 1 over `attack` (from its current
+  value, so retriggering doesn't jump), falls to `sustain` over `decay`, and
+  stays there while open. When closed it falls to 0 over `release`. Times are
+  for the full 0-to-1 range. With sustain 0 it's an AD envelope; with
+  sustain 100 and decay 0 it's an AR envelope, which with a held switch is a
+  press-driven sweep (up while held, down on release). If `follow` names a
+  sequence, each of that sequence's notes opens the envelope and its
+  note-off closes it.
+
+**Output** is updated at most 100 times a second, and only when the value
+sent would change. Pitch bend uses the full 14 bits.
+
 ### B.7 `EDITOR` section (0x10)
 
 Opaque bytes for the page: e.g. a compressed Blockly workspace or a template
@@ -505,9 +555,9 @@ offset into the blob and one of these reasons, if:
 | 0x04 | `GLOBALS` or `RULES` missing or duplicated |
 | 0x05 | unknown trigger type, or source out of range |
 | 0x06 | unknown action type, or a `PRESET` action on a `LOAD` trigger (it could chain loads forever) |
-| 0x07 | parameter out of range (channel, note, CC number, slot, root, mask without bit 0) |
-| 0x08 | action or `EUCLID` section refers to a sequence ID that isn't defined |
-| 0x09 | duplicate sequence ID, step_count out of range, or two `EUCLID` sections for one sequence |
+| 0x07 | parameter out of range (channel, note, CC number, slot, root, mask without bit 0, modulator fields) |
+| 0x08 | action, `EUCLID` or `MODULATOR` section refers to a sequence or modulator that isn't defined |
+| 0x09 | duplicate sequence or modulator ID, step_count out of range, or two `EUCLID` sections for one sequence |
 
 The page should run the same checks before sending and show them in the
 editor; the firmware check is the safety net. A table that fails at boot is

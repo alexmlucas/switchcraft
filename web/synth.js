@@ -1,7 +1,7 @@
 // Small Web Audio synth for auditioning the board's MIDI output in the page.
 // Built from the browser's own audio nodes, so it works from file:// with no
 // extra files. Per voice: two oscillators -> low-pass filter -> amplifier.
-//   CC 1  vibrato depth      CC 7   volume
+//   CC 1  vibrato depth      CC 7   volume   channel pressure: vibrato too
 //   CC 74 brightness         CC 120/123  all notes off
 //   pitch bend +/- 2 semitones
 // Plus a tempo-synced echo (delay) after the voices.
@@ -37,6 +37,7 @@
       this.order = [];          // voice keys, oldest first
       this.cc = { 1: 0, 7: 100, 74: 64 };
       this.bend = 0;            // -1..1
+      this.pressure = 0;        // 0..127
       this.volume = 0.8;        // page volume control, 0..1
       this.tempo = 120;         // BPM, for the echo
       // Echo: beats between repeats (0 = off), feedback 0..0.85, level 0..1.
@@ -142,6 +143,7 @@
       else if (type === 0x80 || type === 0x90) this.noteOff(ch, d[1]);
       else if (type === 0xb0) this.controller(d[1], d[2]);
       else if (type === 0xe0) this.pitchBend(((d[2] << 7) | d[1]) / 8192 - 1);
+      else if (type === 0xd0) this.channelPressure(d[1]);
     }
 
     noteOn(ch, note, vel) {
@@ -213,11 +215,21 @@
       if (!(cc in this.cc)) return;
       this.cc[cc] = value;
       const t = this.ctx.currentTime;
-      if (cc === 1) this.lfoDepth.gain.setTargetAtTime((value / 127) * VIBRATO_MAX_CENTS, t, 0.02);
+      if (cc === 1) this._applyVibrato();
       if (cc === 7) this._applyVolume();
       if (cc === 74)
         for (const v of this.voices.values())
           v.filter.frequency.setTargetAtTime(this._cutoff(v.note, v.sound), t, 0.02);
+    }
+
+    channelPressure(value) {
+      this.pressure = value;
+      this._applyVibrato();
+    }
+
+    _applyVibrato() {
+      const depth = Math.max(this.cc[1], this.pressure) / 127;
+      this.lfoDepth.gain.setTargetAtTime(depth * VIBRATO_MAX_CENTS, this.ctx.currentTime, 0.02);
     }
 
     pitchBend(amount) {

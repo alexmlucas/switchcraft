@@ -86,6 +86,44 @@ static bool load_sequence(const uint8_t *p, uint16_t len, uint16_t off, table_t 
     return true;
 }
 
+static bool load_modulator(const uint8_t *p, uint16_t len, uint16_t off, table_t *t,
+                           table_error_t *err) {
+    if (len != MODULATOR_LEN)
+        FAIL(off, INVALID_SECTION_BOUNDS);
+    uint8_t id = p[0];
+    if (id >= MAX_MODS || t->mods[id].defined)
+        FAIL(off, INVALID_SEQUENCE);
+    mod_def_t *m = &t->mods[id];
+    m->type = p[1];
+    m->output = p[2];
+    m->controller = p[3];
+    m->channel = p[4];
+    m->from = p[5];
+    m->to = p[6];
+    m->flags = p[7];
+    if (m->type > MOD_ENVELOPE || m->output > MOD_OUT_PRESSURE || m->controller > 119 ||
+        !valid_channel(m->channel) || m->from > 127 || m->to > 127 || (m->flags & MOD_FLAGS_RESERVED))
+        FAIL(off + 1, INVALID_PARAM);
+    if (m->type == MOD_LFO) {
+        m->wave = p[8];
+        m->rate = rd16(p + 10);
+        bool synced = m->flags & MOD_SYNCED;
+        if (m->wave > WAVE_RANDOM || m->rate < 1 || (!synced && m->rate > 2000))
+            FAIL(off + 8, INVALID_PARAM);
+    } else {
+        m->sustain = p[8];
+        m->follow = p[9];
+        m->attack = rd16(p + 10);
+        m->decay = rd16(p + 12);
+        m->release = rd16(p + 14);
+        if (m->sustain > 100 || m->attack > MOD_MAX_MS || m->decay > MOD_MAX_MS ||
+            m->release > MOD_MAX_MS || (m->follow != MOD_FOLLOW_NONE && m->follow >= MAX_SEQS))
+            FAIL(off + 8, INVALID_PARAM);
+    }
+    m->defined = true;
+    return true;
+}
+
 static bool seq_ref_ok(const table_t *t, uint8_t id, bool allow_selected) {
     if (id == SEQ_SELECTED)
         return allow_selected;
@@ -159,6 +197,11 @@ static bool check_rule(const table_t *t, const rule_t *r, uint16_t off, table_er
         if ((r->p0 > 11 && r->p0 != 0xFF) || (r->p2 != 0 && !valid_mask(r->p2)))
             FAIL(off + 6, INVALID_PARAM);
         break;
+    case ACT_MOD_RUN:
+    case ACT_MOD_STOP:
+        if (r->p0 >= MAX_MODS || !t->mods[r->p0].defined)
+            FAIL(off + 6, INVALID_SEQ_REF);
+        break;
     case ACT_PRESET:
         // LOAD -> PRESET could chain loads forever, writing flash each time.
         if (r->trig_type == TRIG_LOAD)
@@ -218,6 +261,10 @@ bool table_load(const uint8_t *blob, uint16_t len, table_t *out, table_error_t *
             if (!load_sequence(blob + body, slen, body, out, err))
                 return false;
             break;
+        case SECTION_MODULATOR:
+            if (!load_modulator(blob + body, slen, body, out, err))
+                return false;
+            break;
         case SECTION_EUCLID:
             if (slen != EUCLID_LEN)
                 FAIL(off, INVALID_SECTION_BOUNDS);
@@ -236,6 +283,14 @@ bool table_load(const uint8_t *blob, uint16_t len, table_t *out, table_error_t *
         FAIL(off, INVALID_SECTION_BOUNDS);
     if (!have_globals || !rules)
         FAIL(0, INVALID_REQUIRED_SECTION);
+
+    // Envelopes following a sequence need that sequence.
+    for (int i = 0; i < MAX_MODS; i++) {
+        const mod_def_t *m = &out->mods[i];
+        if (m->defined && m->type == MOD_ENVELOPE && m->follow != MOD_FOLLOW_NONE &&
+            !out->seqs[m->follow].defined)
+            FAIL(0, INVALID_SEQ_REF);
+    }
 
     for (int i = 0; i < euclid_count; i++) {
         const uint8_t *e = blob + euclid_off[i];

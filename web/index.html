@@ -286,6 +286,33 @@
     <p class="hint euclid-field" id="rhythm-hint">A euclidean rhythm spreads the hits as evenly as possible around the steps. Each hit plays the sequence’s next note; the other steps are rests. Changes are heard while it plays.</p>
   </section>
 
+  <section class="card form-only" aria-labelledby="mod-h">
+    <h2 id="mod-h">Modulation</h2>
+    <p class="hint" style="margin: -4px 0 12px;">Up to four things that move a controller, pitch bend or pressure by themselves: an <strong>LFO</strong> goes up and down over and over; an <strong>envelope</strong> rises and falls once each time it’s started. Then set a switch to run one.</p>
+    <div class="seq-picker" id="mod-picker" role="group" aria-label="Choose a modulator to edit"></div>
+    <div class="row">
+      <label class="field">Type <select id="mod-kind"></select></label>
+      <label class="field mod-on">Sends <select id="mod-output"></select></label>
+      <label class="field mod-on mod-cc">Controller <select id="mod-cc"></select></label>
+      <label class="field mod-on">From <input type="number" id="mod-from" min="0" max="127"></label>
+      <label class="field mod-on">To <input type="number" id="mod-to" min="0" max="127"></label>
+      <label class="field mod-on">Curve <select id="mod-curve"></select></label>
+    </div>
+    <div class="row mod-lfo" style="margin-top: 16px;">
+      <label class="field">Wave <select id="mod-wave"></select></label>
+      <label class="field">One cycle every <select id="mod-speed"></select></label>
+      <label class="field mod-free">Speed (times a second) <input type="number" id="mod-hz" min="0.01" max="20" step="0.01"></label>
+    </div>
+    <div class="row mod-env" style="margin-top: 16px;">
+      <label class="field">Attack (ms) <input type="number" id="mod-attack" min="0" max="60000" step="10"></label>
+      <label class="field">Decay (ms) <input type="number" id="mod-decay" min="0" max="60000" step="10"></label>
+      <label class="field">Sustain (%) <input type="number" id="mod-sustain" min="0" max="100"></label>
+      <label class="field">Release (ms) <input type="number" id="mod-release" min="0" max="60000" step="10"></label>
+      <label class="field">Follows <select id="mod-follow"></select></label>
+    </div>
+    <p class="hint mod-on" id="mod-hint"></p>
+  </section>
+
   <section class="card" id="blocks-card" aria-labelledby="blocks-h" hidden>
     <div class="row" style="justify-content: space-between; align-items: baseline;">
       <h2 id="blocks-h">Blocks</h2>
@@ -369,6 +396,7 @@ const SEQ_GATE_CHOICES = [['hold', 'Plays while held'], ['latch', 'Press start, 
 const ACTION_CHOICES = [
   ['scale', 'Scale note'], ['note', 'Fixed note'], ['transpose', 'Transpose'],
   ['seq-play', 'Play sequence'], ['seq-step', 'Step through sequence'], ['seq-restart', 'Restart sequence'],
+  ['mod-run', 'Run modulator'], ['mod-stop', 'Stop modulator'],
   ['none', 'Nothing'],
 ];
 
@@ -473,7 +501,17 @@ function seqLabel(id) {
   return `Sequence ${SEQ_NAMES[id]} (${countLabel(form.sequences[id].notes.length)})`;
 }
 
+const MOD_GATE_CHOICES = [['hold', 'Runs while held'], ['latch', 'Press start, press stop'], ['oneshot', 'Runs once']];
+const MOD_KIND_NAMES = { off: 'off', lfo: 'LFO', env: 'envelope' };
+
+function modLabel(id) {
+  return `Modulator ${id + 1} (${MOD_KIND_NAMES[form.modulators[id].kind]})`;
+}
+
 function switchWarning(s) {
+  if (s.action.startsWith('mod-'))
+    return form.modulators[s.mod].kind === 'off'
+      ? `Modulator ${s.mod + 1} is off, so this switch does nothing. Set it up under Modulation.` : '';
   if (!s.action.startsWith('seq-')) return '';
   const q = form.sequences[s.seq];
   const name = `Sequence ${SEQ_NAMES[s.seq]}`;
@@ -493,8 +531,8 @@ function renderSwitch(i) {
   const isNote = s.action === 'scale' || s.action === 'note';
   options(action, ACTION_CHOICES, s.action);
   value.hidden = s.action === 'none';
-  gate.hidden = !(isNote || s.action === 'seq-play');
-  beat.hidden = s.action !== 'seq-play';
+  gate.hidden = !(isNote || s.action === 'seq-play' || s.action === 'mod-run');
+  beat.hidden = s.action !== 'seq-play' && s.action !== 'mod-run';
   if (s.action === 'scale') {
     options(value, scaleNoteChoices(), s.degree);
     value.setAttribute('aria-label', `${SWITCH_LABEL(i)} note`);
@@ -508,10 +546,13 @@ function renderSwitch(i) {
   } else if (s.action.startsWith('seq-')) {
     options(value, SEQ_NAMES.map((_, id) => [id, seqLabel(id)]), s.seq);
     value.setAttribute('aria-label', `${SWITCH_LABEL(i)} sequence`);
+  } else if (s.action.startsWith('mod-')) {
+    options(value, [0, 1, 2, 3].map((id) => [id, modLabel(id)]), s.mod);
+    value.setAttribute('aria-label', `${SWITCH_LABEL(i)} modulator`);
   }
   if (isNote) options(gate, GATE_CHOICES, s.gate);
-  if (s.action === 'seq-play') {
-    options(gate, SEQ_GATE_CHOICES, s.gate);
+  if (s.action === 'seq-play' || s.action === 'mod-run') {
+    options(gate, s.action === 'seq-play' ? SEQ_GATE_CHOICES : MOD_GATE_CHOICES, s.gate);
     beat.querySelector('input').checked = !!s.onBeat;
   }
   const warn = tile.querySelector('.tile-warn');
@@ -660,6 +701,68 @@ function convertNotes(q, toType) {
   q.noteType = toType;
 }
 
+// --- Modulation editor ---
+
+let currentMod = 0;
+const LFO_SPEEDS = [
+  [384, '4 bars'], [192, '2 bars'], [96, 'Bar'], [48, 'Half note'], [24, 'Beat'],
+  [12, 'Eighth note'], [6, 'Sixteenth note'], ['free', 'Free (set below)'],
+];
+const MOD_CC_CHOICES = CC_CHOICES.filter(([v]) => v !== null);
+
+function renderModPicker() {
+  $('mod-picker').replaceChildren(...[0, 1, 2, 3].map((id) => {
+    const b = el('button', { type: 'button' },
+      `Modulator ${id + 1}`, el('small', { textContent: MOD_KIND_NAMES[form.modulators[id].kind] }));
+    b.setAttribute('aria-pressed', String(id === currentMod));
+    b.disabled = !editable;
+    b.addEventListener('click', () => {
+      currentMod = id;
+      renderModPicker();
+      renderMod();
+      $('mod-picker').children[id].focus();
+    });
+    return b;
+  }));
+}
+
+function renderMod() {
+  const m = form.modulators[currentMod];
+  options($('mod-kind'), [['off', 'Off'], ['lfo', 'LFO'], ['env', 'Envelope']], m.kind);
+  options($('mod-output'), [['cc', 'A controller'], ['bend', 'Pitch bend'], ['pressure', 'Channel pressure']], m.output);
+  options($('mod-cc'), withValue(MOD_CC_CHOICES, m.cc, `CC ${m.cc}`), m.cc);
+  $('mod-from').value = m.from;
+  $('mod-to').value = m.to;
+  options($('mod-curve'), [['linear', 'Straight'], ['exp', 'Curved']], m.exponential ? 'exp' : 'linear');
+  options($('mod-wave'), S.WAVES.map((w) => [w, w[0].toUpperCase() + w.slice(1)]), m.wave);
+  options($('mod-speed'), withValue(LFO_SPEEDS, m.synced ? m.rate : 'free', `${m.rate} ticks`), m.synced ? m.rate : 'free');
+  $('mod-hz').value = m.synced ? 1 : m.rate / 100;
+  $('mod-attack').value = m.attack;
+  $('mod-decay').value = m.decay;
+  $('mod-sustain').value = m.sustain;
+  $('mod-release').value = m.release;
+  options($('mod-follow'), [['none', 'No sequence'], ...SEQ_NAMES.map((n, id) => [id, `Notes of sequence ${n}`])],
+    m.follow === null ? 'none' : m.follow);
+  document.querySelectorAll('.mod-on').forEach((e) => { e.hidden = m.kind === 'off'; });
+  document.querySelectorAll('.mod-lfo').forEach((e) => { e.hidden = m.kind !== 'lfo'; });
+  document.querySelectorAll('.mod-env').forEach((e) => { e.hidden = m.kind !== 'env'; });
+  document.querySelectorAll('.mod-cc').forEach((e) => { e.hidden = m.kind === 'off' || m.output !== 'cc'; });
+  document.querySelectorAll('.mod-free').forEach((e) => { e.hidden = m.kind !== 'lfo' || m.synced; });
+  $('mod-hint').textContent = m.output === 'bend'
+    ? 'For pitch bend, 64 is the middle (no bend), 0 is fully down and 127 fully up.'
+    : m.kind === 'env'
+      ? 'With sustain 100 and a switch set to “Runs while held”, the envelope is a sweep: up while held, down when let go. With sustain 0 it rises and falls by itself.'
+      : '“From” is where it starts; set “To” lower than “From” to turn it upside down.';
+}
+
+// Modulator edits change the picker and the switches' labels and warnings too.
+function modChanged() {
+  renderModPicker();
+  renderMod();
+  for (let i = 0; i < S.NUM_INPUTS; i++) renderSwitch(i);
+  changed();
+}
+
 function renderAll() {
   $('name').value = form.name;
   $('root').value = String(form.root);
@@ -686,6 +789,8 @@ function renderAll() {
   form.analog.forEach((a, i) => { if (a.cc === null) $(`rev-${i}`).disabled = true; });
   renderSeqPicker();
   renderSeq();
+  renderModPicker();
+  renderMod();
 }
 
 function setEditable(on) {
@@ -750,6 +855,10 @@ function buildStatic() {
         else if (a === 'transpose') form.switches[i] = { action: a, semitones: i === 10 ? -12 : 12 };
         else if (a === 'seq-play') form.switches[i] = { action: a, seq: pick('clock'), gate: s.gate || 'hold', onBeat: false };
         else if (a === 'seq-step' || a === 'seq-restart') form.switches[i] = { action: a, seq: pick('press') };
+        else if (a === 'mod-run' || a === 'mod-stop') {
+          const used = [0, 1, 2, 3].find((id) => form.modulators[id].kind !== 'off') ?? currentMod;
+          form.switches[i] = a === 'mod-run' ? { action: a, mod: used, gate: s.gate || 'hold', onBeat: false } : { action: a, mod: used };
+        }
         else form.switches[i] = { action: 'none' };
         renderSwitch(i);
         changed();
@@ -760,6 +869,7 @@ function buildStatic() {
         if (s.action === 'scale') s.degree = v;
         else if (s.action === 'note') s.note = v;
         else if (s.action === 'transpose') s.semitones = v;
+        else if (s.action.startsWith('mod-')) s.mod = v;
         else s.seq = v;
         renderSwitch(i);
         changed();
@@ -904,6 +1014,49 @@ function buildStatic() {
     else addStep(last === undefined ? 60 : Math.min(last + 2, 96));
   });
   $('add-rest').addEventListener('click', () => addStep(null));
+  // Modulation editor
+  const mod = () => form.modulators[currentMod];
+  const clampInput = (id, lo, hi, fallback) => {
+    const v = Number($(id).value);
+    return $(id).value === '' || !Number.isFinite(v) ? fallback : Math.min(hi, Math.max(lo, v));
+  };
+  $('mod-kind').addEventListener('change', () => {
+    const kind = $('mod-kind').value;
+    // Keep where it sends; start from sensible timings for the new type.
+    const m = mod();
+    form.modulators[currentMod] = { ...S.defaultModulator(kind), output: m.output, cc: m.cc, from: m.from, to: m.to };
+    modChanged();
+  });
+  $('mod-output').addEventListener('change', () => {
+    const m = mod();
+    m.output = $('mod-output').value;
+    if (m.output === 'bend' && m.from === 0) m.from = 64;  // bend usually starts in the middle
+    modChanged();
+  });
+  $('mod-cc').addEventListener('change', () => { mod().cc = Number($('mod-cc').value); modChanged(); });
+  $('mod-from').addEventListener('change', () => { mod().from = Math.round(clampInput('mod-from', 0, 127, mod().from)); modChanged(); });
+  $('mod-to').addEventListener('change', () => { mod().to = Math.round(clampInput('mod-to', 0, 127, mod().to)); modChanged(); });
+  $('mod-curve').addEventListener('change', () => { mod().exponential = $('mod-curve').value === 'exp'; modChanged(); });
+  $('mod-wave').addEventListener('change', () => { mod().wave = $('mod-wave').value; modChanged(); });
+  $('mod-speed').addEventListener('change', () => {
+    const m = mod();
+    const v = $('mod-speed').value;
+    if (v === 'free') Object.assign(m, { synced: false, rate: 100 });
+    else Object.assign(m, { synced: true, rate: Number(v) });
+    modChanged();
+  });
+  $('mod-hz').addEventListener('change', () => {
+    mod().rate = Math.round(clampInput('mod-hz', 0.01, 20, mod().rate / 100) * 100);
+    modChanged();
+  });
+  for (const [id, key, hi] of [['mod-attack', 'attack', 60000], ['mod-decay', 'decay', 60000],
+    ['mod-sustain', 'sustain', 100], ['mod-release', 'release', 60000]])
+    $(id).addEventListener('change', () => { mod()[key] = Math.round(clampInput(id, 0, hi, mod()[key])); modChanged(); });
+  $('mod-follow').addEventListener('change', () => {
+    mod().follow = $('mod-follow').value === 'none' ? null : Number($('mod-follow').value);
+    modChanged();
+  });
+
   $('seq-rhythm').addEventListener('change', () => {
     seq().rhythm = $('seq-rhythm').value === 'euclid' ? { steps: 8, hits: 3, rotation: 0 } : null;
     renderRhythm();
@@ -1357,7 +1510,7 @@ async function openFile(file) {
 // Two columns using the blocks' real sizes: what the switches do on the
 // left, the preset settings and sequences on the right.
 function arrangeBlocks() {
-  const setup = ['sc_settings', 'sc_sequence_def'];
+  const setup = ['sc_settings', 'sc_sequence_def', 'sc_lfo_def', 'sc_envelope_def'];
   const columns = [[], []];
   for (const b of ws.getTopBlocks(true)) columns[setup.includes(b.type) ? 1 : 0].push(b);
   const gap = 24;

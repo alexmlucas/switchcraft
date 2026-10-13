@@ -79,7 +79,7 @@ TRIG = {"PRESS": 1, "RELEASE": 2, "HOLD": 3, "CLOCK": 4, "LOAD": 5, "ANALOG": 6,
 ACT = {
     "NONE": 0x00, "NOTE": 0x01, "CC": 0x02, "SEQ_STEP": 0x10, "SEQ_RUN": 0x11,
     "SEQ_STOP": 0x12, "SEQ_RESET": 0x13, "SEQ_SELECT": 0x14, "TRANSPOSE": 0x20,
-    "SET_SCALE": 0x21, "PRESET": 0x30,
+    "SET_SCALE": 0x21, "PRESET": 0x30, "MOD_RUN": 0x40, "MOD_STOP": 0x41,
 }
 GATE_HOLD, GATE_LATCH, GATE_ONESHOT = 0, 1, 2
 QUANTIZE, VALUE_FROM_TRIGGER, DEGREE, REVERSE = 0x04, 0x08, 0x10, 0x20
@@ -113,6 +113,24 @@ def sequence_section(seq_id, steps, advance=1, order=0, octaves=1, channel=DEFAU
     for s in steps:
         body += bytes([0, 0, 0x81]) if s is None else bytes([s & 0xFF, 0, 1])
     return section(0x03, body)
+
+
+WAVES = {"sine": 0, "triangle": 1, "saw": 2, "square": 3, "random": 4}
+OUTPUTS = {"cc": 0, "bend": 1, "pressure": 2}
+
+
+def modulator_section(mod_id, kind="lfo", output="cc", controller=0, channel=DEFAULT,
+                      low=0, high=127, exponential=False, synced=False, wave="sine", rate=100,
+                      sustain=100, follow=None, attack=0, decay=0, release=0):
+    """An LFO or envelope (spec B.6.2). LFO rate: hundredths of a Hz, or clock
+    ticks per cycle if synced. Envelope times in ms, sustain in %."""
+    flags = (1 if exponential else 0) | (2 if synced else 0)
+    head = bytes([mod_id, 0 if kind == "lfo" else 1, OUTPUTS[output], controller, channel, low, high, flags])
+    if kind == "lfo":
+        tail = struct.pack("<BBHHH", WAVES[wave], 0, rate, 0, 0)
+    else:
+        tail = struct.pack("<BBHHH", sustain, 0xFF if follow is None else follow, attack, decay, release)
+    return section(0x05, head + tail)
 
 
 def euclid_section(seq_id, steps, hits, rotation=0):
@@ -192,6 +210,18 @@ def describe(blob):
                 out.append(f"  rule {i:3}: {names.get(t, t)} {s}"
                            f"{f' ({a})' if a else ''} -> {acts.get(act, act)} "
                            f"flags {fl:#04x} p {p0} {p1} {p2} {p3}")
+        elif sid == 0x05:
+            kind = "LFO" if body[1] == 0 else "envelope"
+            target = [f"CC {body[3]}", "pitch bend", "channel pressure"][body[2]]
+            if body[1] == 0:
+                rate = struct.unpack_from("<H", body, 10)[0]
+                speed = f"{rate} ticks per cycle" if body[7] & 2 else f"{rate / 100:g} Hz"
+                wave = [k for k, v in WAVES.items() if v == body[8]][0]
+                detail = f"{wave}, {speed}"
+            else:
+                a, d, r = struct.unpack_from("<HHH", body, 10)
+                detail = f"A {a} ms, D {d} ms, S {body[8]}%, R {r} ms"
+            out.append(f"modulator {body[0]}: {kind} to {target} {body[5]}->{body[6]}, {detail}")
         elif sid == 0x04:
             pattern = "".join("x" if h else "." for h in euclid_hits(body[1], body[2], body[3]))
             out.append(f"euclid for sequence {body[0]}: {body[2]} hits in {body[1]} steps, "

@@ -18,7 +18,7 @@
 
   const COLOURS = {
     events: '#a35f00', sound: '#2a63c4', sequences: '#7240bd',
-    changes: '#1f7a50', setup: '#56616b',
+    changes: '#1f7a50', setup: '#56616b', modulation: '#0f6f7d',
   };
 
   const MAX_NOTES = 64;
@@ -60,6 +60,18 @@
   const MODE_OPTIONS = [['in time (arpeggio)', 'clock'], ['one note per press', 'press']];
   const NOTE_TYPE_OPTIONS = [['scale steps', 'scale'], ['fixed notes', 'fixed']];
   const SPEED_OPTIONS = DIVISION_OPTIONS.filter(([, v]) => v !== '96');
+  const MOD_OPTIONS = [['1', '0'], ['2', '1'], ['3', '2'], ['4', '3']];
+  const MOD_ACTION_OPTIONS = [
+    ['run while held', 'run-hold'], ['start / stop', 'run-latch'], ['run once', 'run-oneshot'], ['stop', 'stop'],
+  ];
+  const MOD_OUTPUT_OPTIONS = [['controller', 'cc'], ['pitch bend', 'bend'], ['channel pressure', 'pressure']];
+  const WAVE_OPTIONS = [['sine', 'sine'], ['triangle', 'triangle'], ['saw', 'saw'], ['square', 'square'], ['random', 'random']];
+  const LFO_SPEED_OPTIONS = [
+    ['4 bars', '384'], ['2 bars', '192'], ['bar', '96'], ['half note', '48'], ['beat', '24'],
+    ['eighth note', '12'], ['sixteenth note', '6'], ['free (Hz below)', 'free'], ['other', 'custom'],
+  ];
+  const CURVE_OPTIONS = [['straight', 'linear'], ['curved', 'exp']];
+  const FOLLOW_OPTIONS = [['no sequence', 'none'], ...SEQ_OPTIONS.map(([n, v]) => [`sequence ${n}`, v])];
   const PRESET_OPTIONS = [['next', 'next'], ['previous', 'previous'], ...range(0, 7).map((i) => [String(i + 1), String(i)])];
 
   // --- Block data (values not shown on the block) ---
@@ -220,6 +232,43 @@
       [dropdown('PRESET', PRESET_OPTIONS)],
       'Loads another preset slot from the board. Empty slots are skipped.'),
 
+    actionBlock('sc_modulator', COLOURS.modulation, 'modulator %1 %2 %3 on the beat',
+      [dropdown('MOD', MOD_OPTIONS), dropdown('ACTION', MOD_ACTION_OPTIONS),
+        { type: 'field_checkbox', name: 'BEAT', checked: false }],
+      'Starts or stops an LFO, or opens and closes an envelope. “Run once” plays one LFO cycle, or an envelope’s attack and decay then its release.'),
+    {
+      type: 'sc_lfo_def', colour: COLOURS.modulation,
+      message0: 'modulator %1 is an LFO',
+      args0: [dropdown('MOD', MOD_OPTIONS)],
+      message1: 'sends %1 %2 from %3 to %4',
+      args1: [dropdown('OUTPUT', MOD_OUTPUT_OPTIONS), dropdown('CC', CC_OPTIONS),
+        { type: 'field_number', name: 'FROM', value: 0, min: 0, max: 127, precision: 1 },
+        { type: 'field_number', name: 'TO', value: 127, min: 0, max: 127, precision: 1 }],
+      message2: 'wave %1 one cycle every %2',
+      args2: [dropdown('WAVE', WAVE_OPTIONS), dropdown('SPEED', LFO_SPEED_OPTIONS)],
+      message3: 'free speed %1 Hz  curve %2',
+      args3: [{ type: 'field_number', name: 'HZ', value: 1, min: 0.01, max: 20, precision: 0.01 },
+        dropdown('CURVE', CURVE_OPTIONS)],
+      tooltip: 'An LFO moves the output up and down over and over, in time with the tempo (or at a free speed in Hz). The controller number only matters when it sends a controller. For pitch bend, 64 is the middle.',
+    },
+    {
+      type: 'sc_envelope_def', colour: COLOURS.modulation,
+      message0: 'modulator %1 is an envelope',
+      args0: [dropdown('MOD', MOD_OPTIONS)],
+      message1: 'sends %1 %2 from %3 to %4',
+      args1: [dropdown('OUTPUT', MOD_OUTPUT_OPTIONS), dropdown('CC', CC_OPTIONS),
+        { type: 'field_number', name: 'FROM', value: 0, min: 0, max: 127, precision: 1 },
+        { type: 'field_number', name: 'TO', value: 127, min: 0, max: 127, precision: 1 }],
+      message2: 'attack %1 ms decay %2 ms',
+      args2: [{ type: 'field_number', name: 'ATTACK', value: 500, min: 0, max: 60000, precision: 1 },
+        { type: 'field_number', name: 'DECAY', value: 300, min: 0, max: 60000, precision: 1 }],
+      message3: 'sustain %1 %% release %2 ms',
+      args3: [{ type: 'field_number', name: 'SUSTAIN', value: 100, min: 0, max: 100, precision: 1 },
+        { type: 'field_number', name: 'RELEASE', value: 800, min: 0, max: 60000, precision: 1 }],
+      message4: 'curve %1 follows %2',
+      args4: [dropdown('CURVE', CURVE_OPTIONS), dropdown('FOLLOW', FOLLOW_OPTIONS)],
+      tooltip: 'An envelope rises to the top over the attack, falls to the sustain level over the decay, stays there while it’s open, then falls back over the release. With sustain 100 and a held switch it’s a sweep: up while held, down when let go. “Follows” opens it for each note of a sequence.',
+    },
     {
       type: 'sc_settings', colour: COLOURS.setup,
       message0: 'Preset settings',
@@ -300,6 +349,12 @@
         { kind: 'block', type: 'sc_sequence', fields: { SEQ: '0', ACTION: 'step' } },
         { kind: 'block', type: 'sc_select_sequence' },
       ] },
+      { kind: 'category', name: 'Modulation', colour: COLOURS.modulation, contents: [
+        { kind: 'block', type: 'sc_envelope_def' },
+        { kind: 'block', type: 'sc_lfo_def', fields: { CC: '1' } },
+        { kind: 'block', type: 'sc_modulator', fields: { ACTION: 'run-hold' } },
+        { kind: 'block', type: 'sc_modulator', fields: { ACTION: 'run-latch' } },
+      ] },
       { kind: 'category', name: 'Changes', colour: COLOURS.changes, contents: [
         { kind: 'block', type: 'sc_transpose' },
         { kind: 'block', type: 'sc_set_key', fields: { KEY: 'same', SCALE: String(0x05ad) } },
@@ -360,7 +415,7 @@
   }
 
   // One action block -> one rule (or null, with a problem noted).
-  function ruleOf(block, t, sequenceIds, warn) {
+  function ruleOf(block, t, sequenceIds, modulatorIds, warn) {
     const data = readData(block);
     const r = { trig: t.trig, src: t.src, arg: t.arg, act: ACT.NONE, flags: 0, p0: 0, p1: 0, p2: 0, p3: 0 };
     const extra = data.flags || 0;  // flag bits the block doesn't show
@@ -406,6 +461,21 @@
         Object.assign(r, { act: ACT.SEQ_SELECT, flags: extra, p0: id });
         return r;
       }
+      case 'sc_modulator': {
+        const id = Number(block.getFieldValue('MOD'));
+        if (!modulatorIds.has(id)) {
+          warn(block, `Modulator ${id + 1} isn’t set up yet. Add a “modulator ${id + 1} is an LFO” or “is an envelope” block.`);
+          return null;
+        }
+        const action = block.getFieldValue('ACTION');
+        const gate = { 'run-hold': GATE.hold, 'run-latch': GATE.latch, 'run-oneshot': GATE.oneshot }[action];
+        Object.assign(r, {
+          act: action === 'stop' ? ACT.MOD_STOP : ACT.MOD_RUN,
+          flags: (action === 'stop' ? 0 : gate) | (block.getFieldValue('BEAT') === 'TRUE' ? FLAG.QUANTIZE : 0) | extra,
+          p0: id,
+        });
+        return r;
+      }
       case 'sc_transpose':
         Object.assign(r, {
           act: ACT.TRANSPOSE, flags: extra, p0: Number(block.getFieldValue('MODE')),
@@ -436,6 +506,42 @@
       default:
         return null;
     }
+  }
+
+  const OUTPUT_INDEX = { cc: 0, bend: 1, pressure: 2 };
+
+  function modulatorOf(block, sequenceIds, warn) {
+    const data = readData(block);
+    const output = block.getFieldValue('OUTPUT');
+    const m = {
+      id: Number(block.getFieldValue('MOD')), type: block.type === 'sc_lfo_def' ? 0 : 1,
+      output: OUTPUT_INDEX[output], controller: output === 'cc' ? Number(block.getFieldValue('CC')) : 0,
+      channel: data.ch ?? DEFAULT, from: Number(block.getFieldValue('FROM')), to: Number(block.getFieldValue('TO')),
+      flags: block.getFieldValue('CURVE') === 'exp' ? 1 : 0,
+    };
+    if (m.type === 0) {
+      const speed = block.getFieldValue('SPEED');
+      m.wave = S.WAVES.indexOf(block.getFieldValue('WAVE'));
+      if (speed === 'free') {
+        m.rate = Math.max(1, Math.min(2000, Math.round(Number(block.getFieldValue('HZ')) * 100)));
+      } else {
+        m.flags |= 2;
+        m.rate = speed === 'custom' ? (data.rate || 96) : Number(speed);
+      }
+    } else {
+      const follow = block.getFieldValue('FOLLOW');
+      let followId = follow === 'none' ? DEFAULT : Number(follow);
+      if (followId !== DEFAULT && !sequenceIds.has(followId)) {
+        warn(block, `Sequence ${'ABCD'[followId]} has no notes yet, so there’s nothing to follow.`);
+        followId = DEFAULT;
+      }
+      Object.assign(m, {
+        sustain: Number(block.getFieldValue('SUSTAIN')), follow: followId,
+        attack: Number(block.getFieldValue('ATTACK')), decay: Number(block.getFieldValue('DECAY')),
+        release: Number(block.getFieldValue('RELEASE')),
+      });
+    }
+    return m;
   }
 
   function sequenceOf(block, settings, warn) {
@@ -498,6 +604,20 @@
       sequences.push(q);
     }
 
+    const modulators = [];
+    const modulatorIds = new Set();
+    for (const b of [...ws.getBlocksByType('sc_lfo_def', true), ...ws.getBlocksByType('sc_envelope_def', true)]
+      .sort((a, b) => a.getRelativeToSurfaceXY().y - b.getRelativeToSurfaceXY().y)) {
+      const m = modulatorOf(b, sequenceIds, warn);
+      if (modulatorIds.has(m.id)) {
+        warn(b, `There is already a modulator ${m.id + 1}: only the first is used.`);
+        continue;
+      }
+      modulatorIds.add(m.id);
+      modulators.push(m);
+    }
+    modulators.sort((a, b) => a.id - b.id);
+
     const rules = [];
     for (const top of ws.getTopBlocks(true)) {
       const t = triggerOf(top);
@@ -506,7 +626,7 @@
         continue;
       }
       for (let b = top.getInputTargetBlock('DO'); b; b = b.getNextBlock()) {
-        const r = ruleOf(b, t, sequenceIds, warn);
+        const r = ruleOf(b, t, sequenceIds, modulatorIds, warn);
         if (r) rules.push(r);
       }
     }
@@ -514,7 +634,7 @@
       problems.push({ id: null, text: `There are ${rules.length} actions; the board holds 128. The rest are left out.` });
       rules.length = 128;
     }
-    return { table: { globals, rules, sequences }, problems };
+    return { table: { globals, rules, sequences, modulators }, problems };
   }
 
   // --- Table -> workspace ---
@@ -577,6 +697,32 @@
     });
   }
 
+  const OUTPUT_NAMES = ['cc', 'bend', 'pressure'];
+  const LFO_SPEEDS = new Set(LFO_SPEED_OPTIONS.map(([, v]) => v));
+
+  function modulatorState(m) {
+    const fields = {
+      MOD: String(m.id), OUTPUT: OUTPUT_NAMES[m.output], CC: String(m.output === 0 ? m.controller : 74),
+      FROM: m.from, TO: m.to, CURVE: m.flags & 1 ? 'exp' : 'linear',
+    };
+    const data = { ch: m.channel === DEFAULT ? undefined : m.channel };
+    if (m.type === 0) {
+      const synced = !!(m.flags & 2);
+      Object.assign(fields, {
+        WAVE: S.WAVES[m.wave],
+        SPEED: !synced ? 'free' : LFO_SPEEDS.has(String(m.rate)) ? String(m.rate) : 'custom',
+        HZ: synced ? 1 : m.rate / 100,
+      });
+      if (synced && !LFO_SPEEDS.has(String(m.rate))) data.rate = m.rate;
+      return stateWithData({ type: 'sc_lfo_def', fields }, data);
+    }
+    Object.assign(fields, {
+      ATTACK: m.attack, DECAY: m.decay, SUSTAIN: m.sustain, RELEASE: m.release,
+      FOLLOW: m.follow === DEFAULT ? 'none' : String(m.follow),
+    });
+    return stateWithData({ type: 'sc_envelope_def', fields }, data);
+  }
+
   function triggerState(r) {
     if (TRIG_EVENTS[r.trig])
       return stateWithData({ type: 'sc_when_switch', fields: { SWITCH: String(r.src), EVENT: TRIG_EVENTS[r.trig] } },
@@ -632,6 +778,14 @@
           type: 'sc_set_key', fields: { KEY: r.p0 === 0xff ? 'same' : String(r.p0), SCALE: scale },
         }, { mask: scale === 'custom' ? r.p2 : undefined, flags: r.flags || undefined });
       }
+      case ACT.MOD_RUN:
+      case ACT.MOD_STOP: {
+        const action = r.act === ACT.MOD_STOP ? 'stop' : ['run-hold', 'run-latch', 'run-oneshot'][gate];
+        const shown = (r.act === ACT.MOD_RUN ? 3 : 0) | FLAG.QUANTIZE;
+        return stateWithData({
+          type: 'sc_modulator', fields: { MOD: String(r.p0), ACTION: action, BEAT: !!(r.flags & FLAG.QUANTIZE) },
+        }, { flags: (r.flags & ~shown) || undefined });
+      }
       case ACT.PRESET:
         return stateWithData({
           type: 'sc_preset', fields: { PRESET: r.p0 === 1 ? 'next' : r.p0 === 2 ? 'previous' : String(r.p1) },
@@ -651,6 +805,7 @@
     };
     place(settingsState(table.globals), 240);
     for (const q of [...table.sequences].sort((a, b) => a.id - b.id)) place(sequenceState(q), 170);
+    for (const m of [...(table.modulators || [])].sort((a, b) => a.id - b.id)) place(modulatorState(m), 170);
 
     // One "when" block per distinct trigger, in order of first appearance.
     const groups = new Map();

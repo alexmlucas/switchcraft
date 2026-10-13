@@ -16,6 +16,7 @@ add_executable(switchcraft
     src/engine.c
     src/inputs.c
     src/midi.c
+    src/modulators.c
     src/protocol.c
     src/slots.c
     src/table.c

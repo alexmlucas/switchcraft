@@ -273,6 +273,23 @@ function fakeBoard() {
     assertEq(back.form.tempo, 900);
   });
 
+  // Every kind of modulator the form offers.
+  function modulatorForm() {
+    const f = S.defaultForm();
+    const m = (kind, extra) => ({ ...S.defaultModulator(kind), ...extra });
+    f.sequences[2] = { ...S.defaultSequence(), notes: [0, 4] };
+    f.modulators = [
+      m('lfo', { output: 'cc', cc: 11, from: 100, to: 5, wave: 'random', synced: false, rate: 250, exponential: true }),
+      m('lfo', { output: 'pressure', from: 0, to: 127, wave: 'saw', synced: true, rate: 48 }),
+      m('env', { output: 'bend', from: 64, to: 0, attack: 0, decay: 900, sustain: 0, release: 0 }),
+      m('env', { output: 'cc', cc: 74, attack: 20, decay: 200, sustain: 40, release: 300, follow: 2 }),
+    ];
+    f.switches[0] = { action: 'mod-run', mod: 0, gate: 'latch', onBeat: true };
+    f.switches[1] = { action: 'mod-run', mod: 2, gate: 'oneshot', onBeat: false };
+    f.switches[2] = { action: 'mod-stop', mod: 0 };
+    return f;
+  }
+
   await test('switches using an empty sequence send no rule', () => {
     const f = S.defaultForm();
     f.switches[0] = { action: 'seq-play', seq: 1, gate: 'hold', onBeat: false };
@@ -555,8 +572,20 @@ function fakeBoard() {
     assertEq(S.readPresetFile(JSON.stringify({ ...good, blocks: [1, 2] })).blocks, null);
   });
 
+  await test('modulators and modulator actions round trip through the table and blocks', () => {
+    const f = modulatorForm();
+    const table = S.tableFromForm(f);
+    const back = S.formFromTable(S.parseTable(S.buildTable(table)));
+    assert(back.form, back.reason);
+    assertEq(back.form.modulators, f.modulators);
+    assertEq(back.form.switches, f.switches);
+    const viaBlocks = throughBlocks(table);
+    assertEq(viaBlocks.problems.map((p) => p.text), []);
+    assertEq(toHex(S.buildTable(viaBlocks.table)), toHex(S.buildTable(table)));
+  });
+
   // Tables for tools/check_page_tables.py to send to a real board.
-  const samples = { default: S.defaultForm(), sequences: sequenceForm() };
+  const samples = { default: S.defaultForm(), sequences: sequenceForm(), modulators: modulatorForm() };
   for (const t of S.TEMPLATES) samples[`template ${t.id}`] = t.form();
   const blobs = document.createElement('pre');
   blobs.id = 'blobs';

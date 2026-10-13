@@ -38,6 +38,14 @@ void midi_cc(uint8_t ch, uint8_t cc, uint8_t value) {
     send_channel_msg(0xB0 | (ch & 0x0F), cc & 0x7F, value & 0x7F);
 }
 
+void midi_pitch_bend(uint8_t ch, uint16_t value) {
+    send_channel_msg(0xE0 | (ch & 0x0F), value & 0x7F, (value >> 7) & 0x7F);
+}
+
+void midi_channel_pressure(uint8_t ch, uint8_t value) {
+    send_channel_msg(0xD0 | (ch & 0x0F), value & 0x7F, 0);
+}
+
 void midi_send_sysex(uint8_t cable, const uint8_t *msg, size_t len) {
     size_t i = 0;
     while (i < len) {

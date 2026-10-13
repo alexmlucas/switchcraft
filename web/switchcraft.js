@@ -87,6 +87,7 @@
   const ACT = {
     NONE: 0x00, NOTE: 0x01, CC: 0x02, SEQ_STEP: 0x10, SEQ_RUN: 0x11, SEQ_STOP: 0x12,
     SEQ_RESET: 0x13, SEQ_SELECT: 0x14, TRANSPOSE: 0x20, SET_SCALE: 0x21, PRESET: 0x30,
+    MOD_RUN: 0x40, MOD_STOP: 0x41,
   };
   const GATE = { hold: 0, latch: 1, oneshot: 2 };
   const FLAG = { QUANTIZE: 0x04, VALUE_FROM_TRIGGER: 0x08, DEGREE: 0x10, REVERSE: 0x20 };
@@ -158,12 +159,21 @@
     ];
   }
 
-  // table: {globals, rules: [...], sequences: [...], extra: [raw section byte arrays]}
+  // Modulator (spec B.6.2): an LFO (type 0) or envelope (type 1).
+  function modulatorBody(m) {
+    const tail = m.type === 0
+      ? [m.wave, 0, ...u16(m.rate), 0, 0, 0, 0]
+      : [m.sustain, m.follow, ...u16(m.attack), ...u16(m.decay), ...u16(m.release)];
+    return [m.id, m.type, m.output, m.controller, m.channel, m.from, m.to, m.flags, ...tail];
+  }
+
+  // table: {globals, rules, sequences, modulators, extra: [raw section byte arrays]}
   function buildTable(table) {
     const sections = [
       section(0x01, globalsBody(table.globals)),
       section(0x02, [table.rules.length, 0, 0, 0, ...table.rules.flatMap(rule)]),
       ...(table.sequences || []).map((s) => section(0x03, sequenceBody(s))),
+      ...(table.modulators || []).map((m) => section(0x05, modulatorBody(m))),
       ...(table.sequences || []).filter((s) => s.euclid)
         .map((s) => section(0x04, [s.id, s.euclid.steps, s.euclid.hits, s.euclid.rotation])),
       ...(table.extra || []),
@@ -175,7 +185,7 @@
 
   function parseTable(blob) {
     if (blob.length < 8 || rd16(blob, 0) !== 1) throw new Error('unsupported table format');
-    const table = { globals: null, rules: [], sequences: [], extra: [] };
+    const table = { globals: null, rules: [], sequences: [], modulators: [], extra: [] };
     const rhythms = [];  // EUCLID sections, attached to their sequences below
     let off = 8;
     for (let i = 0; i < blob[4]; i++) {
@@ -211,6 +221,11 @@
           id: b[0], advance: b[1], order: b[2], octaves: b[3], channel: b[4],
           velocity: b[5], division: b[6], gate: b[7], noteMode, steps, euclid: null,
         });
+      } else if (id === 0x05) {
+        const m = { id: b[0], type: b[1], output: b[2], controller: b[3], channel: b[4], from: b[5], to: b[6], flags: b[7] };
+        if (m.type === 0) Object.assign(m, { wave: b[8], rate: rd16(b, 10) });
+        else Object.assign(m, { sustain: b[8], follow: b[9], attack: rd16(b, 10), decay: rd16(b, 12), release: rd16(b, 14) });
+        table.modulators.push(m);
       } else if (id === 0x04) {
         rhythms.push({ id: b[0], euclid: { steps: b[1], hits: b[2], rotation: b[3] } });
       } else {
@@ -233,8 +248,11 @@
   // formFromTable says why.
 
   const ORDERS = ['written', 'up', 'down', 'updown', 'random'];
+  const WAVES = ['sine', 'triangle', 'saw', 'square', 'random'];
+  const MOD_OUTPUTS = ['cc', 'bend', 'pressure'];
   const MAX_FORM_STEPS = 32;
   const SEQ_ACTIONS = { 'seq-play': ACT.SEQ_RUN, 'seq-step': ACT.SEQ_STEP, 'seq-restart': ACT.SEQ_RESET };
+  const MOD_ACTIONS = { 'mod-run': ACT.MOD_RUN, 'mod-stop': ACT.MOD_STOP };
 
   function defaultSequence() {
     // notes: scale degrees or MIDI notes (by noteType), null = rest
@@ -242,6 +260,16 @@
       mode: 'clock', noteType: 'scale', notes: [], order: 'written', octaves: 1,
       division: 6, gate: 80,
       rhythm: null,  // or {steps, hits, rotation}: a Euclidean rhythm (clock mode)
+    };
+  }
+
+  // A modulator in the form. kind: 'off', 'lfo' or 'env'. LFO speed: synced
+  // (rate = clock ticks per cycle) or free (rate = hundredths of a hertz).
+  function defaultModulator(kind = 'off') {
+    return {
+      kind, output: 'cc', cc: 74, from: 0, to: 127, exponential: false,
+      wave: 'triangle', synced: true, rate: 96,
+      attack: 500, decay: 300, sustain: 100, release: 800, follow: null,
     };
   }
 
@@ -256,6 +284,7 @@
       ],
       analog: [{ cc: 1 }, { cc: 74 }],
       sequences: Array.from({ length: 4 }, defaultSequence),
+      modulators: Array.from({ length: 4 }, () => defaultModulator()),
     };
   }
 
@@ -277,6 +306,9 @@
         });
       } else if (s.action === 'transpose') {
         rules.push({ trig: TRIG.PRESS, src: i, act: ACT.TRANSPOSE, p0: 1, p2: s.semitones });
+      } else if (s.action in MOD_ACTIONS && f.modulators && f.modulators[s.mod].kind !== 'off') {
+        const flags = s.action === 'mod-run' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
+        rules.push({ trig: TRIG.PRESS, src: i, act: MOD_ACTIONS[s.action], flags, p0: s.mod });
       } else if (s.action in SEQ_ACTIONS && sequenceInUse(f, s.seq)) {
         const flags = s.action === 'seq-play' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
         rules.push({ trig: TRIG.PRESS, src: i, act: SEQ_ACTIONS[s.action], flags, p0: s.seq });
@@ -305,7 +337,23 @@
         euclid: q.mode === 'clock' && q.rhythm ? { ...q.rhythm } : null,
       });
     });
-    return { globals: { ...f }, rules, sequences };
+    const modulators = [];
+    (f.modulators || []).forEach((m, id) => {
+      if (m.kind === 'off') return;
+      const base = {
+        id, type: m.kind === 'lfo' ? 0 : 1, output: MOD_OUTPUTS.indexOf(m.output),
+        controller: m.output === 'cc' ? m.cc : 0, channel: DEFAULT, from: m.from, to: m.to,
+        flags: (m.exponential ? 1 : 0) | (m.kind === 'lfo' && m.synced ? 2 : 0),
+      };
+      modulators.push(m.kind === 'lfo'
+        ? { ...base, wave: WAVES.indexOf(m.wave), rate: m.rate }
+        : {
+          ...base, sustain: m.sustain, attack: m.attack, decay: m.decay, release: m.release,
+          // An envelope can only follow a sequence that has notes.
+          follow: m.follow !== null && sequenceInUse(f, m.follow) ? m.follow : DEFAULT,
+        });
+    });
+    return { globals: { ...f }, rules, sequences, modulators };
   }
 
   // Returns {form} or {reason} if the table uses things the form can't show.
@@ -318,6 +366,7 @@
       switches: Array.from({ length: NUM_INPUTS }, () => ({ action: 'none' })),
       analog: Array.from({ length: NUM_ANALOG }, () => ({ cc: null })),
       sequences: Array.from({ length: 4 }, defaultSequence),
+      modulators: Array.from({ length: 4 }, () => defaultModulator()),
     };
     if ((table.extra || []).length) return { reason: 'it has sections the form doesn’t edit' };
 
@@ -332,6 +381,20 @@
         order: ORDERS[q.order], octaves: q.octaves, division: q.division, gate: q.gate,
         rhythm: q.euclid ? { ...q.euclid } : null,
       };
+    }
+
+    for (const m of table.modulators || []) {
+      if (m.id > 3 || m.channel !== DEFAULT) return { reason: 'its modulators use settings the form doesn’t show' };
+      const fm = {
+        ...defaultModulator(m.type === 0 ? 'lfo' : 'env'), output: MOD_OUTPUTS[m.output],
+        cc: m.output === 0 ? m.controller : 74, from: m.from, to: m.to, exponential: !!(m.flags & 1),
+      };
+      if (m.type === 0) Object.assign(fm, { wave: WAVES[m.wave], synced: !!(m.flags & 2), rate: m.rate });
+      else Object.assign(fm, {
+        attack: m.attack, decay: m.decay, sustain: m.sustain, release: m.release,
+        follow: m.follow === DEFAULT ? null : m.follow,
+      });
+      f.modulators[m.id] = fm;
     }
 
     const usedSwitch = new Set();
@@ -350,6 +413,10 @@
         } else if (r.act === ACT.SEQ_RUN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 && gate &&
                    r.p0 < 4) {
           s = { action: 'seq-play', seq: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
+        } else if (r.act === ACT.MOD_RUN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 && gate && r.p0 < 4) {
+          s = { action: 'mod-run', mod: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
+        } else if (r.act === ACT.MOD_STOP && r.flags === 0 && r.p0 < 4) {
+          s = { action: 'mod-stop', mod: r.p0 };
         } else if ((r.act === ACT.SEQ_STEP || r.act === ACT.SEQ_RESET) && r.flags === 0 && r.p0 < 4) {
           s = { action: r.act === ACT.SEQ_STEP ? 'seq-step' : 'seq-restart', seq: r.p0 };
         }
@@ -459,6 +526,28 @@
           f.switches[4 + i] = { action: 'note', note, gate: 'oneshot' };
         });
         f.analog = [{ cc: 7 }, { cc: null }];
+        return f;
+      },
+    },
+    {
+      id: 'mod', name: 'Sweeps & wobbles',
+      description: 'Modulation: switch 1 sweeps the brightness up while held; 2 starts and stops a slow vibrato wobble; 3 bends each note up and back; 4 plays an arpeggio whose notes each get a brightness pluck. 5–10 play scale notes.',
+      form: () => {
+        const f = defaultForm();
+        f.name = 'Sweeps & wobbles';
+        const mod = (kind, extra) => ({ ...defaultModulator(kind), ...extra });
+        f.modulators = [
+          mod('env', { output: 'cc', cc: 74, from: 10, to: 127, exponential: true, attack: 1500, decay: 0, sustain: 100, release: 1200 }),
+          mod('lfo', { output: 'cc', cc: 1, from: 0, to: 90, wave: 'triangle', synced: true, rate: 96 }),
+          mod('env', { output: 'bend', from: 64, to: 76, attack: 60, decay: 300, sustain: 0, release: 0 }),
+          mod('env', { output: 'cc', cc: 74, from: 20, to: 110, attack: 5, decay: 150, sustain: 30, release: 120, follow: 0 }),
+        ];
+        f.sequences[0] = seq('clock', 'scale', [0, 2, 4], { order: 'up', octaves: 2, division: 6, gate: 60 });
+        f.switches[0] = { action: 'mod-run', mod: 0, gate: 'hold', onBeat: false };
+        f.switches[1] = { action: 'mod-run', mod: 1, gate: 'latch', onBeat: true };
+        f.switches[2] = { action: 'mod-run', mod: 2, gate: 'oneshot', onBeat: false };
+        f.switches[3] = { action: 'seq-play', seq: 0, gate: 'hold', onBeat: false };
+        for (let i = 4; i < 10; i++) f.switches[i] = { action: 'scale', degree: i - 4, gate: 'hold' };
         return f;
       },
     },
@@ -665,7 +754,7 @@
     CMD, REPORT, TRIG, ACT, GATE, FLAG, DEFAULT, SCALES, NOTE_NAMES,
     NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING, DEFAULT_CALIBRATION,
     encode, decode, crc32, noteName, degreeToNote,
-    ORDERS, MAX_FORM_STEPS, TEMPLATES, euclidHits,
+    ORDERS, MAX_FORM_STEPS, TEMPLATES, euclidHits, WAVES, defaultModulator,
     presetFile, readPresetFile, presetFileName,
     buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,
     tableFromForm, formFromTable,
