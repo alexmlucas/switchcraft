@@ -12,6 +12,7 @@ Needs:  pip install mido python-rtmidi   (not needed for `selftest`)
     python tools/sc.py write default|demo [--save]
     python tools/sc.py load|save|erase SLOT
     python tools/sc.py panic              all notes off
+    python tools/sc.py calibration [MIN0 MAX0 MIN1 MAX1]   show or save analog calibration
     python tools/sc.py monitor            print switch events and MIDI output
     python tools/sc.py selftest           check encoding without a board
 """
@@ -32,7 +33,7 @@ CHUNK = 64
 CMD = {
     "IDENTIFY": 0x01, "TABLE_INFO": 0x02, "TABLE_READ": 0x03, "WRITE_BEGIN": 0x04,
     "WRITE_DATA": 0x05, "WRITE_COMMIT": 0x06, "SLOT_SAVE": 0x07, "SLOT_LOAD": 0x08,
-    "SLOT_ERASE": 0x09, "ALL_NOTES_OFF": 0x0A,
+    "SLOT_ERASE": 0x09, "ALL_NOTES_OFF": 0x0A, "CALIBRATION_GET": 0x0B, "CALIBRATION_SET": 0x0C,
 }
 REPORT_INPUT, REPORT_ANALOG, REPORT_SLOT = 0x60, 0x61, 0x62
 EVENTS = {1: "press", 2: "release", 3: "hold", 4: "tap"}
@@ -87,12 +88,11 @@ MAJOR = 0x0AB5
 
 
 def globals_section(name="", channel=0, velocity=100, root=0, octave=4, mask=MAJOR,
-                    tempo=1200, debounce=10, lockout=0, hold=500,
-                    analog_min=(0, 0), analog_max=(4095, 4095)):
+                    tempo=1200, debounce=10, lockout=0, hold=500):
     body = name.encode("ascii")[:16].ljust(16, b"\0")
     body += struct.pack("<BBBBHHBBHH", channel, velocity, root, octave, mask, tempo,
                         debounce, 0, lockout, hold)
-    body += struct.pack("<HHHH", *analog_min, *analog_max) + b"\0\0"
+    body += bytes(10)  # reserved: analog calibration is board-wide (spec B.10)
     return section(0x01, body)
 
 
@@ -327,6 +327,7 @@ def main():
     w.add_argument("--save", action="store_true", help="also save to the active slot")
     for name in ("load", "save", "erase"):
         sub.add_parser(name).add_argument("slot", type=int)
+    sub.add_parser("calibration").add_argument("values", nargs="*", type=int)
     args = ap.parse_args()
 
     if args.cmd == "selftest":
@@ -354,6 +355,16 @@ def main():
         elif args.cmd in ("load", "save", "erase"):
             board.request("SLOT_" + args.cmd.upper(), bytes([args.slot]))
             print("OK")
+        elif args.cmd == "calibration":
+            if args.values:
+                if len(args.values) != 4:
+                    sys.exit("give MIN0 MAX0 MIN1 MAX1")
+                min0, max0, min1, max1 = args.values
+                board.request("CALIBRATION_SET", struct.pack("<BHHHH", 1, min0, min1, max0, max1))
+            cal = struct.unpack("<HHHH", board.request("CALIBRATION_GET"))
+            for i in range(2):
+                lo, hi = cal[i], cal[2 + i]
+                print(f"analog {i}: {lo} -> 0, {hi} -> 127{' (inverted)' if hi < lo else ''}")
         elif args.cmd == "panic":
             board.request("ALL_NOTES_OFF")
         elif args.cmd == "monitor":

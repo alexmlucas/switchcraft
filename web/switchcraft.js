@@ -14,11 +14,14 @@
   const NUM_INPUTS = 12;
   const NUM_ANALOG = 2;
   const NUM_SLOTS = 8;
+  // Default analog calibration: Logitech Adaptive Gaming Kit variable
+  // triggers (~3850 at rest, ~2250 fully pressed), so inverted.
+  const DEFAULT_CALIBRATION = { min: [3750, 3750], max: [2350, 2350] };
 
   const CMD = {
     IDENTIFY: 0x01, TABLE_INFO: 0x02, TABLE_READ: 0x03, WRITE_BEGIN: 0x04,
     WRITE_DATA: 0x05, WRITE_COMMIT: 0x06, SLOT_SAVE: 0x07, SLOT_LOAD: 0x08,
-    SLOT_ERASE: 0x09, ALL_NOTES_OFF: 0x0a,
+    SLOT_ERASE: 0x09, ALL_NOTES_OFF: 0x0a, CALIBRATION_GET: 0x0b, CALIBRATION_SET: 0x0c,
   };
   const REPORT = { INPUT: 0x60, ANALOG: 0x61, SLOT: 0x62 };
   const EVENTS = { 1: 'press', 2: 'release', 3: 'hold', 4: 'tap' };
@@ -127,8 +130,8 @@
     return [
       ...name, g.channel, g.velocity, g.root, g.octave, ...u16(g.mask), ...u16(g.tempo),
       g.debounceMs, 0, ...u16(g.lockoutMs), ...u16(g.holdMs),
-      ...u16(g.analogMin[0]), ...u16(g.analogMin[1]),
-      ...u16(g.analogMax[0]), ...u16(g.analogMax[1]), 0, 0,
+      // Reserved: analog calibration is board-wide (spec B.10).
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
   }
 
@@ -177,7 +180,6 @@
           channel: b[16], velocity: b[17], root: b[18], octave: b[19],
           mask: rd16(b, 20), tempo: rd16(b, 22), debounceMs: b[24],
           lockoutMs: rd16(b, 26), holdMs: rd16(b, 28),
-          analogMin: [rd16(b, 30), rd16(b, 32)], analogMax: [rd16(b, 34), rd16(b, 36)],
         };
       } else if (id === 0x02) {
         for (let r = 0; r < b[0]; r++) {
@@ -232,7 +234,6 @@
     return {
       name: 'Scale player', channel: 0, velocity: 100, root: 0, octave: 4, mask: 0x0ab5,
       holdMs: 500, lockoutMs: 0, debounceMs: 10, tempo: 1200,
-      analogMin: [0, 0], analogMax: [4095, 4095],
       switches: [
         ...Array.from({ length: 10 }, (_, i) => ({ action: 'scale', degree: i, gate: 'hold' })),
         { action: 'transpose', semitones: -12 },
@@ -296,7 +297,7 @@
     const f = {
       name: g.name, channel: g.channel, velocity: g.velocity, root: g.root, octave: g.octave,
       mask: g.mask, holdMs: g.holdMs, lockoutMs: g.lockoutMs, debounceMs: g.debounceMs,
-      tempo: g.tempo, analogMin: g.analogMin, analogMax: g.analogMax,
+      tempo: g.tempo,
       switches: Array.from({ length: NUM_INPUTS }, () => ({ action: 'none' })),
       analog: Array.from({ length: NUM_ANALOG }, () => ({ cc: null })),
       sequences: Array.from({ length: 4 }, defaultSequence),
@@ -550,11 +551,23 @@
     loadSlot(slot) { return this.request(CMD.SLOT_LOAD, [slot], 2000); }
     eraseSlot(slot) { return this.request(CMD.SLOT_ERASE, [slot], 2000); }
     allNotesOff() { return this.request(CMD.ALL_NOTES_OFF); }
+
+    // Board-wide analog calibration (spec B.10): raw readings mapped to 0
+    // (min) and 127 (max) for each analog input; max < min inverts.
+    async getCalibration() {
+      const d = await this.request(CMD.CALIBRATION_GET);
+      return { min: [rd16(d, 0), rd16(d, 2)], max: [rd16(d, 4), rd16(d, 6)] };
+    }
+
+    setCalibration({ min, max }, save) {
+      return this.request(CMD.CALIBRATION_SET,
+        [save ? 1 : 0, ...u16(min[0]), ...u16(min[1]), ...u16(max[0]), ...u16(max[1])], 2000);
+    }
   }
 
   global.Switchcraft = {
     CMD, REPORT, TRIG, ACT, GATE, FLAG, DEFAULT, SCALES, NOTE_NAMES,
-    NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING,
+    NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING, DEFAULT_CALIBRATION,
     encode, decode, crc32, noteName, degreeToNote,
     ORDERS, MAX_FORM_STEPS, TEMPLATES,
     buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,

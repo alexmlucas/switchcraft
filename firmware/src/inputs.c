@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "board.h"
+#include "config.h"
 #include "engine.h"
 #include "hardware/adc.h"
 #include "hardware/gpio.h"
@@ -13,6 +14,9 @@
 #define ANALOG_INTERVAL_US 2000
 #define ANALOG_REPORT_INTERVAL_US 20000  // at most 50 updates/s per input
 #define LED_PWM_WRAP (127 * 127)
+// Below this raw reading the jack is empty: the value is 0 even when the
+// range is inverted (spec B.10).
+#define UNPLUGGED_RAW 100
 
 typedef struct {
     bool raw;
@@ -85,7 +89,7 @@ static void scan_switches(uint64_t now) {
 }
 
 static void scan_analog(int i, uint64_t now) {
-    const globals_t *g = engine_globals();
+    const board_settings_t *cal = config_settings();
     analog_state_t *a = &an[i];
     adc_select_input(ANALOG_ADC[i]);
     int32_t raw = adc_read();
@@ -94,9 +98,11 @@ static void scan_analog(int i, uint64_t now) {
 
     // Position in quarter steps (0..511), with about half a step of
     // hysteresis so a reading on a boundary doesn't flicker.
-    // hi < lo inverts the input (spec B.3); the division handles both.
-    int32_t lo = g->analog_min[i], hi = g->analog_max[i];
+    // hi < lo inverts the input (spec B.10); the division handles both.
+    int32_t lo = cal->analog_min[i], hi = cal->analog_max[i];
     int32_t v = (smooth - lo) * 511 / (hi - lo);
+    if (smooth < UNPLUGGED_RAW)
+        v = 0;  // nothing plugged in (the jack is pulled to ground)
     if (v < 0)
         v = 0;
     if (v > 511)

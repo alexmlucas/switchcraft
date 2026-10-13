@@ -78,6 +78,8 @@ Payload columns below show the **decoded** bytes.
 | 0x08 | `SLOT_LOAD` | `u8 slot` | — |
 | 0x09 | `SLOT_ERASE` | `u8 slot` | — |
 | 0x0A | `ALL_NOTES_OFF` | — | — |
+| 0x0B | `CALIBRATION_GET` | — | `u16 analog_min[2], u16 analog_max[2]` |
+| 0x0C | `CALIBRATION_SET` | `u8 flags, u16 analog_min[2], u16 analog_max[2]` | — |
 
 **`source`** in `TABLE_INFO`/`TABLE_READ`: `0x00–0x07` = flash slot,
 `0xFF` = the working table (the one currently running, in RAM).
@@ -113,6 +115,13 @@ as a commit), makes it the active slot and the slot used at power-up.
 `ERR_SLOT_EMPTY` if the slot has no valid table.
 **`SLOT_ERASE n`**: erases the slot. Erasing the active slot is allowed;
 the working table keeps running until the next load or power cycle.
+
+**`CALIBRATION_GET` / `CALIBRATION_SET`**: the board-wide analog
+calibration (B.10). It belongs to the board, not to a preset, so loading a
+preset never changes it. `CALIBRATION_SET` applies at once; flags bit 0
+also saves it to flash (otherwise it lasts until power-off, which suits a
+temporary full range while setting a new one). Bits 1–7 must be 0.
+`ERR_RANGE` if a value is above 4095 or an input's min equals its max.
 
 ### A.5 `IDENTIFY` reply
 
@@ -202,7 +211,7 @@ more flash needs no change:
 
 | Sector (from end) | Use |
 |---|---|
-| −1 | Boot state: which slot to load at power-up |
+| −1 | Board settings: power-up slot and analog calibration |
 | −9 … −2 | Slots 0–7 (slot 0 lowest address) |
 
 The firmware image must stay clear of these sectors (check in the linker
@@ -222,10 +231,25 @@ script or with a static assert against `__flash_binary_end`).
 A slot is **valid** only if magic, version and CRC all check out. An erased
 sector (all `0xFF`) or a half-written one fails and is treated as empty.
 
-**Boot-state sector:** `u32 magic 0x42435353 ("SSCB"), u8 boot_slot,
-u8[3] reserved, u32 crc32` over the first 8 bytes. At power-up, the firmware
-loads `boot_slot`; if that's invalid it tries slots 0–7 in order; if none is
-valid it runs the built-in default table (B.9).
+**Board settings sector:**
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | magic | `u32` | `0x32424353` (`"SCB2"`) |
+| 4 | boot_slot | `u8` | slot to load at power-up |
+| 5 | reserved | `u8[3]` | 0 |
+| 8 | analog_min | `u16[2]` | B.10 |
+| 12 | analog_max | `u16[2]` | B.10 |
+| 16 | crc32 | `u32` | over bytes 0–15 |
+
+Firmware before 0.3.0 wrote a shorter record (`u32 magic 0x42435353
+("SSCB"), u8 boot_slot, u8[3] reserved, u32 crc32` over the first 8 bytes).
+It is still read: its boot slot is kept and the calibration starts at the
+defaults. A blank or corrupt sector means slot 0 and default calibration.
+
+At power-up, the firmware loads `boot_slot`; if that's invalid it tries
+slots 0–7 in order; if none is valid it runs the built-in default table
+(B.9).
 
 CRC-32 throughout is the standard IEEE/zlib polynomial (`0xEDB88320`
 reflected, init `0xFFFFFFFF`, final XOR `0xFFFFFFFF`). The page computes
@@ -281,19 +305,10 @@ understand fails loudly rather than silently doing nothing.
 | 25 | reserved | `u8` | 0 | |
 | 26 | lockout_ms | `u16` | 0 | Accessibility: presses of the same input within this time of the last accepted press are ignored |
 | 28 | hold_ms | `u16` | 500 | Default time for `HOLD` triggers |
-| 30 | analog_min | `u16[2]` | 0, 0 | Raw ADC reading (0–4095) mapped to 0, per analog input |
-| 34 | analog_max | `u16[2]` | 4095, 4095 | Raw ADC reading mapped to 127. May be **less** than `analog_min` to invert the input; the two must differ |
-| 38 | reserved | `u8[2]` | 0 | |
+| 30 | reserved | `u8[10]` | 0 | Was the analog calibration before firmware 0.3.0; now board-wide (B.10). Write 0; ignored when read |
 
 Scales are just masks; the page owns the list of named scales. A rule can
 change the root and mask at run time (`SET_SCALE`).
-
-**Analog calibration.** The analog jacks read a voltage divider (sensor to
-3.3 V, 10 kΩ to ground), so a typical 10 kΩ pedal only spans about half the
-ADC range, and backwards. `analog_min`/`analog_max` map the range a sensor
-actually covers onto 0–127; swapping them inverts it. Raw readings outside
-the range are clamped. Note that an inverted input with nothing plugged in
-reads 127.
 
 ### B.4 Inputs and events
 
@@ -469,3 +484,21 @@ Used when no slot is valid (new board, or all erased): C major from C4,
 inputs 0–9 play scale degrees 0–9 with `HOLD` on the default channel,
 inputs 10–11 transpose −12/+12, analog 0–1 send CC 1 and CC 74. The page
 ships the identical blob as its "Scale player" starter template.
+
+### B.10 Analog calibration (board settings)
+
+The analog jacks read a voltage divider (sensor to 3.3 V, 10 kΩ to ground),
+so a typical 10 kΩ pedal only spans about half the ADC range, and
+backwards. For each analog input, `analog_min` and `analog_max` are the raw
+ADC readings (0–4095) mapped to 0 and 127. `analog_max` may be **less**
+than `analog_min` to invert the input; the two must differ. Readings
+outside the range are clamped. A raw reading below 100 means nothing is
+plugged in (the jack is pulled to ground) and always gives 0, even when
+inverted.
+
+Defaults: 3750 → 0 and 2350 → 127 on both inputs, for the Logitech
+Adaptive Gaming Kit variable triggers (about 3850 at rest and 2250 fully
+pressed).
+
+The calibration is stored in the board settings sector (B.1) and read and
+written with `CALIBRATION_GET`/`CALIBRATION_SET` (A.4).

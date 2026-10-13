@@ -54,6 +54,7 @@ enum { GATE_HOLD = 0, GATE_LATCH = 1, GATE_ONESHOT = 2 };
 #define FLAGS_RESERVED 0xE0
 
 #define DEFAULT_ONESHOT_MS 250
+
 #define CHANNEL_DEFAULT 0xFF
 #define SEQ_SELECTED 0xFF
 
@@ -86,8 +87,6 @@ typedef struct {
     uint8_t debounce_ms;
     uint16_t lockout_ms;
     uint16_t hold_ms;
-    uint16_t analog_min[2];
-    uint16_t analog_max[2];
 } globals_t;
 
 typedef struct {

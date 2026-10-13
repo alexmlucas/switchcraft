@@ -13,6 +13,22 @@ static uint32_t working_crc;
 static table_t live;
 static table_t scratch;  // validation target; its pointers are never used
 static uint8_t active_slot;
+static board_settings_t settings;
+
+const board_settings_t *config_settings(void) {
+    return &settings;
+}
+
+int config_set_calibration(const uint16_t min[2], const uint16_t max[2], bool save) {
+    for (int i = 0; i < 2; i++)
+        if (min[i] > 4095 || max[i] > 4095 || min[i] == max[i])
+            return STATUS_ERR_RANGE;
+    for (int i = 0; i < 2; i++) {
+        settings.analog_min[i] = min[i];
+        settings.analog_max[i] = max[i];
+    }
+    return save ? board_settings_write(&settings) : STATUS_OK;
+}
 
 const uint8_t *config_blob(uint16_t *len, uint32_t *crc) {
     *len = working_len;
@@ -47,8 +63,10 @@ int config_load_slot(uint8_t slot) {
     if (config_apply(blob, len, NULL) != STATUS_OK)
         return STATUS_ERR_SLOT_EMPTY;
     active_slot = slot;
-    if (boot_slot_get() != slot)
-        return boot_slot_set(slot);
+    if (settings.boot_slot != slot) {
+        settings.boot_slot = slot;
+        return board_settings_write(&settings);
+    }
     return STATUS_OK;
 }
 
@@ -57,7 +75,8 @@ int config_save_slot(uint8_t slot) {
 }
 
 void config_init(void) {
-    uint8_t boot = boot_slot_get();
+    board_settings_read(&settings);
+    uint8_t boot = settings.boot_slot;
     active_slot = boot;
     const uint8_t *blob;
     uint16_t len;

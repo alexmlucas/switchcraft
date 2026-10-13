@@ -9,7 +9,9 @@
 #include "table.h"
 
 #define SLOT_MAGIC 0x31464353u  // "SCF1"
-#define BOOT_MAGIC 0x42435353u  // "SSCB"
+#define BOOT_MAGIC_V1 0x42435353u  // "SSCB": boot slot only (before 0.3.0)
+#define SETTINGS_MAGIC 0x32424353u  // "SCB2"
+#define SETTINGS_LEN 20
 #define SLOT_HEADER_LEN 16
 
 #define BOOT_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
@@ -86,21 +88,39 @@ int slot_erase(uint8_t slot) {
     return flash_write_sector(SLOT_OFFSET(slot), 0);
 }
 
-uint8_t boot_slot_get(void) {
+void board_settings_read(board_settings_t *s) {
     const uint8_t *p = flash_ptr(BOOT_OFFSET);
-    if (rd32(p) != BOOT_MAGIC || crc32(p, 8) != rd32(p + 8) || p[4] >= NUM_SLOTS)
-        return 0;
-    return p[4];
+    s->boot_slot = 0;
+    for (int i = 0; i < 2; i++) {
+        s->analog_min[i] = ANALOG_DEFAULT_REST;
+        s->analog_max[i] = ANALOG_DEFAULT_PRESSED;
+    }
+    if (rd32(p) == SETTINGS_MAGIC && crc32(p, 16) == rd32(p + 16)) {
+        s->boot_slot = p[4] < NUM_SLOTS ? p[4] : 0;
+        for (int i = 0; i < 2; i++) {
+            uint16_t lo = rd16(p + 8 + 2 * i), hi = rd16(p + 12 + 2 * i);
+            if (lo <= 4095 && hi <= 4095 && lo != hi) {
+                s->analog_min[i] = lo;
+                s->analog_max[i] = hi;
+            }
+        }
+    } else if (rd32(p) == BOOT_MAGIC_V1 && crc32(p, 8) == rd32(p + 8) && p[4] < NUM_SLOTS) {
+        s->boot_slot = p[4];
+    }
 }
 
-int boot_slot_set(uint8_t slot) {
-    if (slot >= NUM_SLOTS)
+int board_settings_write(const board_settings_t *s) {
+    if (s->boot_slot >= NUM_SLOTS)
         return STATUS_ERR_RANGE;
-    memset(sector_buf, 0, 12);
-    wr32(sector_buf, BOOT_MAGIC);
-    sector_buf[4] = slot;
-    wr32(sector_buf + 8, crc32(sector_buf, 8));
-    return flash_write_sector(BOOT_OFFSET, 12);
+    memset(sector_buf, 0, SETTINGS_LEN);
+    wr32(sector_buf, SETTINGS_MAGIC);
+    sector_buf[4] = s->boot_slot;
+    for (int i = 0; i < 2; i++) {
+        wr16(sector_buf + 8 + 2 * i, s->analog_min[i]);
+        wr16(sector_buf + 12 + 2 * i, s->analog_max[i]);
+    }
+    wr32(sector_buf + 16, crc32(sector_buf, 16));
+    return flash_write_sector(BOOT_OFFSET, SETTINGS_LEN);
 }
 
 bool slots_overlap_firmware(void) {

@@ -33,10 +33,7 @@ static bool load_globals(const uint8_t *p, uint16_t off, globals_t *g, table_err
     g->debounce_ms = p[24];
     g->lockout_ms = rd16(p + 26);
     g->hold_ms = rd16(p + 28);
-    for (int i = 0; i < 2; i++) {
-        g->analog_min[i] = rd16(p + 30 + 2 * i);
-        g->analog_max[i] = rd16(p + 34 + 2 * i);
-    }
+    // Bytes 30-39 are reserved (analog calibration before 0.3.0): ignored.
     if (g->channel > 15)
         FAIL(off + 16, INVALID_PARAM);
     if (g->velocity < 1 || g->velocity > 127)
@@ -49,10 +46,6 @@ static bool load_globals(const uint8_t *p, uint16_t off, globals_t *g, table_err
         FAIL(off + 20, INVALID_PARAM);
     if (g->tempo < 200 || g->tempo > 3000)  // 20-300 BPM
         FAIL(off + 22, INVALID_PARAM);
-    for (int i = 0; i < 2; i++)
-        // max < min is allowed: it inverts the input.
-        if (g->analog_min[i] > 4095 || g->analog_max[i] > 4095 || g->analog_min[i] == g->analog_max[i])
-            FAIL(off + 30 + 2 * i, INVALID_PARAM);
     return true;
 }
 
@@ -294,10 +287,6 @@ uint16_t table_build_default(uint8_t *buf) {
     g[24] = 10;            // debounce ms
     wr16(g + 26, 0);       // lockout
     wr16(g + 28, 500);     // hold ms
-    wr16(g + 30, 0);
-    wr16(g + 32, 0);
-    wr16(g + 34, 4095);
-    wr16(g + 36, 4095);
     p = g + GLOBALS_LEN;
 
     // RULES

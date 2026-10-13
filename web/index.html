@@ -262,7 +262,7 @@
   <section class="card" aria-labelledby="analog-h">
     <h2 id="analog-h">Analog inputs</h2>
     <div id="analog"></div>
-    <p class="hint">For expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. Most pedals only move part of the way along the bar at first: use <strong>Set range</strong> so they cover all of it, and <strong>Invert</strong> if it moves the wrong way.</p>
+    <p class="hint">For the Logitech variable triggers, expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. The range starts set for the Logitech triggers. For anything else, use <strong>Set range</strong> so it covers the whole bar, and <strong>Invert</strong> if it moves the wrong way. The range belongs to the board, so it applies to every preset.</p>
   </section>
 
   <section class="card" aria-labelledby="settings-h">
@@ -600,7 +600,10 @@ function renderAll() {
 function setEditable(on) {
   editable = on;
   document.querySelectorAll("main section:not(#sound-card) :is(select, input, button)")
-    .forEach((c) => { if (!['slot', 'template', 'use-template'].includes(c.id)) c.disabled = !on; });
+    .forEach((c) => {
+      // Preset slot, templates and the board-wide analog range aren't part of the preset.
+      if (!['slot', 'template', 'use-template'].includes(c.id) && !c.closest('.analog-cal')) c.disabled = !on;
+    });
 }
 
 function renderSlots() {
@@ -713,20 +716,20 @@ function buildStatic() {
     done.addEventListener('click', () => finishCalibration(i, true));
     cancel.addEventListener('click', () => finishCalibration(i, false));
     invertBox.addEventListener('change', () => {
-      const lo = form.analogMin[i], hi = form.analogMax[i];
+      const lo = calibration.min[i], hi = calibration.max[i];
       if ((lo > hi) !== invertBox.checked) {
-        form.analogMin[i] = hi;
-        form.analogMax[i] = lo;
+        calibration.min[i] = hi;
+        calibration.max[i] = lo;
       }
       renderCalibration(i);
-      changed();
+      sendCalibration(true);
     });
     full.addEventListener('click', () => {
-      const inv = form.analogMin[i] > form.analogMax[i];
-      form.analogMin[i] = inv ? 4095 : 0;
-      form.analogMax[i] = inv ? 0 : 4095;
+      const inv = calibration.min[i] > calibration.max[i];
+      calibration.min[i] = inv ? 4095 : 0;
+      calibration.max[i] = inv ? 0 : 4095;
       renderCalibration(i);
-      changed();
+      sendCalibration(true);
     });
   });
 
@@ -1010,7 +1013,9 @@ function detach(reason) {
   clearTimeout(writeTimer);
   clearTimeout(saveTimer);
   setConn('off', reason);
+  calibrating = null;
   renderSlots();
+  renderAllCalibration();
   setSave(unsaved ? 'Not connected: some changes weren’t saved' : '');
 }
 
@@ -1027,6 +1032,7 @@ function onPortChange(e) {
 }
 
 async function loadFromBoard() {
+  calibration = await board.getCalibration();
   setSave('Reading presets…');
   slotNames = [];
   for (let s = 0; s < S.NUM_SLOTS; s++) {
@@ -1040,7 +1046,6 @@ async function loadFromBoard() {
 }
 
 async function loadWorking() {
-  calibrating = null;  // a different preset: drop any range being set
   const table = S.parseTable(await board.readTable());
   const result = S.formFromTable(table);
   renderSlots();
@@ -1101,59 +1106,73 @@ function showInput(i, ev) {
   eventTimers[i] = setTimeout(() => { label.textContent = ''; }, 1500);
 }
 
-// --- Analog calibration ---
-// While calibrating, the input is set to the full raw range so the board
-// reports every movement; the page records the lowest and highest readings.
+// --- Analog calibration (board-wide, spec B.10) ---
+// Not part of any preset: read from the board on connect and sent straight
+// back when changed. While a range is being set, the input runs at the full
+// raw range (not saved) so the board reports every movement; the page
+// records the lowest and highest readings, and Done saves the result.
 
-let calibrating = null;  // {i, lo, hi, saved: [min, max]}
+let calibration = structuredClone(S.DEFAULT_CALIBRATION);
+let calibrating = null;  // {i, lo, hi, saved: {min, max}}
 
 function renderCalibration(i) {
-  const lo = form.analogMin[i], hi = form.analogMax[i];
-  const inv = lo > hi;
+  const lo = calibration.min[i], hi = calibration.max[i];
   const active = calibrating && calibrating.i === i;
-  $(`inv-${i}`).checked = inv;
+  $(`inv-${i}`).checked = lo > hi;
+  for (const id of [`cal-${i}`, `inv-${i}`, `full-${i}`]) $(id).disabled = !board;
   $(`cal-${i}`).hidden = active;
   $(`inv-${i}`).parentElement.hidden = active;
   $(`done-${i}`).hidden = !active;
   $(`cancel-${i}`).hidden = !active;
   const a = Math.min(lo, hi), b = Math.max(lo, hi);
   $(`full-${i}`).hidden = active || (a === 0 && b === 4095);
-  $(`caltext-${i}`).textContent = active
-    ? (calibrating.lo > calibrating.hi
-      ? 'Move it all the way one way, then all the way the other, then press Done.'
-      : `Seen ${calibrating.lo}–${calibrating.hi} of 4095. Keep moving, then press Done.`)
-    : (a === 0 && b === 4095 ? 'Full range' : `Range ${a}–${b} of 4095`);
+  $(`caltext-${i}`).textContent = !board ? 'Connect the board to set a range'
+    : active
+      ? (calibrating.lo > calibrating.hi
+        ? 'Move it all the way one way, then all the way the other, then press Done.'
+        : `Seen ${calibrating.lo}–${calibrating.hi} of 4095. Keep moving, then press Done.`)
+      : (a === 0 && b === 4095 ? 'Full range' : `Range ${a}–${b} of 4095`);
+}
+
+function renderAllCalibration() {
+  for (let i = 0; i < S.NUM_ANALOG; i++) renderCalibration(i);
+}
+
+async function sendCalibration(save) {
+  try {
+    await board.setCalibration(calibration, save);
+    if (save) setSave('Analog range saved on the board');
+  } catch (e) {
+    showError(e);
+  }
 }
 
 function startCalibration(i) {
-  if (!board) {
-    setSave('Connect the board to set a range', true);
-    return;
-  }
+  if (!board) return;
   if (calibrating) finishCalibration(calibrating.i, false);
-  calibrating = { i, lo: Infinity, hi: -Infinity, saved: [form.analogMin[i], form.analogMax[i]] };
-  form.analogMin[i] = 0;
-  form.analogMax[i] = 4095;
+  calibrating = { i, lo: Infinity, hi: -Infinity, saved: structuredClone(calibration) };
+  calibration.min[i] = 0;
+  calibration.max[i] = 4095;
   renderCalibration(i);
-  changed();
+  sendCalibration(false);
 }
 
 function finishCalibration(i, keep) {
   const c = calibrating;
   calibrating = null;
-  const inverted = c.saved[0] > c.saved[1];
+  const inverted = c.saved.min[i] > c.saved.max[i];
+  calibration = structuredClone(c.saved);
   if (keep && c.hi - c.lo >= 100) {
     // Pull in a little so both ends reliably reach 0 and 127.
     const margin = Math.round((c.hi - c.lo) * 0.03);
     const lo = c.lo + margin, hi = c.hi - margin;
-    form.analogMin[i] = inverted ? hi : lo;
-    form.analogMax[i] = inverted ? lo : hi;
-  } else {
-    [form.analogMin[i], form.analogMax[i]] = c.saved;
-    if (keep) setSave('Not enough movement seen: range unchanged', true);
+    calibration.min[i] = inverted ? hi : lo;
+    calibration.max[i] = inverted ? lo : hi;
+  } else if (keep) {
+    setSave('Not enough movement seen: range unchanged', true);
   }
   renderCalibration(i);
-  changed();
+  if (board) sendCalibration(keep);
 }
 
 function showAnalog(i, raw, value) {

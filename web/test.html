@@ -45,6 +45,7 @@ function fakeBoard() {
   const dev = {
     working: S.buildTable(S.tableFromForm(S.defaultForm())),
     slots: [], staging: null, activeSlot: 0,
+    calibration: [3750, 3750, 2350, 2350], savedCalibration: null,
   };
   const input = { name: 'MIDIIN2 (Switchcraft)', onmidimessage: null };
   const reply = (m, status, data = []) => setTimeout(() =>
@@ -84,6 +85,14 @@ function fakeBoard() {
           dev.working = dev.slots[p[0]];
           dev.activeSlot = p[0];
           return reply(m, 0);
+        case S.CMD.CALIBRATION_GET:
+          return reply(m, 0, dev.calibration.flatMap(le16));
+        case S.CMD.CALIBRATION_SET: {
+          const v = [1, 3, 5, 7].map((o) => p[o] | (p[o + 1] << 8));
+          dev.calibration = v;
+          if (p[0] & 1) dev.savedCalibration = v;
+          return reply(m, 0);
+        }
         default:
           return reply(m, 0x01);
       }
@@ -116,7 +125,7 @@ function fakeBoard() {
   await test('default form builds the firmware\'s built-in table byte for byte', () => {
     const blob = S.buildTable(S.tableFromForm(S.defaultForm()));
     assertEq(blob.length, 228);
-    assertEq(hex(S.crc32(blob)), 'b931023f');  // as read back from the board
+    assertEq(hex(S.crc32(blob)), 'c50b2b52');  // = tools/sc.py default_table()
   });
 
   await test('form -> table -> form round trip', () => {
@@ -364,12 +373,20 @@ function fakeBoard() {
     assert(rms(buf, 0.5, 0.55) > 0.01, 'no repeat at 0.5 s');
   });
 
-  await test('inverted analog range round trips through the table', () => {
-    const f = S.defaultForm();
-    f.analogMin = [3900, 0];
-    f.analogMax = [1700, 4095];
-    const back = S.formFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).form;
-    assertEq([back.analogMin, back.analogMax], [[3900, 0], [1700, 4095]]);
+  await test('board-wide calibration: read, set without saving, save', async () => {
+    const { dev, input, output } = fakeBoard();
+    const board = new S.Board(input, output);
+    assertEq(await board.getCalibration(), S.DEFAULT_CALIBRATION);
+    await board.setCalibration({ min: [0, 0], max: [4095, 4095] }, false);
+    assertEq(dev.savedCalibration, null);
+    await board.setCalibration({ min: [3900, 0], max: [1700, 4095] }, true);
+    assertEq(dev.savedCalibration, [3900, 0, 1700, 4095]);
+    assertEq(await board.getCalibration(), { min: [3900, 0], max: [1700, 4095] });
+  });
+
+  await test('presets no longer carry calibration (reserved bytes are zero)', () => {
+    const blob = S.buildTable(S.tableFromForm(S.defaultForm()));
+    assertEq(Array.from(blob.subarray(12 + 30, 12 + 40)), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   });
 
   await test('templates build valid-looking tables and show in the form', () => {
@@ -392,14 +409,11 @@ function fakeBoard() {
     assertEq(names(tune.sequences[0]).slice(0, 15).join(' '), 'E E F G G F E D C C D E E D D');
     assertEq(names(tune.sequences[1]).join(' '), 'C C G G A A G F F E E D D C');
     // The scale player template is the firmware's built-in table.
-    assertEq(hex(S.crc32(S.buildTable(S.tableFromForm(S.TEMPLATES[0].form())))), 'b931023f');
+    assertEq(hex(S.crc32(S.buildTable(S.tableFromForm(S.TEMPLATES[0].form())))), 'c50b2b52');
   });
 
   // Tables for tools/check_page_tables.py to send to a real board.
-  const inverted = S.defaultForm();
-  inverted.analogMin = [3900, 0];
-  inverted.analogMax = [1700, 4095];
-  const samples = { default: S.defaultForm(), sequences: sequenceForm(), 'inverted analog': inverted };
+  const samples = { default: S.defaultForm(), sequences: sequenceForm() };
   for (const t of S.TEMPLATES) samples[`template ${t.id}`] = t.form();
   const blobs = document.createElement('pre');
   blobs.id = 'blobs';

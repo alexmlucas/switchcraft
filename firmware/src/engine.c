@@ -21,7 +21,6 @@ static const table_t *tab;
 static const globals_t fallback_globals = {
     .debounce_ms = 10,
     .hold_ms = 500,
-    .analog_max = {4095, 4095},
 };
 
 // Musical state changed at run time by rules; reset on every load.

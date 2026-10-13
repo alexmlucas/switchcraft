@@ -29,6 +29,8 @@ enum {
     CMD_SLOT_LOAD = 0x08,
     CMD_SLOT_ERASE = 0x09,
     CMD_ALL_NOTES_OFF = 0x0A,
+    CMD_CALIBRATION_GET = 0x0B,
+    CMD_CALIBRATION_SET = 0x0C,
     REPLY_BIT = 0x40,
     REPORT_INPUT_EVENT = 0x60,
     REPORT_ANALOG_VALUE = 0x61,
@@ -223,6 +225,28 @@ static void cmd_slot(uint8_t cmd, uint8_t seq, const uint8_t *p, uint16_t n) {
     reply_status(cmd, seq, (uint8_t)status);
 }
 
+static void cmd_calibration_get(uint8_t seq, uint16_t n) {
+    if (n != 0)
+        return reply_status(CMD_CALIBRATION_GET, seq, STATUS_ERR_BAD_LENGTH);
+    const board_settings_t *s = config_settings();
+    uint8_t d[8];
+    for (int i = 0; i < 2; i++) {
+        wr16(d + 2 * i, s->analog_min[i]);
+        wr16(d + 4 + 2 * i, s->analog_max[i]);
+    }
+    reply(CMD_CALIBRATION_GET, seq, STATUS_OK, d, sizeof(d));
+}
+
+static void cmd_calibration_set(uint8_t seq, const uint8_t *p, uint16_t n) {
+    if (n != 9)
+        return reply_status(CMD_CALIBRATION_SET, seq, STATUS_ERR_BAD_LENGTH);
+    if (p[0] & 0xFE)
+        return reply_status(CMD_CALIBRATION_SET, seq, STATUS_ERR_RANGE);
+    uint16_t min[2] = {rd16(p + 1), rd16(p + 3)};
+    uint16_t max[2] = {rd16(p + 5), rd16(p + 7)};
+    reply_status(CMD_CALIBRATION_SET, seq, (uint8_t)config_set_calibration(min, max, p[0] & 1));
+}
+
 static void handle_message(void) {
     // rx holds F0 7D 53 43 ver cmd seq <nibbles> F7
     if (rx_len < 8 || memcmp(rx, HEADER, sizeof(HEADER)) != 0)
@@ -269,6 +293,10 @@ static void handle_message(void) {
             return reply_status(cmd, seq, STATUS_ERR_BAD_LENGTH);
         engine_all_notes_off();
         return reply_status(cmd, seq, STATUS_OK);
+    case CMD_CALIBRATION_GET:
+        return cmd_calibration_get(seq, n);
+    case CMD_CALIBRATION_SET:
+        return cmd_calibration_set(seq, payload, n);
     default:
         return reply_status(cmd, seq, STATUS_ERR_UNKNOWN_CMD);
     }
