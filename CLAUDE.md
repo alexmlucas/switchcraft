@@ -13,6 +13,9 @@ Full design and reasoning: [docs/config-interface-plan.md](docs/config-interface
 Read it before working on firmware or the config page. Key constraints:
 
 - Firmware: **Pico SDK (C) + TinyUSB**. Not Arduino, not CircuitPython.
+  Lives in `firmware/`; build and test steps in
+  [firmware/README.md](firmware/README.md). `tools/sc.py` talks to the board
+  from Python (`python tools/sc.py selftest` runs without one).
 - Config UI: an offline-capable browser page (Chrome/Edge) using **WebMIDI +
   SysEx**. Nothing is hosted on the board.
 - USB: **two MIDI virtual cables**. Port 1 carries music for a DAW; port 2
