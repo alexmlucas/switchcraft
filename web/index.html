@@ -177,6 +177,7 @@
   <button class="primary" id="connect">Connect</button>
   <span class="spacer"></span>
   <span id="save-status" role="status" aria-live="polite"></span>
+  <button id="sound" aria-pressed="false" title="Play the board’s notes in this browser">Sound: off</button>
   <button id="panic" disabled title="Send note-off for every sounding note">All notes off</button>
 </header>
 
@@ -267,9 +268,21 @@
     </div>
     <p class="hint">“Ignore repeat presses” helps if a switch gets pressed twice by accident, for example with a tremor.</p>
   </section>
+
+  <section class="card" id="sound-card" aria-labelledby="sound-h">
+    <h2 id="sound-h">Sound in this browser</h2>
+    <div class="row">
+      <label class="field">Sound <select id="synth-sound"></select></label>
+      <label class="field">Volume
+        <input type="range" id="synth-volume" min="0" max="100" step="1" style="min-height: 44px; width: 12rem; margin: 0; border: 0; padding: 0;">
+      </label>
+    </div>
+    <p class="hint">Turn on with the <strong>Sound</strong> button at the top. The browser plays everything the board sends, including sequences. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74): set an analog input to one of these to hear it move. A DAW or synth on the board’s first MIDI port still gets everything as well. Settings here only affect this browser and are not saved to the board.</p>
+  </section>
 </main>
 
 <script src="switchcraft.js"></script>
+<script src="synth.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -312,6 +325,22 @@ let midiAccess = null;
 let activeSlot = 0;
 let slotNames = [];
 let editable = true;
+
+// Browser synth. Its sound and volume are remembered in this browser only.
+const synth = new SwitchcraftSynth.Synth();
+const PREFS_KEY = 'switchcraft.synth';
+function loadPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY)) || {};
+  } catch (e) {
+    return {};
+  }
+}
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ sound: synth.sound, volume: synth.volume }));
+  } catch (e) { /* storage unavailable: not important */ }
+}
 
 // --- Small DOM helpers ---
 
@@ -553,7 +582,7 @@ function renderAll() {
 
 function setEditable(on) {
   editable = on;
-  document.querySelectorAll('main section select, main section input, main section button')
+  document.querySelectorAll("main section:not(#sound-card) :is(select, input, button)")
     .forEach((c) => { if (c.id !== 'slot') c.disabled = !on; });
 }
 
@@ -723,8 +752,37 @@ function buildStatic() {
     $('add-note').focus();
   });
 
+  // Browser synth
+  const prefs = loadPrefs();
+  synth.setSound(prefs.sound || 'warm');
+  synth.setVolume(typeof prefs.volume === 'number' ? prefs.volume : 0.8);
+  options($('synth-sound'),
+    Object.entries(SwitchcraftSynth.SOUNDS).map(([id, s]) => [id, s.name]), synth.sound);
+  $('synth-volume').value = Math.round(synth.volume * 100);
+  $('synth-sound').addEventListener('change', () => {
+    synth.setSound($('synth-sound').value);
+    savePrefs();
+  });
+  $('synth-volume').addEventListener('input', () => {
+    synth.setVolume(Number($('synth-volume').value) / 100);
+    savePrefs();
+  });
+  $('sound').addEventListener('click', async () => {
+    try {
+      if (synth.running) await synth.stop();
+      else await synth.start();
+    } catch (e) {
+      showError(e);
+    }
+    $('sound').setAttribute('aria-pressed', String(synth.running));
+    $('sound').textContent = synth.running ? 'Sound: on' : 'Sound: off';
+  });
+
   $('connect').addEventListener('click', connect);
-  $('panic').addEventListener('click', () => board && board.allNotesOff().catch(showError));
+  $('panic').addEventListener('click', () => {
+    synth.allNotesOff();
+    if (board) board.allNotesOff().catch(showError);
+  });
   $('slot').addEventListener('change', () => switchSlot(Number($('slot').value)));
   $('replace').addEventListener('click', () => {
     form = S.defaultForm();
@@ -853,6 +911,7 @@ function attach(b) {
 }
 
 function detach(reason) {
+  synth.allNotesOff();  // their note-offs will never arrive
   if (board) board.close();
   board = null;
   clearTimeout(writeTimer);
@@ -957,6 +1016,7 @@ function showAnalog(i, raw, value) {
 }
 
 function showMidi(d) {
+  if (synth.running) synth.handleMidi(d);
   if ((d[0] & 0xf0) === 0x90 && d[2] > 0)
     $('last-note').textContent = `Last note: ${S.noteName(d[1])}`;
 }

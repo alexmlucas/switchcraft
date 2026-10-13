@@ -12,6 +12,7 @@
 <h1>Switchcraft page tests</h1>
 <pre id="out"></pre>
 <script src="switchcraft.js"></script>
+<script src="synth.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -264,6 +265,75 @@ function fakeBoard() {
     const t = S.tableFromForm(sequenceForm());
     t.rules.push({ trig: S.TRIG.PRESS, src: 9, act: S.ACT.SEQ_STEP, p0: 0xff });
     assert(!S.formFromTable(S.parseTable(S.buildTable(t))).form);
+  });
+
+  // --- Synth: render offline and measure what comes out ---
+
+  const RATE = 22050;
+  function rms(buf, from, to) {
+    const d = buf.getChannelData(0).subarray(Math.floor(from * RATE), Math.floor(to * RATE));
+    return Math.sqrt(d.reduce((a, x) => a + x * x, 0) / d.length);
+  }
+  // Energy of the sample-to-sample difference: a rough measure of brightness.
+  function edge(buf, from, to) {
+    const d = buf.getChannelData(0).subarray(Math.floor(from * RATE), Math.floor(to * RATE));
+    let e = 0;
+    for (let i = 1; i < d.length; i++) e += (d[i] - d[i - 1]) ** 2;
+    return Math.sqrt(e / d.length);
+  }
+  // events: [[time, midiBytes], ...]
+  async function render(seconds, events, setup = () => {}) {
+    const ctx = new OfflineAudioContext(1, Math.ceil(seconds * RATE), RATE);
+    const synth = new SwitchcraftSynth.Synth(ctx);
+    setup(synth);
+    for (const [time, msg] of events) {
+      if (time === 0) synth.handleMidi(msg);
+      else ctx.suspend(time).then(() => { synth.handleMidi(msg); ctx.resume(); });
+    }
+    return { buf: await ctx.startRendering(), synth };
+  }
+
+  await test('synth: a note sounds, then fades after note-off', async () => {
+    const { buf } = await render(1.5, [[0, [0x90, 60, 100]], [0.5, [0x80, 60, 0]]]);
+    const during = rms(buf, 0.1, 0.45), after = rms(buf, 1.2, 1.5);
+    assert(during > 0.02, `quiet while held: ${during}`);
+    assert(after < 0.001, `still sounding after release: ${after}`);
+  });
+
+  await test('synth: note-on with velocity 0 counts as note-off', async () => {
+    const { buf } = await render(1.5, [[0, [0x90, 60, 100]], [0.5, [0x90, 60, 0]]]);
+    assert(rms(buf, 1.2, 1.5) < 0.001);
+  });
+
+  await test('synth: CC 7 at 0 silences it, CC 123 stops notes', async () => {
+    const muted = await render(0.5, [[0, [0xb0, 7, 0]], [0, [0x90, 60, 100]]]);
+    assert(rms(muted.buf, 0.1, 0.5) < 0.001, 'CC 7 = 0 not silent');
+    const panic = await render(1.2, [[0, [0x90, 60, 100]], [0, [0x90, 64, 100]], [0.3, [0xb0, 123, 0]]]);
+    assert(rms(panic.buf, 0.8, 1.2) < 0.001, 'CC 123 left notes on');
+  });
+
+  await test('synth: CC 74 makes it brighter', async () => {
+    const dark = await render(0.6, [[0, [0xb0, 74, 10]], [0, [0x90, 48, 100]]]);
+    const bright = await render(0.6, [[0, [0xb0, 74, 127]], [0, [0x90, 48, 100]]]);
+    // Compare brightness relative to loudness, after the filter envelope settles.
+    const d = edge(dark.buf, 0.4, 0.6) / rms(dark.buf, 0.4, 0.6);
+    const b = edge(bright.buf, 0.4, 0.6) / rms(bright.buf, 0.4, 0.6);
+    assert(b > d * 2, `bright ${b.toFixed(3)} vs dark ${d.toFixed(3)}`);
+  });
+
+  await test('synth: never more than 16 voices; oldest is reused', async () => {
+    const events = Array.from({ length: 20 }, (_, i) => [0, [0x90, 40 + i, 100]]);
+    const { synth } = await render(0.2, events);
+    assertEq(synth.activeVoices, SwitchcraftSynth.MAX_VOICES);
+    assert(!synth.voices.has('0:40') && synth.voices.has('0:59'), 'wrong voice stolen');
+  });
+
+  await test('synth: plays every sound without errors', async () => {
+    for (const id of Object.keys(SwitchcraftSynth.SOUNDS)) {
+      const { buf } = await render(0.4, [[0, [0x90, 60, 100]], [0, [0xb0, 1, 127]], [0, [0xe0, 0, 0x60]]],
+        (s) => s.setSound(id));
+      assert(rms(buf, 0.05, 0.3) > 0.005, `${id} is silent`);
+    }
   });
 
   // Tables for tools/check_page_tables.py to send to a real board.

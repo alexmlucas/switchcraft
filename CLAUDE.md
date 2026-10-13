@@ -19,9 +19,12 @@ Read it before working on firmware or the config page. Key constraints:
 - Config UI: an offline-capable browser page (Chrome/Edge) using **WebMIDI +
   SysEx**. Nothing is hosted on the board. Lives in `web/`: open
   `web/index.html` straight from disk (WebMIDI works over `file://`).
-  Protocol/table logic is in `web/switchcraft.js` (no UI code); unit tests
-  in `web/test.html` run in headless Chrome
-  (`chrome --headless=new --dump-dom file:///.../web/test.html`).
+  Protocol/table logic is in `web/switchcraft.js` and the audition synth in
+  `web/synth.js` (no UI code in either). Run the unit tests in
+  `web/test.html` with `python tools/run_web_tests.py` (headless Chrome;
+  `--dump-dom` alone doesn't wait for the audio tests).
+  `python tools/check_page_tables.py` sends the page's sample tables to a
+  connected board.
 - USB: **two MIDI virtual cables**. Port 1 carries music for a DAW; port 2
   carries config SysEx plus a copy of all musical output. Increment
   `bcdDevice` on every descriptor change.

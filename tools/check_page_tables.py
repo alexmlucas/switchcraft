@@ -6,49 +6,30 @@ finally restores the board's working table.
 
     python tools/check_page_tables.py [--chrome PATH]
 
-Needs a board, Chrome, and: pip install mido python-rtmidi
+Needs a board, Chrome, and: pip install mido python-rtmidi websocket-client
 """
 
 import argparse
-import html
-import os
-import re
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import sc  # noqa: E402
-
-ROOT = Path(__file__).resolve().parent.parent
-CHROME_PATHS = [
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "google-chrome",
-    "chromium",
-]
+from run_web_tests import default_chrome, run_page  # noqa: E402
 
 
 def page_tables(chrome):
-    with tempfile.TemporaryDirectory() as profile:
-        dom = subprocess.run(
-            [chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={profile}",
-             "--virtual-time-budget=5000", "--dump-dom", (ROOT / "web" / "test.html").as_uri()],
-            capture_output=True, text=True, encoding="utf8", check=True).stdout
-    summary = re.search(r"(\d+) passed, (\d+) failed", dom)
-    if not summary or summary.group(2) != "0":
-        sys.exit(f"page unit tests failed: {summary.group(0) if summary else 'no result'}")
-    block = re.search(r'<pre id="blobs"[^>]*>(.*?)</pre>', dom, re.S)
-    for line in html.unescape(block.group(1)).strip().splitlines():
+    title, out, blobs = run_page(chrome)
+    if title != "PASSED":
+        sys.exit(f"page unit tests failed:\n{out}")
+    for line in blobs.strip().splitlines():
         name, hexdata = line.split()
         yield name, bytes.fromhex(hexdata)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--chrome", default=next((p for p in CHROME_PATHS if os.path.exists(p)), "google-chrome"))
+    ap.add_argument("--chrome", default=default_chrome())
     args = ap.parse_args()
 
     tables = list(page_tables(args.chrome))
