@@ -281,12 +281,19 @@ understand fails loudly rather than silently doing nothing.
 | 25 | reserved | `u8` | 0 | |
 | 26 | lockout_ms | `u16` | 0 | Accessibility: presses of the same input within this time of the last accepted press are ignored |
 | 28 | hold_ms | `u16` | 500 | Default time for `HOLD` triggers |
-| 30 | analog_min | `u16[2]` | 0, 0 | Raw ADC reading mapped to 0, per analog input |
-| 34 | analog_max | `u16[2]` | 4095, 4095 | Raw ADC reading mapped to 127 |
+| 30 | analog_min | `u16[2]` | 0, 0 | Raw ADC reading (0–4095) mapped to 0, per analog input |
+| 34 | analog_max | `u16[2]` | 4095, 4095 | Raw ADC reading mapped to 127. May be **less** than `analog_min` to invert the input; the two must differ |
 | 38 | reserved | `u8[2]` | 0 | |
 
 Scales are just masks; the page owns the list of named scales. A rule can
 change the root and mask at run time (`SET_SCALE`).
+
+**Analog calibration.** The analog jacks read a voltage divider (sensor to
+3.3 V, 10 kΩ to ground), so a typical 10 kΩ pedal only spans about half the
+ADC range, and backwards. `analog_min`/`analog_max` map the range a sensor
+actually covers onto 0–127; swapping them inverts it. Raw readings outside
+the range are clamped. Note that an inverted input with nothing plugged in
+reads 127.
 
 ### B.4 Inputs and events
 

@@ -2,7 +2,10 @@
 
 A board built around a stock Raspberry Pi Pico (RP2040, 2 MB flash, no WiFi)
 that turns access switches into USB MIDI: 10 switch inputs and 2 analog
-inputs, see [docs/pin-map.md](docs/pin-map.md). Repo layout: `electronics/`
+inputs, see [docs/pin-map.md](docs/pin-map.md). It is designed as a companion
+for the **Logitech G Adaptive Gaming Kit**: its buttons plug into the switch
+jacks and its continuous (variable trigger) controllers into the analog jacks,
+so defaults such as analog calibration should suit those. Repo layout: `electronics/`
 (KiCad), `mechanical/` (OpenSCAD), `pd/` (Pure Data prototypes, including a
 step sequencer), plus early GTK experiments at the root. The original
 firmware is lost; the new firmware is written from scratch.

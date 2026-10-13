@@ -50,7 +50,8 @@ static bool load_globals(const uint8_t *p, uint16_t off, globals_t *g, table_err
     if (g->tempo < 200 || g->tempo > 3000)  // 20-300 BPM
         FAIL(off + 22, INVALID_PARAM);
     for (int i = 0; i < 2; i++)
-        if (g->analog_max[i] > 4095 || g->analog_min[i] >= g->analog_max[i])
+        // max < min is allowed: it inverts the input.
+        if (g->analog_min[i] > 4095 || g->analog_max[i] > 4095 || g->analog_min[i] == g->analog_max[i])
             FAIL(off + 30 + 2 * i, INVALID_PARAM);
     return true;
 }

@@ -4,6 +4,7 @@
 //   CC 1  vibrato depth      CC 7   volume
 //   CC 74 brightness         CC 120/123  all notes off
 //   pitch bend +/- 2 semitones
+// Plus a tempo-synced echo (delay) after the voices.
 // A classic script (not a module) like switchcraft.js.
 
 (function (global) {
@@ -37,6 +38,9 @@
       this.cc = { 1: 0, 7: 100, 74: 64 };
       this.bend = 0;            // -1..1
       this.volume = 0.8;        // page volume control, 0..1
+      this.tempo = 120;         // BPM, for the echo
+      // Echo: beats between repeats (0 = off), feedback 0..0.85, level 0..1.
+      this.echo = { beats: 0, feedback: 0.4, level: 0.35 };
       if (ctx) this._build();
     }
 
@@ -71,7 +75,42 @@
       this.lfoDepth.gain.value = 0;
       this.lfo.connect(this.lfoDepth);
       this.lfo.start();
+
+      // Echo: master -> delay -> (filter -> feedback -> delay) and -> wet -> limiter.
+      // The filter in the loop makes each repeat a little darker.
+      this.delay = c.createDelay(2);
+      this.delayTone = c.createBiquadFilter();
+      this.delayTone.type = 'lowpass';
+      this.delayTone.frequency.value = 3500;
+      this.feedback = c.createGain();
+      this.wet = c.createGain();
+      this.master.connect(this.delay);
+      this.delay.connect(this.delayTone).connect(this.feedback).connect(this.delay);
+      this.delay.connect(this.wet).connect(this.limiter);
+
       this._applyVolume();
+      this._applyEcho(true);
+    }
+
+    setTempo(bpm) {
+      this.tempo = bpm;
+      if (this.ctx) this._applyEcho();
+    }
+
+    setEcho({ beats = this.echo.beats, feedback = this.echo.feedback, level = this.echo.level } = {}) {
+      this.echo = { beats, feedback: Math.min(0.85, Math.max(0, feedback)), level };
+      if (this.ctx) this._applyEcho();
+    }
+
+    // Changes glide (no clicks); `now` sets the values straight away.
+    _applyEcho(now = false) {
+      const t = this.ctx.currentTime;
+      const on = this.echo.beats > 0;
+      const set = (param, value, tau) =>
+        (now ? param.setValueAtTime(value, t) : param.setTargetAtTime(value, t, tau));
+      set(this.delay.delayTime, Math.min(2, (60 / this.tempo) * (this.echo.beats || 0.5)), 0.05);
+      set(this.feedback.gain, on ? this.echo.feedback : 0, 0.02);
+      set(this.wet.gain, on ? this.echo.level : 0, 0.02);
     }
 
     setSound(id) {

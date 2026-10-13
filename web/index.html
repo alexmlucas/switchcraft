@@ -131,7 +131,10 @@
   .tile-controls .gate { grid-column: 1 / -1; }
 
   .analog-row { display: grid; grid-template-columns: minmax(10ch, auto) minmax(0, 14rem) 1fr 4ch; gap: 12px; align-items: center; }
-  .analog-row + .analog-row { margin-top: 12px; }
+  .analog-cal { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 20px; }
+  .analog-cal:last-child { margin-bottom: 0; }
+  .cal-text { color: var(--muted); font-size: 15px; }
+  input.slider { min-height: 44px; width: 10rem; margin: 0; border: 0; padding: 0; }
   .meter { height: 14px; border-radius: 7px; background: var(--line); overflow: hidden; }
   .meter > div { height: 100%; width: 0; background: var(--meter); }
   .value { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -200,7 +203,12 @@
       <label class="field">Name
         <input type="text" id="name" maxlength="16" autocomplete="off" spellcheck="false">
       </label>
+      <label class="field">Start from a template
+        <select id="template"></select>
+      </label>
+      <button id="use-template" disabled>Use template</button>
     </div>
+    <p class="hint" id="template-text" hidden></p>
     <p class="hint">Changes play on the board straight away and are saved to the preset a moment later. The board remembers its last preset when unplugged.</p>
   </section>
 
@@ -254,7 +262,7 @@
   <section class="card" aria-labelledby="analog-h">
     <h2 id="analog-h">Analog inputs</h2>
     <div id="analog"></div>
-    <p class="hint">For expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves.</p>
+    <p class="hint">For expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. Most pedals only move part of the way along the bar at first: use <strong>Set range</strong> so they cover all of it, and <strong>Invert</strong> if it moves the wrong way.</p>
   </section>
 
   <section class="card" aria-labelledby="settings-h">
@@ -274,7 +282,14 @@
     <div class="row">
       <label class="field">Sound <select id="synth-sound"></select></label>
       <label class="field">Volume
-        <input type="range" id="synth-volume" min="0" max="100" step="1" style="min-height: 44px; width: 12rem; margin: 0; border: 0; padding: 0;">
+        <input type="range" id="synth-volume" min="0" max="100" step="1" class="slider">
+      </label>
+      <label class="field">Echo <select id="echo-time"></select></label>
+      <label class="field">Echo repeats
+        <input type="range" id="echo-feedback" min="0" max="85" step="1" class="slider">
+      </label>
+      <label class="field">Echo level
+        <input type="range" id="echo-level" min="0" max="100" step="1" class="slider">
       </label>
     </div>
     <p class="hint">Turn on with the <strong>Sound</strong> button at the top. The browser plays everything the board sends, including sequences. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74): set an analog input to one of these to hear it move. A DAW or synth on the board’s first MIDI port still gets everything as well. Settings here only affect this browser and are not saved to the board.</p>
@@ -338,7 +353,7 @@ function loadPrefs() {
 }
 function savePrefs() {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ sound: synth.sound, volume: synth.volume }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ sound: synth.sound, volume: synth.volume, echo: synth.echo }));
   } catch (e) { /* storage unavailable: not important */ }
 }
 
@@ -568,12 +583,14 @@ function renderAll() {
   $('channel').value = String(form.channel);
   $('velocity').value = form.velocity;
   $('tempo').value = Math.round(form.tempo / 10);
+  synth.setTempo(form.tempo / 10);  // echo follows the preset's tempo
   if (![...$('lockout').options].some((o) => o.value === String(form.lockoutMs)))
     $('lockout').append(el('option', { value: String(form.lockoutMs), textContent: `${form.lockoutMs} ms` }));
   $('lockout').value = String(form.lockoutMs);
   for (let i = 0; i < S.NUM_INPUTS; i++) renderSwitch(i);
   form.analog.forEach((a, i) => {
     options($(`cc-${i}`), withValue(CC_CHOICES, a.cc, `CC ${a.cc}`), a.cc);
+    renderCalibration(i);
   });
   setEditable(editable);
   renderSeqPicker();
@@ -583,7 +600,7 @@ function renderAll() {
 function setEditable(on) {
   editable = on;
   document.querySelectorAll("main section:not(#sound-card) :is(select, input, button)")
-    .forEach((c) => { if (c.id !== 'slot') c.disabled = !on; });
+    .forEach((c) => { if (!['slot', 'template', 'use-template'].includes(c.id)) c.disabled = !on; });
 }
 
 function renderSlots() {
@@ -679,6 +696,38 @@ function buildStatic() {
     $('analog').append(el('div', { className: 'analog-row' },
       el('span', { textContent: label }), sel, meter,
       el('span', { className: 'value', id: `val-${i}`, textContent: '0' })));
+
+    // Calibration line
+    const setRange = el('button', { type: 'button', id: `cal-${i}`, textContent: 'Set range' });
+    setRange.setAttribute('aria-label', `${label}: set range`);
+    const invertBox = el('input', { type: 'checkbox', id: `inv-${i}` });
+    const full = el('button', { type: 'button', id: `full-${i}`, textContent: 'Full range' });
+    full.setAttribute('aria-label', `${label}: use the full range`);
+    const done = el('button', { type: 'button', id: `done-${i}`, textContent: 'Done', className: 'primary', hidden: true });
+    const cancel = el('button', { type: 'button', id: `cancel-${i}`, textContent: 'Cancel', hidden: true });
+    $('analog').append(el('div', { className: 'analog-cal' },
+      setRange, el('label', { className: 'check' }, invertBox, 'Invert'), full, done, cancel,
+      el('span', { className: 'cal-text', id: `caltext-${i}`, role: 'status' })));
+
+    setRange.addEventListener('click', () => startCalibration(i));
+    done.addEventListener('click', () => finishCalibration(i, true));
+    cancel.addEventListener('click', () => finishCalibration(i, false));
+    invertBox.addEventListener('change', () => {
+      const lo = form.analogMin[i], hi = form.analogMax[i];
+      if ((lo > hi) !== invertBox.checked) {
+        form.analogMin[i] = hi;
+        form.analogMax[i] = lo;
+      }
+      renderCalibration(i);
+      changed();
+    });
+    full.addEventListener('click', () => {
+      const inv = form.analogMin[i] > form.analogMax[i];
+      form.analogMin[i] = inv ? 4095 : 0;
+      form.analogMax[i] = inv ? 0 : 4095;
+      renderCalibration(i);
+      changed();
+    });
   });
 
   $('name').addEventListener('input', () => {
@@ -712,6 +761,7 @@ function buildStatic() {
     const bpm = Math.min(240, Math.max(40, Math.round(Number($('tempo').value)) || 120));
     $('tempo').value = bpm;
     form.tempo = bpm * 10;
+    synth.setTempo(bpm);
     changed();
   });
   $('seq-mode').addEventListener('change', () => {
@@ -752,6 +802,30 @@ function buildStatic() {
     $('add-note').focus();
   });
 
+  // Templates replace the whole preset (after asking).
+  options($('template'), [['', 'Choose…'], ...S.TEMPLATES.map((t) => [t.id, t.name])], '');
+  const chosenTemplate = () => S.TEMPLATES.find((t) => t.id === $('template').value);
+  $('template').addEventListener('change', () => {
+    const t = chosenTemplate();
+    $('template-text').textContent = t ? t.description : '';
+    $('template-text').hidden = !t;
+    $('use-template').disabled = !t;
+  });
+  $('use-template').addEventListener('click', () => {
+    const t = chosenTemplate();
+    if (!t) return;
+    const where = board ? `preset ${activeSlot + 1} (“${form.name || 'Untitled'}”)` : 'the settings on this page';
+    if (!confirm(`Replace ${where} with the “${t.name}” template?`)) return;
+    form = t.form();
+    currentSeq = 0;
+    $('foreign').hidden = true;
+    setEditable(true);
+    renderAll();
+    changed();
+    $('template').value = '';
+    $('template').dispatchEvent(new Event('change'));
+  });
+
   // Browser synth
   const prefs = loadPrefs();
   synth.setSound(prefs.sound || 'warm');
@@ -767,6 +841,25 @@ function buildStatic() {
     synth.setVolume(Number($('synth-volume').value) / 100);
     savePrefs();
   });
+  // Echo, in beats at the preset's tempo.
+  if (prefs.echo) synth.setEcho(prefs.echo);
+  options($('echo-time'), [
+    [0, 'Off'], [1, 'Quarter note'], [0.75, 'Dotted eighth'], [0.5, 'Eighth note'],
+    [1 / 3, 'Eighth-note triplet'], [0.25, 'Sixteenth note'],
+  ], synth.echo.beats);
+  $('echo-feedback').value = Math.round(synth.echo.feedback * 100);
+  $('echo-level').value = Math.round(synth.echo.level * 100);
+  const echoChanged = () => {
+    synth.setEcho({
+      beats: Number($('echo-time').value),
+      feedback: Number($('echo-feedback').value) / 100,
+      level: Number($('echo-level').value) / 100,
+    });
+    savePrefs();
+  };
+  $('echo-time').addEventListener('change', echoChanged);
+  $('echo-feedback').addEventListener('input', echoChanged);
+  $('echo-level').addEventListener('input', echoChanged);
   $('sound').addEventListener('click', async () => {
     try {
       if (synth.running) await synth.stop();
@@ -947,6 +1040,7 @@ async function loadFromBoard() {
 }
 
 async function loadWorking() {
+  calibrating = null;  // a different preset: drop any range being set
   const table = S.parseTable(await board.readTable());
   const result = S.formFromTable(table);
   renderSlots();
@@ -1007,7 +1101,67 @@ function showInput(i, ev) {
   eventTimers[i] = setTimeout(() => { label.textContent = ''; }, 1500);
 }
 
+// --- Analog calibration ---
+// While calibrating, the input is set to the full raw range so the board
+// reports every movement; the page records the lowest and highest readings.
+
+let calibrating = null;  // {i, lo, hi, saved: [min, max]}
+
+function renderCalibration(i) {
+  const lo = form.analogMin[i], hi = form.analogMax[i];
+  const inv = lo > hi;
+  const active = calibrating && calibrating.i === i;
+  $(`inv-${i}`).checked = inv;
+  $(`cal-${i}`).hidden = active;
+  $(`inv-${i}`).parentElement.hidden = active;
+  $(`done-${i}`).hidden = !active;
+  $(`cancel-${i}`).hidden = !active;
+  const a = Math.min(lo, hi), b = Math.max(lo, hi);
+  $(`full-${i}`).hidden = active || (a === 0 && b === 4095);
+  $(`caltext-${i}`).textContent = active
+    ? (calibrating.lo > calibrating.hi
+      ? 'Move it all the way one way, then all the way the other, then press Done.'
+      : `Seen ${calibrating.lo}–${calibrating.hi} of 4095. Keep moving, then press Done.`)
+    : (a === 0 && b === 4095 ? 'Full range' : `Range ${a}–${b} of 4095`);
+}
+
+function startCalibration(i) {
+  if (!board) {
+    setSave('Connect the board to set a range', true);
+    return;
+  }
+  if (calibrating) finishCalibration(calibrating.i, false);
+  calibrating = { i, lo: Infinity, hi: -Infinity, saved: [form.analogMin[i], form.analogMax[i]] };
+  form.analogMin[i] = 0;
+  form.analogMax[i] = 4095;
+  renderCalibration(i);
+  changed();
+}
+
+function finishCalibration(i, keep) {
+  const c = calibrating;
+  calibrating = null;
+  const inverted = c.saved[0] > c.saved[1];
+  if (keep && c.hi - c.lo >= 100) {
+    // Pull in a little so both ends reliably reach 0 and 127.
+    const margin = Math.round((c.hi - c.lo) * 0.03);
+    const lo = c.lo + margin, hi = c.hi - margin;
+    form.analogMin[i] = inverted ? hi : lo;
+    form.analogMax[i] = inverted ? lo : hi;
+  } else {
+    [form.analogMin[i], form.analogMax[i]] = c.saved;
+    if (keep) setSave('Not enough movement seen: range unchanged', true);
+  }
+  renderCalibration(i);
+  changed();
+}
+
 function showAnalog(i, raw, value) {
+  if (calibrating && calibrating.i === i) {
+    calibrating.lo = Math.min(calibrating.lo, raw);
+    calibrating.hi = Math.max(calibrating.hi, raw);
+    renderCalibration(i);
+  }
   const meter = $(`meter-${i}`);
   if (!meter) return;
   meter.firstChild.style.width = `${(value / 127) * 100}%`;

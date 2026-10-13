@@ -223,7 +223,7 @@
   function defaultSequence() {
     // notes: scale degrees or MIDI notes (by noteType), null = rest
     return {
-      mode: 'clock', noteType: 'scale', notes: [], order: 'up', octaves: 1,
+      mode: 'clock', noteType: 'scale', notes: [], order: 'written', octaves: 1,
       division: 6, gate: 80,
     };
   }
@@ -350,6 +350,80 @@
     }
     return { form: f };
   }
+
+  // --- Starter templates (plan: "Templates and presets") ---
+  // Each returns a fresh form. Names fit the board's 16 characters.
+
+  function seq(mode, noteType, notes, extra = {}) {
+    return { ...defaultSequence(), mode, noteType, notes, ...extra };
+  }
+
+  const TEMPLATES = [
+    {
+      id: 'scale', name: 'Scale player',
+      description: 'Switches 1–10 play up the scale; the buttons shift an octave down and up.',
+      form: () => defaultForm(),
+    },
+    {
+      id: 'arp', name: 'Chord arpeggiator',
+      description: 'Four chords as arpeggios. Switches 1–4 play while held, 5–8 start and stop on the beat. 9–10 are bass notes.',
+      form: () => {
+        const f = defaultForm();
+        f.name = 'Chord arp';
+        f.tempo = 1100;
+        const arp = { order: 'up', octaves: 2, division: 6, gate: 70 };
+        // I, IV, V and vi of the current key, as scale degrees.
+        f.sequences = [[0, 2, 4], [3, 5, 7], [4, 6, 8], [5, 7, 9]].map((n) => seq('clock', 'scale', n, arp));
+        for (let i = 0; i < 4; i++) {
+          f.switches[i] = { action: 'seq-play', seq: i, gate: 'hold', onBeat: false };
+          f.switches[i + 4] = { action: 'seq-play', seq: i, gate: 'latch', onBeat: true };
+        }
+        f.switches[8] = { action: 'scale', degree: -7, gate: 'hold' };
+        f.switches[9] = { action: 'scale', degree: -3, gate: 'hold' };
+        return f;
+      },
+    },
+    {
+      id: 'tune', name: 'Tune stepper',
+      description: 'Each press plays the next note of a tune: Ode to Joy on switch 1, Twinkle Twinkle on switch 3. Switches 2 and 4 go back to the start; 5–10 play scale notes.',
+      form: () => {
+        const f = defaultForm();
+        f.name = 'Tune stepper';
+        const ode = [2, 2, 3, 4, 4, 3, 2, 1, 0, 0, 1, 2, 2, 1, 1,
+          2, 2, 3, 4, 4, 3, 2, 1, 0, 0, 1, 2, 1, 0, 0];
+        const twinkle = [0, 0, 4, 4, 5, 5, 4, 3, 3, 2, 2, 1, 1, 0];
+        f.sequences[0] = seq('press', 'scale', ode, { order: 'written', gate: 0 });
+        f.sequences[1] = seq('press', 'scale', twinkle, { order: 'written', gate: 0 });
+        f.switches[0] = { action: 'seq-step', seq: 0 };
+        f.switches[1] = { action: 'seq-restart', seq: 0 };
+        f.switches[2] = { action: 'seq-step', seq: 1 };
+        f.switches[3] = { action: 'seq-restart', seq: 1 };
+        for (let i = 4; i < 10; i++) f.switches[i] = { action: 'scale', degree: i - 4, gate: 'hold' };
+        return f;
+      },
+    },
+    {
+      id: 'drums', name: 'Drum pads',
+      description: 'General MIDI drums on channel 10, one per switch. The buttons start and stop a beat and a hi-hat pattern. Best with a DAW drum kit.',
+      form: () => {
+        const f = defaultForm();
+        f.name = 'Drum pads';
+        f.channel = 9;
+        // Kick, snare, closed hat, open hat, clap, low tom, high tom, crash, ride, cowbell
+        [36, 38, 42, 46, 39, 45, 48, 49, 51, 56].forEach((note, i) => {
+          f.switches[i] = { action: 'note', note, gate: 'oneshot' };
+        });
+        f.sequences[0] = seq('clock', 'fixed', [36, null, 38, null, 36, 36, 38, null],
+          { order: 'written', division: 12, gate: 50 });
+        f.sequences[1] = seq('clock', 'fixed', [42, 42, 42, 46],
+          { order: 'written', division: 12, gate: 50 });
+        f.switches[10] = { action: 'seq-play', seq: 0, gate: 'latch', onBeat: true };
+        f.switches[11] = { action: 'seq-play', seq: 1, gate: 'latch', onBeat: true };
+        f.analog = [{ cc: 7 }, { cc: null }];
+        return f;
+      },
+    },
+  ];
 
   // --- Board connection over Web MIDI ---
 
@@ -482,7 +556,7 @@
     CMD, REPORT, TRIG, ACT, GATE, FLAG, DEFAULT, SCALES, NOTE_NAMES,
     NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING,
     encode, decode, crc32, noteName, degreeToNote,
-    ORDERS, MAX_FORM_STEPS,
+    ORDERS, MAX_FORM_STEPS, TEMPLATES,
     buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,
     tableFromForm, formFromTable,
     Board, BoardError,

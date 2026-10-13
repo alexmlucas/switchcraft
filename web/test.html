@@ -336,8 +336,71 @@ function fakeBoard() {
     }
   });
 
+  await test('synth: echo repeats a short note in time with the tempo', async () => {
+    // 120 BPM, echo every 1/2 beat = 0.25 s. A 50 ms pluck, then silence.
+    const events = [[0, [0x90, 72, 127]], [0.05, [0x80, 72, 0]]];
+    const setup = (echo) => (s) => {
+      s.setSound('pluck');
+      s.setTempo(120);
+      s.setEcho({ beats: echo ? 0.5 : 0, feedback: 0.5, level: 0.6 });
+    };
+    const dry = await render(1, events, setup(false));
+    const wet = await render(1, events, setup(true));
+    const gap = rms(wet.buf, 0.17, 0.23);    // between the note and its first repeat
+    const repeat = rms(wet.buf, 0.25, 0.3);  // first repeat
+    assert(rms(dry.buf, 0.25, 0.3) < 0.002, 'dry signal should be silent by then');
+    assert(repeat > 0.01 && repeat > gap * 4, `repeat ${repeat.toFixed(4)}, gap ${gap.toFixed(4)}`);
+    assert(rms(wet.buf, 0.5, 0.55) > 0.002, 'no second repeat');
+  });
+
+  await test('synth: echo time follows tempo changes', async () => {
+    const events = [[0, [0x90, 72, 127]], [0.05, [0x80, 72, 0]]];
+    const { buf } = await render(1, events, (s) => {
+      s.setSound('pluck');
+      s.setTempo(60);  // 1/2 beat = 0.5 s
+      s.setEcho({ beats: 0.5, feedback: 0, level: 0.6 });
+    });
+    assert(rms(buf, 0.25, 0.3) < 0.002, 'repeat came at the 120 BPM time');
+    assert(rms(buf, 0.5, 0.55) > 0.01, 'no repeat at 0.5 s');
+  });
+
+  await test('inverted analog range round trips through the table', () => {
+    const f = S.defaultForm();
+    f.analogMin = [3900, 0];
+    f.analogMax = [1700, 4095];
+    const back = S.formFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).form;
+    assertEq([back.analogMin, back.analogMax], [[3900, 0], [1700, 4095]]);
+  });
+
+  await test('templates build valid-looking tables and show in the form', () => {
+    for (const t of S.TEMPLATES) {
+      const f = t.form();
+      assert(f.name.length <= 16, `${t.id}: name too long`);
+      const blob = S.buildTable(S.tableFromForm(f));
+      assert(blob.length <= 4080, `${t.id}: ${blob.length} bytes`);
+      const back = S.formFromTable(S.parseTable(blob));
+      assert(back.form, `${t.id}: ${back.reason}`);
+      assertEq(back.form.switches, f.switches);
+      // No switch may point at an empty sequence.
+      for (const s of f.switches)
+        if (s.action.startsWith('seq-')) assert(S.sequenceInUse(f, s.seq), `${t.id}: empty sequence`);
+    }
+    // Tunes must play as written: any other order sorts the notes.
+    const tune = S.parseTable(S.buildTable(S.tableFromForm(S.TEMPLATES.find((t) => t.id === 'tune').form())));
+    for (const q of tune.sequences) assertEq(q.order, 0);
+    const names = (q) => q.steps.map((st) => S.noteName(S.degreeToNote(st.note, 0, 4, 0x0ab5)).replace(/\d/, ''));
+    assertEq(names(tune.sequences[0]).slice(0, 15).join(' '), 'E E F G G F E D C C D E E D D');
+    assertEq(names(tune.sequences[1]).join(' '), 'C C G G A A G F F E E D D C');
+    // The scale player template is the firmware's built-in table.
+    assertEq(hex(S.crc32(S.buildTable(S.tableFromForm(S.TEMPLATES[0].form())))), 'b931023f');
+  });
+
   // Tables for tools/check_page_tables.py to send to a real board.
-  const samples = { default: S.defaultForm(), sequences: sequenceForm() };
+  const inverted = S.defaultForm();
+  inverted.analogMin = [3900, 0];
+  inverted.analogMax = [1700, 4095];
+  const samples = { default: S.defaultForm(), sequences: sequenceForm(), 'inverted analog': inverted };
+  for (const t of S.TEMPLATES) samples[`template ${t.id}`] = t.form();
   const blobs = document.createElement('pre');
   blobs.id = 'blobs';
   blobs.hidden = true;

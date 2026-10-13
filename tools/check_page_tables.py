@@ -23,7 +23,7 @@ def page_tables(chrome):
     if title != "PASSED":
         sys.exit(f"page unit tests failed:\n{out}")
     for line in blobs.strip().splitlines():
-        name, hexdata = line.split()
+        name, hexdata = line.rsplit(maxsplit=1)
         yield name, bytes.fromhex(hexdata)
 
 

@@ -94,6 +94,7 @@ static void scan_analog(int i, uint64_t now) {
 
     // Position in quarter steps (0..511), with about half a step of
     // hysteresis so a reading on a boundary doesn't flicker.
+    // hi < lo inverts the input (spec B.3); the division handles both.
     int32_t lo = g->analog_min[i], hi = g->analog_max[i];
     int32_t v = (smooth - lo) * 511 / (hi - lo);
     if (v < 0)
