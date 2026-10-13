@@ -154,14 +154,14 @@ synth or DAW for polished live playing.
 
 ## Priority order (cut from the bottom if late)
 
-1. Rule table (including tap/hold triggers and analog inputs → CC), flash slots, SysEx protocol, two-port USB descriptor, note/scale form *(guaranteed demo)*
-2. Shared engine: press mode, clock mode, arpeggio patterns
-3. Blockly view, starter templates, built-in browser synth *(workshop essentials)*
-4. Euclidean rhythms
-5. CC modulation: LFOs, envelopes, sweeps
-6. External clock sync
-7. MIDI file import
-8. Notation, GM soundfont player
+1. Rule table (including tap/hold triggers and analog inputs → CC), flash slots, SysEx protocol, two-port USB descriptor, note/scale form *(guaranteed demo)* — **done**
+2. Shared engine: press mode, clock mode, arpeggio patterns — **done**
+3. Blockly view, starter templates, built-in browser synth *(workshop essentials)* — **done**, plus save/load preset files
+4. Euclidean rhythms — **done**
+5. CC modulation: LFOs, envelopes, sweeps — **done**, with an editable envelope graph
+6. External clock sync — **done**
+7. MIDI file import — **done**
+8. ~~Notation~~ **piano roll** (decided 13 Oct: more useful than notation for editing), GM soundfont player — next
 
 No new features before 27 November beyond this list.
 
@@ -175,9 +175,37 @@ No new features before 27 November beyond this list.
 | 5 | Blockly, starter templates, browser synth |
 | 6 | Stop adding features; practice workshop with a colleague; prepare backup board with demo config |
 
-## Next step
+## Status and next steps (13 October 2026)
 
-Done: the pin map ([pin-map.md](pin-map.md)) and the SysEx and rule-table
-spec ([sysex-rule-table-spec.md](sysex-rule-table-spec.md)). Next, start the
-firmware from scratch against the spec: two-port USB descriptor first, so
-the Windows two-port test can run in week 1.
+Items 1–7 are done and tested on the board (firmware 0.6.0 on the board;
+0.6.1 is committed but not yet flashed: it only fixes the first external
+clock report, and `python tools/check_board_clock.py` checks it). All work
+is on the `web` branch, which contains everything; the `docs` and
+`firmware` branches and their pull requests are out of date.
+
+Board checks to run after any firmware change (page closed, board plugged in):
+`tools/check_page_tables.py`, `check_board_rhythm.py`,
+`check_board_modulation.py`, `check_board_clock.py`. Page tests:
+`python tools/run_web_tests.py`.
+
+**Next: piano roll (item 8).** A page-only editor for a sequence, as an
+alternative to the step list in the Sequences card (and openable from the
+Blocks view), replacing notation in the plan:
+- Time across (one column per step, step lengths as note widths, rests as
+  gaps), pitch up (rows; scale notes highlighted when the sequence uses
+  scale steps, so notes stay in key). Shows a sequence's notes as stored:
+  one note at a time, matching the engine.
+- Click or tap an empty cell to add a note, drag a note's right edge to
+  change its length, drag up/down to change pitch, delete with a click or
+  the Delete key. Changes are sent as edits, so a playing sequence can be
+  heard changing.
+- Accessibility: the step list stays as the keyboard and screen-reader
+  route; the piano roll gets arrow-key navigation over notes as well.
+- Imported MIDI tunes (up to 64 steps) should be the main thing it shows.
+
+Not features, but before the workshop:
+- Apply for a real USB product ID (pid.codes or Raspberry Pi); replace the
+  `0xCAFE` placeholder in `firmware/src/usb_descriptors.c`.
+- Practice run on a workshop-style laptop (no Windows MIDI Services, Chrome
+  only), including Blocks keyboard navigation with switch users.
+- Merge `web` into `main`; close the old pull requests.
