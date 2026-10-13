@@ -203,6 +203,78 @@ function fakeBoard() {
     assertEq(seen, [[7, 'tap'], [0x90, 60, 100]]);
   });
 
+  const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  await test('sequence sections match tools/sc.py byte for byte', () => {
+    const arp = { id: 0, advance: 1, order: 3, octaves: 2, channel: 0xff, velocity: 0, division: 6, gate: 60,
+      noteMode: 1, steps: [0, 2, 4].map((n) => ({ note: n, velocity: 0, rest: false, length: 1 })) };
+    const tune = { id: 1, advance: 0, order: 0, octaves: 1, channel: 0xff, velocity: 0, division: 6, gate: 0,
+      noteMode: 0, steps: [0, 0, 4, null, 3].map((n) => ({ note: n || 0, velocity: 0, rest: n === null, length: 1 })) };
+    const g = S.tableFromForm(S.defaultForm()).globals;
+    const blob = S.buildTable({ globals: g, rules: [], sequences: [arp, tune] });
+    const hexBlob = toHex(blob);
+    // Reference bytes printed by tools/sc.py sequence_section().
+    assert(hexBlob.includes('0300150000010302ff00063c01000300000001020001040001'), 'arp');
+    assert(hexBlob.includes('03001b0001000001ff00060000000500000001000001040001000081030001'), 'tune');
+  });
+
+  // A form using every sequence feature the page offers.
+  function sequenceForm() {
+    const f = S.defaultForm();
+    f.name = 'Sequences';
+    f.tempo = 900;
+    f.sequences[0] = { mode: 'clock', noteType: 'scale', notes: [0, 2, 4], order: 'updown', octaves: 2, division: 6, gate: 60 };
+    f.sequences[1] = { mode: 'press', noteType: 'scale', notes: [0, 0, 4, 4, 5, 5, 4, null], order: 'written', octaves: 1, division: 6, gate: 0 };
+    f.sequences[2] = { mode: 'clock', noteType: 'fixed', notes: [36, null, 38, 36, 42, 42, null, 38], order: 'random', octaves: 1, division: 12, gate: 25 };
+    f.sequences[3] = { mode: 'clock', noteType: 'scale',
+      notes: Array.from({ length: S.MAX_FORM_STEPS }, (_, i) => (i % 7 === 6 ? null : i - 7)),
+      order: 'down', octaves: 4, division: 3, gate: 100 };
+    f.switches[0] = { action: 'seq-play', seq: 0, gate: 'hold', onBeat: false };
+    f.switches[1] = { action: 'seq-play', seq: 2, gate: 'latch', onBeat: true };
+    f.switches[2] = { action: 'seq-play', seq: 3, gate: 'oneshot', onBeat: false };
+    f.switches[3] = { action: 'seq-step', seq: 1 };
+    f.switches[4] = { action: 'seq-restart', seq: 1 };
+    return f;
+  }
+
+  await test('sequences and sequence actions round trip through the table', () => {
+    const f = sequenceForm();
+    const back = S.formFromTable(S.parseTable(S.buildTable(S.tableFromForm(f))));
+    assert(back.form, back.reason);
+    assertEq(back.form.sequences, f.sequences);
+    assertEq(back.form.switches, f.switches);
+    assertEq(back.form.tempo, 900);
+  });
+
+  await test('switches using an empty sequence send no rule', () => {
+    const f = S.defaultForm();
+    f.switches[0] = { action: 'seq-play', seq: 1, gate: 'hold', onBeat: false };
+    const t = S.tableFromForm(f);
+    assert(!t.rules.some((r) => r.src === 0 && r.trig === S.TRIG.PRESS), 'rule sent');
+    assertEq(t.sequences.length, 0);
+  });
+
+  await test('clock-mode "until next note" becomes full length', () => {
+    const f = S.defaultForm();
+    f.sequences[0] = { ...S.defaultSequence(), notes: [0], gate: 0 };
+    assertEq(S.tableFromForm(f).sequences[0].gate, 100);
+  });
+
+  await test('the demo-style "selected sequence" target is not shown in the form', () => {
+    const t = S.tableFromForm(sequenceForm());
+    t.rules.push({ trig: S.TRIG.PRESS, src: 9, act: S.ACT.SEQ_STEP, p0: 0xff });
+    assert(!S.formFromTable(S.parseTable(S.buildTable(t))).form);
+  });
+
+  // Tables for tools/check_page_tables.py to send to a real board.
+  const samples = { default: S.defaultForm(), sequences: sequenceForm() };
+  const blobs = document.createElement('pre');
+  blobs.id = 'blobs';
+  blobs.hidden = true;
+  blobs.textContent = Object.entries(samples)
+    .map(([name, f]) => `${name} ${toHex(S.buildTable(S.tableFromForm(f)))}`).join('\n');
+  document.body.append(blobs);
+
   log(failed ? 'fail' : 'pass', `\n${passed} passed, ${failed} failed`);
   document.title = failed ? 'FAILED' : 'PASSED';
 })();

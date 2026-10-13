@@ -57,7 +57,7 @@ Notes:
 - Windows remembers USB descriptors per VID/PID: increment `bcdDevice` on
   every descriptor change.
 - **Week 1 test:** on a Windows laptop, run a DAW on port 1 and Chrome on
-  port 2 at the same time.
+  port 2 at the same time. **Passed (13 October 2026).**
 
 ### The firmware is built around a rule table
 

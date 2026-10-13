@@ -139,11 +139,23 @@
     ];
   }
 
-  // table: {globals, rules: [...], extra: [raw section byte arrays]}
+  // Sequence (spec B.6). steps: [{note, velocity, rest, length}]
+  function sequenceBody(s) {
+    return [
+      s.id, s.advance, s.order, s.octaves, s.channel, s.velocity, s.division, s.gate,
+      s.noteMode, 0, ...u16(s.steps.length),
+      ...s.steps.flatMap((st) => [
+        st.note & 0xff, st.velocity || 0, (st.rest ? 0x80 : 0) | (st.length || 1),
+      ]),
+    ];
+  }
+
+  // table: {globals, rules: [...], sequences: [...], extra: [raw section byte arrays]}
   function buildTable(table) {
     const sections = [
       section(0x01, globalsBody(table.globals)),
       section(0x02, [table.rules.length, 0, 0, 0, ...table.rules.flatMap(rule)]),
+      ...(table.sequences || []).map((s) => section(0x03, sequenceBody(s))),
       ...(table.extra || []),
     ];
     const body = sections.flat();
@@ -175,8 +187,21 @@
             p0: b[p + 6], p1: b[p + 7], p2: s16(rd16(b, p + 8)), p3: rd16(b, p + 10),
           });
         }
+      } else if (id === 0x03) {
+        const noteMode = b[8];
+        const steps = [];
+        for (let s = 0; s < rd16(b, 10); s++) {
+          const p = 12 + 3 * s;
+          steps.push({
+            note: noteMode ? s8(b[p]) : b[p], velocity: b[p + 1],
+            rest: !!(b[p + 2] & 0x80), length: b[p + 2] & 0x7f,
+          });
+        }
+        table.sequences.push({
+          id: b[0], advance: b[1], order: b[2], octaves: b[3], channel: b[4],
+          velocity: b[5], division: b[6], gate: b[7], noteMode, steps,
+        });
       } else {
-        if (id === 0x03) table.sequences.push({ id: b[0], steps: rd16(b, 10) });
         table.extra.push(Array.from(blob.subarray(off, off + 4 + len)));
       }
       off += 4 + len;
@@ -187,8 +212,21 @@
   // --- Form view model <-> rule table ---
   //
   // The form edits a simple model: one action per switch, one CC per analog
-  // input. Tables made by other editors (sequences, tap/hold, several rules
-  // per switch...) can't be shown in it; formFromTable says why.
+  // input, and up to four sequences A-D. Tables made by other editors
+  // (tap/hold, several rules per switch...) can't be shown in it;
+  // formFromTable says why.
+
+  const ORDERS = ['written', 'up', 'down', 'updown', 'random'];
+  const MAX_FORM_STEPS = 32;
+  const SEQ_ACTIONS = { 'seq-play': ACT.SEQ_RUN, 'seq-step': ACT.SEQ_STEP, 'seq-restart': ACT.SEQ_RESET };
+
+  function defaultSequence() {
+    // notes: scale degrees or MIDI notes (by noteType), null = rest
+    return {
+      mode: 'clock', noteType: 'scale', notes: [], order: 'up', octaves: 1,
+      division: 6, gate: 80,
+    };
+  }
 
   function defaultForm() {
     return {
@@ -201,7 +239,14 @@
         { action: 'transpose', semitones: 12 },
       ],
       analog: [{ cc: 1 }, { cc: 74 }],
+      sequences: Array.from({ length: 4 }, defaultSequence),
     };
+  }
+
+  // A sequence with no notes isn't sent to the board, and switches using it
+  // do nothing (the page warns about this).
+  function sequenceInUse(f, id) {
+    return f.sequences[id] && f.sequences[id].notes.length > 0;
   }
 
   function tableFromForm(f) {
@@ -216,6 +261,9 @@
         });
       } else if (s.action === 'transpose') {
         rules.push({ trig: TRIG.PRESS, src: i, act: ACT.TRANSPOSE, p0: 1, p2: s.semitones });
+      } else if (s.action in SEQ_ACTIONS && sequenceInUse(f, s.seq)) {
+        const flags = s.action === 'seq-play' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
+        rules.push({ trig: TRIG.PRESS, src: i, act: SEQ_ACTIONS[s.action], flags, p0: s.seq });
       }
     });
     f.analog.forEach((a, i) => {
@@ -225,7 +273,21 @@
           p0: DEFAULT, p1: a.cc,
         });
     });
-    return { globals: { ...f }, rules };
+    const sequences = [];
+    (f.sequences || []).forEach((q, id) => {
+      if (!q.notes.length) return;
+      sequences.push({
+        id, advance: q.mode === 'clock' ? 1 : 0, order: ORDERS.indexOf(q.order),
+        octaves: q.octaves, channel: DEFAULT, velocity: 0, division: q.division,
+        // Clock mode needs a length; "until the next note" only exists in press mode.
+        gate: q.mode === 'clock' && q.gate === 0 ? 100 : q.gate,
+        noteMode: q.noteType === 'scale' ? 1 : 0,
+        steps: q.notes.map((n) => (n === null
+          ? { note: 0, velocity: 0, rest: true, length: 1 }
+          : { note: n, velocity: 0, rest: false, length: 1 })),
+      });
+    });
+    return { globals: { ...f }, rules, sequences };
   }
 
   // Returns {form} or {reason} if the table uses things the form can't show.
@@ -237,24 +299,43 @@
       tempo: g.tempo, analogMin: g.analogMin, analogMax: g.analogMax,
       switches: Array.from({ length: NUM_INPUTS }, () => ({ action: 'none' })),
       analog: Array.from({ length: NUM_ANALOG }, () => ({ cc: null })),
+      sequences: Array.from({ length: 4 }, defaultSequence),
     };
-    if (table.sequences.length) return { reason: 'it uses sequences or arpeggios' };
     if (table.extra.length) return { reason: 'it has sections the form doesn’t edit' };
+
+    for (const q of table.sequences) {
+      const simple = q.id < 4 && q.channel === DEFAULT && q.velocity === 0 &&
+        q.steps.length <= MAX_FORM_STEPS &&
+        q.steps.every((st) => st.velocity === 0 && st.length <= 1);
+      if (!simple) return { reason: 'its sequences use settings the form doesn’t show' };
+      f.sequences[q.id] = {
+        mode: q.advance ? 'clock' : 'press', noteType: q.noteMode ? 'scale' : 'fixed',
+        notes: q.steps.map((st) => (st.rest ? null : st.note)),
+        order: ORDERS[q.order], octaves: q.octaves, division: q.division, gate: q.gate,
+      };
+    }
+
     const usedSwitch = new Set();
     const usedAnalog = new Set();
     for (const r of table.rules) {
       const gate = Object.keys(GATE).find((k) => GATE[k] === (r.flags & 3));
       if (r.trig === TRIG.PRESS && r.src < NUM_INPUTS && !usedSwitch.has(r.src)) {
+        let s = null;
         if (r.act === ACT.NOTE && (r.flags & ~(3 | FLAG.DEGREE)) === 0 && gate &&
             r.p0 === DEFAULT && r.p1 === 0 && r.p3 === 0) {
-          f.switches[r.src] = r.flags & FLAG.DEGREE
+          s = r.flags & FLAG.DEGREE
             ? { action: 'scale', degree: r.p2, gate }
             : { action: 'note', note: r.p2, gate };
-          usedSwitch.add(r.src);
-          continue;
+        } else if (r.act === ACT.TRANSPOSE && r.flags === 0 && r.p0 === 1) {
+          s = { action: 'transpose', semitones: r.p2 };
+        } else if (r.act === ACT.SEQ_RUN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 && gate &&
+                   r.p0 < 4) {
+          s = { action: 'seq-play', seq: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
+        } else if ((r.act === ACT.SEQ_STEP || r.act === ACT.SEQ_RESET) && r.flags === 0 && r.p0 < 4) {
+          s = { action: r.act === ACT.SEQ_STEP ? 'seq-step' : 'seq-restart', seq: r.p0 };
         }
-        if (r.act === ACT.TRANSPOSE && r.flags === 0 && r.p0 === 1) {
-          f.switches[r.src] = { action: 'transpose', semitones: r.p2 };
+        if (s) {
+          f.switches[r.src] = s;
           usedSwitch.add(r.src);
           continue;
         }
@@ -401,7 +482,9 @@
     CMD, REPORT, TRIG, ACT, GATE, FLAG, DEFAULT, SCALES, NOTE_NAMES,
     NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING,
     encode, decode, crc32, noteName, degreeToNote,
-    buildTable, parseTable, defaultForm, tableFromForm, formFromTable,
+    ORDERS, MAX_FORM_STEPS,
+    buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,
+    tableFromForm, formFromTable,
     Board, BoardError,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -111,7 +111,7 @@ def sequence_section(seq_id, steps, advance=1, order=0, octaves=1, channel=DEFAU
     body = struct.pack("<BBBBBBBBBBH", seq_id, advance, order, octaves, channel, velocity,
                        division, gate, 1 if degrees else 0, 0, len(steps))
     for s in steps:
-        body += bytes([0, 0, 0x80]) if s is None else bytes([s & 0xFF, 0, 1])
+        body += bytes([0, 0, 0x81]) if s is None else bytes([s & 0xFF, 0, 1])
     return section(0x03, body)
 
 

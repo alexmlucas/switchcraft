@@ -45,6 +45,7 @@
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     background: var(--bg);
@@ -135,6 +136,27 @@
   .meter > div { height: 100%; width: 0; background: var(--meter); }
   .value { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 
+  .tile-controls .full { grid-column: 1 / -1; }
+  .check { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 15px; }
+  .check input { width: 22px; height: 22px; min-height: 0; margin: 0; }
+  .tile-warn { font-size: 14px; color: var(--warn); }
+  .tile.down .tile-warn { color: var(--pressed-text); }
+
+  /* Sequences */
+  .seq-picker { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .seq-picker button { min-width: 9.5rem; text-align: left; }
+  .seq-picker button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .seq-picker small { display: block; font-size: 13px; opacity: 0.85; }
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .step {
+    display: grid; grid-template-columns: auto auto; align-items: center; gap: 4px;
+    border: 1px solid var(--line); border-radius: 8px; padding: 4px 4px 4px 8px;
+  }
+  .step span { font-size: 13px; color: var(--muted); grid-column: 1 / -1; }
+  .step select { min-height: 40px; padding: 4px 6px; }
+  .step button { min-height: 40px; padding: 4px 10px; }
+  .steps-empty { color: var(--muted); margin: 12px 0; }
+
   .last-note { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -192,6 +214,31 @@
     <p class="hint">Switches set to a scale note follow the key and scale: change them here and every switch moves with it.</p>
   </section>
 
+  <section class="card" aria-labelledby="seq-h">
+    <h2 id="seq-h">Sequences and arpeggios</h2>
+    <p class="hint" style="margin: -4px 0 12px;">Make up to four. Then choose a switch below and set it to play, step through or restart one.</p>
+    <div class="seq-picker" id="seq-picker" role="group" aria-label="Choose a sequence to edit"></div>
+    <div class="row">
+      <label class="field">Plays <select id="seq-mode"></select></label>
+      <label class="field">Notes are <select id="seq-type"></select></label>
+    </div>
+    <div id="steps" class="steps" aria-label="Notes in this sequence"></div>
+    <div class="row">
+      <button id="add-note">Add note</button>
+      <button id="add-rest">Add rest</button>
+      <button id="clear-steps">Clear</button>
+    </div>
+    <div class="row" style="margin-top: 16px;">
+      <label class="field">Order <select id="seq-order"></select></label>
+      <label class="field">Octaves <select id="seq-octaves"></select></label>
+      <label class="field" id="seq-speed-field">Speed <select id="seq-speed"></select></label>
+      <label class="field">Note length <select id="seq-length"></select></label>
+      <label class="field">Tempo, all sequences (BPM)
+        <input type="number" id="tempo" min="40" max="240" step="1">
+      </label>
+    </div>
+  </section>
+
   <section class="card" aria-labelledby="switches-h">
     <div class="row" style="justify-content: space-between; align-items: baseline;">
       <h2 id="switches-h">Switches</h2>
@@ -239,7 +286,25 @@ const CC_CHOICES = [
 ];
 const TRANSPOSE_CHOICES = [[-12, 'Octave down'], [-1, 'Semitone down'], [1, 'Semitone up'], [12, 'Octave up']];
 const GATE_CHOICES = [['hold', 'Sounds while held'], ['latch', 'Press on, press off'], ['oneshot', 'Short note']];
-const ACTION_CHOICES = [['scale', 'Scale note'], ['note', 'Fixed note'], ['transpose', 'Transpose'], ['none', 'Nothing']];
+const SEQ_GATE_CHOICES = [['hold', 'Plays while held'], ['latch', 'Press start, press stop'], ['oneshot', 'Plays once through']];
+const ACTION_CHOICES = [
+  ['scale', 'Scale note'], ['note', 'Fixed note'], ['transpose', 'Transpose'],
+  ['seq-play', 'Play sequence'], ['seq-step', 'Step through sequence'], ['seq-restart', 'Restart sequence'],
+  ['none', 'Nothing'],
+];
+
+const SEQ_NAMES = ['A', 'B', 'C', 'D'];
+const MODE_CHOICES = [['clock', 'By itself, in time (arpeggio)'], ['press', 'One note per press']];
+const NOTE_TYPE_CHOICES = [['scale', 'Scale notes (follow the key)'], ['fixed', 'Fixed notes']];
+const ORDER_CHOICES = [['written', 'As written'], ['up', 'Up'], ['down', 'Down'], ['updown', 'Up and down'], ['random', 'Random']];
+const SPEED_CHOICES = [
+  [48, 'Half notes'], [24, 'Quarter notes'], [12, 'Eighth notes'], [8, 'Eighth-note triplets'],
+  [6, 'Sixteenth notes'], [4, 'Sixteenth-note triplets'], [3, 'Thirty-second notes'],
+];
+// Clock mode: % of each step. Press mode: % of a beat, or 0 = until the next note.
+const LENGTH_CLOCK = [[25, 'Very short'], [50, 'Short'], [80, 'Normal'], [100, 'Full (smooth)']];
+const LENGTH_PRESS = [[0, 'Until the next note'], [25, 'Very short'], [50, 'Short'], [80, 'Normal'], [100, 'One beat']];
+let currentSeq = 0;
 
 let form = S.defaultForm();
 let board = null;
@@ -293,10 +358,34 @@ function scaleNoteChoices() {
   return out;
 }
 
-function fixedNoteChoices() {
+function fixedNoteChoices(withNumber = true) {
   const out = [];
-  for (let n = 24; n <= 96; n++) out.push([n, `${S.noteName(n)}  (${n})`]);
+  for (let n = 24; n <= 96; n++) out.push([n, withNumber ? `${S.noteName(n)}  (${n})` : S.noteName(n)]);
   return out;
+}
+
+// Adds the current value to a choice list if it isn't one of the choices
+// (tables can hold values the menus don't offer).
+function withValue(choices, value, label) {
+  return choices.some(([v]) => v === value) ? choices : [...choices, [value, label]];
+}
+
+function countLabel(n) {
+  return n ? `${n} note${n === 1 ? '' : 's'}` : 'empty';
+}
+
+function seqLabel(id) {
+  return `Sequence ${SEQ_NAMES[id]} (${countLabel(form.sequences[id].notes.length)})`;
+}
+
+function switchWarning(s) {
+  if (!s.action.startsWith('seq-')) return '';
+  const q = form.sequences[s.seq];
+  const name = `Sequence ${SEQ_NAMES[s.seq]}`;
+  if (!q.notes.length) return `${name} has no notes yet, so this switch does nothing.`;
+  if (s.action === 'seq-play' && q.mode === 'press')
+    return `${name} plays one note per press: use “Step through sequence” instead.`;
+  return '';
 }
 
 function renderSwitch(i) {
@@ -305,9 +394,12 @@ function renderSwitch(i) {
   const action = tile.querySelector('.action');
   const value = tile.querySelector('.value-select');
   const gate = tile.querySelector('.gate');
+  const beat = tile.querySelector('.beat');
+  const isNote = s.action === 'scale' || s.action === 'note';
   options(action, ACTION_CHOICES, s.action);
   value.hidden = s.action === 'none';
-  gate.hidden = !(s.action === 'scale' || s.action === 'note');
+  gate.hidden = !(isNote || s.action === 'seq-play');
+  beat.hidden = s.action !== 'seq-play';
   if (s.action === 'scale') {
     options(value, scaleNoteChoices(), s.degree);
     value.setAttribute('aria-label', `${SWITCH_LABEL(i)} note`);
@@ -315,12 +407,125 @@ function renderSwitch(i) {
     options(value, fixedNoteChoices(), s.note);
     value.setAttribute('aria-label', `${SWITCH_LABEL(i)} note`);
   } else if (s.action === 'transpose') {
-    const choices = TRANSPOSE_CHOICES.some(([v]) => v === s.semitones)
-      ? TRANSPOSE_CHOICES : [...TRANSPOSE_CHOICES, [s.semitones, `${s.semitones > 0 ? '+' : ''}${s.semitones} semitones`]];
-    options(value, choices, s.semitones);
+    options(value, withValue(TRANSPOSE_CHOICES, s.semitones,
+      `${s.semitones > 0 ? '+' : ''}${s.semitones} semitones`), s.semitones);
     value.setAttribute('aria-label', `${SWITCH_LABEL(i)} transpose amount`);
+  } else if (s.action.startsWith('seq-')) {
+    options(value, SEQ_NAMES.map((_, id) => [id, seqLabel(id)]), s.seq);
+    value.setAttribute('aria-label', `${SWITCH_LABEL(i)} sequence`);
   }
-  if (!gate.hidden) options(gate, GATE_CHOICES, s.gate);
+  if (isNote) options(gate, GATE_CHOICES, s.gate);
+  if (s.action === 'seq-play') {
+    options(gate, SEQ_GATE_CHOICES, s.gate);
+    beat.querySelector('input').checked = !!s.onBeat;
+  }
+  const warn = tile.querySelector('.tile-warn');
+  warn.textContent = switchWarning(s);
+  warn.hidden = !warn.textContent;
+}
+
+// --- Sequence editor ---
+
+function stepChoices(q) {
+  const notes = q.noteType === 'scale' ? scaleNoteChoices() : fixedNoteChoices(false);
+  return [...notes, ['rest', 'Rest']];
+}
+
+function renderSeqPicker() {
+  $('seq-picker').replaceChildren(...SEQ_NAMES.map((name, id) => {
+    const b = el('button', { type: 'button' },
+      `Sequence ${name}`, el('small', { textContent: countLabel(form.sequences[id].notes.length) }));
+    b.setAttribute('aria-pressed', String(id === currentSeq));
+    b.disabled = !editable;
+    b.addEventListener('click', () => {
+      currentSeq = id;
+      renderSeqPicker();
+      renderSeq();
+      $('seq-picker').children[id].focus();
+    });
+    return b;
+  }));
+}
+
+function updateStepButtons() {
+  const q = form.sequences[currentSeq];
+  const full = q.notes.length >= S.MAX_FORM_STEPS;
+  $('add-note').disabled = !editable || full;
+  $('add-rest').disabled = !editable || full;
+  $('clear-steps').disabled = !editable || !q.notes.length;
+}
+
+function renderSteps(focusIndex = null) {
+  const q = form.sequences[currentSeq];
+  const box = $('steps');
+  if (!q.notes.length) {
+    box.replaceChildren(el('p', { className: 'steps-empty', textContent: 'No notes yet. Use “Add note” to start.' }));
+    if (focusIndex !== null) $('add-note').focus();
+    return;
+  }
+  const choices = stepChoices(q);
+  box.replaceChildren(...q.notes.map((n, i) => {
+    const sel = el('select');
+    sel.setAttribute('aria-label', `Note ${i + 1}`);
+    if (n === null) options(sel, choices, 'rest');
+    else options(sel, withValue(choices, n, q.noteType === 'scale' ? `degree ${n}` : S.noteName(n)), n);
+    sel.disabled = !editable;
+    sel.addEventListener('change', () => {
+      q.notes[i] = sel.value === 'rest' ? null : Number(sel.value);
+      seqChanged();
+    });
+    const remove = el('button', { type: 'button', textContent: '✕', className: 'remove' });
+    remove.setAttribute('aria-label', `Remove note ${i + 1}`);
+    remove.disabled = !editable;
+    remove.addEventListener('click', () => {
+      q.notes.splice(i, 1);
+      renderSteps(Math.min(i, q.notes.length - 1));
+      seqChanged();
+    });
+    return el('div', { className: 'step' }, el('span', { textContent: String(i + 1) }), sel, remove);
+  }));
+  // Keep keyboard focus in place after removing a note.
+  if (focusIndex !== null) {
+    const buttons = box.querySelectorAll('.remove');
+    (buttons[focusIndex] || $('add-note')).focus();
+  }
+}
+
+function renderSeq() {
+  const q = form.sequences[currentSeq];
+  options($('seq-mode'), MODE_CHOICES, q.mode);
+  options($('seq-type'), NOTE_TYPE_CHOICES, q.noteType);
+  options($('seq-order'), ORDER_CHOICES, q.order);
+  options($('seq-octaves'), [[1, '1'], [2, '2'], [3, '3'], [4, '4']], q.octaves);
+  options($('seq-speed'), withValue(SPEED_CHOICES, q.division, `${q.division} ticks`), q.division);
+  $('seq-speed-field').hidden = q.mode !== 'clock';
+  const lengths = q.mode === 'clock' ? LENGTH_CLOCK : LENGTH_PRESS;
+  options($('seq-length'), withValue(lengths, q.gate, `${q.gate}%`), q.gate);
+  updateStepButtons();
+  renderSteps();
+}
+
+// Sequence edits change the picker counts and the switches' labels too.
+function seqChanged() {
+  renderSeqPicker();
+  updateStepButtons();
+  for (let i = 0; i < S.NUM_INPUTS; i++) renderSwitch(i);
+  changed();
+}
+
+// Converts a sequence's notes when switching between scale and fixed notes.
+function convertNotes(q, toType) {
+  const toFixed = (d) => S.degreeToNote(d, form.root, form.octave, form.mask);
+  q.notes = q.notes.map((n) => {
+    if (n === null) return null;
+    if (toType === 'fixed') return Math.min(127, Math.max(0, toFixed(n)));
+    // Nearest scale degree to a fixed note.
+    let best = 0;
+    for (let d = -21; d <= 28; d++)
+      if (Math.abs(toFixed(d) - n) < Math.abs(toFixed(best) - n)) best = d;
+    return best;
+  });
+  q.noteType = toType;
 }
 
 function renderAll() {
@@ -333,16 +538,17 @@ function renderAll() {
   $('octave').value = String(form.octave);
   $('channel').value = String(form.channel);
   $('velocity').value = form.velocity;
+  $('tempo').value = Math.round(form.tempo / 10);
   if (![...$('lockout').options].some((o) => o.value === String(form.lockoutMs)))
     $('lockout').append(el('option', { value: String(form.lockoutMs), textContent: `${form.lockoutMs} ms` }));
   $('lockout').value = String(form.lockoutMs);
   for (let i = 0; i < S.NUM_INPUTS; i++) renderSwitch(i);
   form.analog.forEach((a, i) => {
-    const sel = $(`cc-${i}`);
-    const choices = CC_CHOICES.some(([v]) => v === a.cc) ? CC_CHOICES : [...CC_CHOICES, [a.cc, `CC ${a.cc}`]];
-    options(sel, choices, a.cc);
+    options($(`cc-${i}`), withValue(CC_CHOICES, a.cc, `CC ${a.cc}`), a.cc);
   });
   setEditable(editable);
+  renderSeqPicker();
+  renderSeq();
 }
 
 function setEditable(on) {
@@ -375,21 +581,34 @@ function buildStatic() {
       const action = el('select', { className: 'action' });
       action.setAttribute('aria-label', `${SWITCH_LABEL(i)} action`);
       const value = el('select', { className: 'value-select' });
-      const gate = el('select', { className: 'gate' });
-      gate.setAttribute('aria-label', `${SWITCH_LABEL(i)} how the note plays`);
+      const gate = el('select', { className: 'gate full' });
+      gate.setAttribute('aria-label', `${SWITCH_LABEL(i)} how it plays`);
+      const beatBox = el('input', { type: 'checkbox' });
+      const beat = el('label', { className: 'check beat full' }, beatBox, 'Start on the beat');
       const tile = el('div', { className: 'tile', id: `sw-${i}` },
         el('div', { className: 'tile-head' },
           el('strong', { textContent: SWITCH_LABEL(i) }),
           el('span', { className: 'tile-event', id: `ev-${i}` })),
-        el('div', { className: 'tile-controls' }, action, value, gate));
+        el('div', { className: 'tile-controls' }, action, value, gate, beat,
+          el('div', { className: 'tile-warn full', role: 'note' })));
       $(col).append(tile);
 
       action.addEventListener('change', () => {
         const s = form.switches[i];
         const a = action.value;
+        // Suggest a sequence that suits the action: arpeggios for "play",
+        // step-by-step ones for "step through".
+        const pick = (mode) => {
+          const qs = form.sequences;
+          const ids = [0, 1, 2, 3];
+          return ids.find((id) => qs[id].notes.length && qs[id].mode === mode) ??
+            ids.find((id) => qs[id].notes.length) ?? currentSeq;
+        };
         if (a === 'scale') form.switches[i] = { action: a, degree: i < 10 ? i : 0, gate: s.gate || 'hold' };
         else if (a === 'note') form.switches[i] = { action: a, note: 60, gate: s.gate || 'hold' };
         else if (a === 'transpose') form.switches[i] = { action: a, semitones: i === 10 ? -12 : 12 };
+        else if (a === 'seq-play') form.switches[i] = { action: a, seq: pick('clock'), gate: s.gate || 'hold', onBeat: false };
+        else if (a === 'seq-step' || a === 'seq-restart') form.switches[i] = { action: a, seq: pick('press') };
         else form.switches[i] = { action: 'none' };
         renderSwitch(i);
         changed();
@@ -400,10 +619,16 @@ function buildStatic() {
         if (s.action === 'scale') s.degree = v;
         else if (s.action === 'note') s.note = v;
         else if (s.action === 'transpose') s.semitones = v;
+        else s.seq = v;
+        renderSwitch(i);
         changed();
       });
       gate.addEventListener('change', () => {
         form.switches[i].gate = gate.value;
+        changed();
+      });
+      beatBox.addEventListener('change', () => {
+        form.switches[i].onBeat = beatBox.checked;
         changed();
       });
     }
@@ -451,6 +676,52 @@ function buildStatic() {
     changed();
   });
   $('lockout').addEventListener('change', () => { form.lockoutMs = Number($('lockout').value); changed(); });
+
+  // Sequence editor
+  const seq = () => form.sequences[currentSeq];
+  $('tempo').addEventListener('change', () => {
+    const bpm = Math.min(240, Math.max(40, Math.round(Number($('tempo').value)) || 120));
+    $('tempo').value = bpm;
+    form.tempo = bpm * 10;
+    changed();
+  });
+  $('seq-mode').addEventListener('change', () => {
+    const q = seq();
+    q.mode = $('seq-mode').value;
+    if (q.mode === 'clock' && q.gate === 0) q.gate = 80;  // "until the next note" is press-only
+    renderSeq();
+    seqChanged();
+  });
+  $('seq-type').addEventListener('change', () => {
+    convertNotes(seq(), $('seq-type').value);
+    renderSeq();
+    seqChanged();
+  });
+  $('seq-order').addEventListener('change', () => { seq().order = $('seq-order').value; changed(); });
+  $('seq-octaves').addEventListener('change', () => { seq().octaves = Number($('seq-octaves').value); changed(); });
+  $('seq-speed').addEventListener('change', () => { seq().division = Number($('seq-speed').value); changed(); });
+  $('seq-length').addEventListener('change', () => { seq().gate = Number($('seq-length').value); changed(); });
+  const addStep = (note) => {
+    const q = seq();
+    if (q.notes.length >= S.MAX_FORM_STEPS) return;
+    q.notes.push(note);
+    renderSteps();
+    seqChanged();
+  };
+  $('add-note').addEventListener('click', () => {
+    // Continue up the scale from the last note, or start on the root.
+    const q = seq();
+    const last = [...q.notes].reverse().find((n) => n !== null);
+    if (q.noteType === 'scale') addStep(last === undefined ? 0 : Math.min(last + 1, 14));
+    else addStep(last === undefined ? 60 : Math.min(last + 2, 96));
+  });
+  $('add-rest').addEventListener('click', () => addStep(null));
+  $('clear-steps').addEventListener('click', () => {
+    seq().notes = [];
+    renderSteps();
+    seqChanged();
+    $('add-note').focus();
+  });
 
   $('connect').addEventListener('click', connect);
   $('panic').addEventListener('click', () => board && board.allNotesOff().catch(showError));
