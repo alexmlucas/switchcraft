@@ -186,6 +186,7 @@ send; the host may ignore them).
 | 0x60 | `INPUT_EVENT` | `u8 input, u8 event` (1 = press, 2 = release, 3 = hold, 4 = tap) |
 | 0x61 | `ANALOG_VALUE` | `u8 analog, u16 raw (0–4095), u8 scaled (0–127)` |
 | 0x62 | `SLOT_CHANGED` | `u8 slot` (sent when a rule action switches preset) |
+| 0x63 | `CLOCK` | `u8 source` (0 = internal, 1 = following external clock), `u16 tempo` in tenths of BPM. Sent when the source changes, and while following when the tempo changes by 1 BPM or more (at most twice a second) |
 
 Events are reported after debounce and lockout (B.4), i.e. the events the
 rule engine actually sees. Hold and tap reports use the global `hold_ms`
@@ -317,7 +318,7 @@ understand fails loudly rather than silently doing nothing.
 | 20 | scale_mask | `u16` | `0x0AB5` | Bit *n* set = semitone *n* above the root is in the scale. `0x0AB5` = major. Bit 0 must be set |
 | 22 | tempo | `u16` | 1200 | Internal tempo in tenths of BPM (1200 = 120.0) |
 | 24 | debounce_ms | `u8` | 10 | |
-| 25 | reserved | `u8` | 0 | |
+| 25 | flags | `u8` | 0 | bit 0 `IGNORE_CLOCK`: don't follow external MIDI clock (B.11). Bits 1–7 reserved, 0 |
 | 26 | lockout_ms | `u16` | 0 | Accessibility: presses of the same input within this time of the last accepted press are ignored |
 | 28 | hold_ms | `u16` | 500 | Default time for `HOLD` triggers |
 | 30 | reserved | `u8[10]` | 0 | Was the analog calibration before firmware 0.3.0; now board-wide (B.10). Write 0; ignored when read |
@@ -587,3 +588,24 @@ pressed).
 
 The calibration is stored in the board settings sector (B.1) and read and
 written with `CALIBRATION_GET`/`CALIBRATION_SET` (A.4).
+
+### B.11 MIDI clock
+
+The board's clock runs at 24 ticks per beat. Sequences, rhythms,
+`QUANTIZE`, `CLOCK` triggers and synced LFOs all run on it.
+
+**Internal:** the preset's `tempo`.
+
+**External:** MIDI clock (`0xF8`) arriving on **cable 1** (the music port,
+from a DAW) drives the clock instead, one tick per message, unless the
+preset sets `IGNORE_CLOCK`. The board estimates the tempo from the time
+between clock messages (for note lengths and synced LFOs between ticks).
+
+- **Start** (`0xFA`): the next clock message is tick 0, the start of a beat
+  and bar. Clock-mode sequences that are playing go back to their first step
+  and play it on that tick; synced LFOs restart their cycle.
+- **Continue** (`0xFB`): carry on following from where the clock was.
+- **Stop** (`0xFC`), or no clock message for **0.5 s**: back to the internal
+  tempo straight away. Playing sequences keep playing.
+
+Clock arriving on cable 2 is ignored. The board doesn't send clock.

@@ -27,3 +27,4 @@ void protocol_rx_byte(uint8_t b);
 void protocol_report_input(uint8_t input, uint8_t event);
 void protocol_report_analog(uint8_t analog, uint16_t raw, uint8_t scaled);
 void protocol_report_slot(uint8_t slot);
+void protocol_report_clock(uint8_t external, uint16_t tempo_tenths);

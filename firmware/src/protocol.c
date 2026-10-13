@@ -35,6 +35,7 @@ enum {
     REPORT_INPUT_EVENT = 0x60,
     REPORT_ANALOG_VALUE = 0x61,
     REPORT_SLOT_CHANGED = 0x62,
+    REPORT_CLOCK = 0x63,
 };
 
 static const uint8_t HEADER[] = {0xF0, 0x7D, 0x53, 0x43};
@@ -339,6 +340,13 @@ void protocol_report_analog(uint8_t analog, uint16_t raw, uint8_t scaled) {
     wr16(d + 1, raw);
     d[3] = scaled;
     send(REPORT_ANALOG_VALUE, 0, d, 4);
+}
+
+void protocol_report_clock(uint8_t external, uint16_t tempo_tenths) {
+    uint8_t d[3];
+    d[0] = external;
+    wr16(d + 1, tempo_tenths);
+    send(REPORT_CLOCK, 0, d, 3);
 }
 
 void protocol_report_slot(uint8_t slot) {

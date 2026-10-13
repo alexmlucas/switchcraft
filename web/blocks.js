@@ -285,6 +285,8 @@
       args5: [{ type: 'field_number', name: 'HOLD', value: 500, min: 50, max: 10000, precision: 1 }],
       message6: 'ignore repeat presses within %1 ms',
       args6: [{ type: 'field_number', name: 'LOCKOUT', value: 0, min: 0, max: 10000, precision: 1 }],
+      message7: 'follow MIDI clock from a DAW %1',
+      args7: [{ type: 'field_checkbox', name: 'FOLLOW_CLOCK', checked: true }],
       tooltip: 'Settings for the whole preset. “Hold time” decides when a press counts as held rather than tapped.',
     },
     {
@@ -379,6 +381,7 @@
     const g = {
       name: d.name, channel: d.channel, velocity: d.velocity, root: d.root, octave: d.octave,
       mask: d.mask, tempo: d.tempo, debounceMs: d.debounceMs, lockoutMs: d.lockoutMs, holdMs: d.holdMs,
+      ignoreClock: false,
     };
     if (!block) return g;
     const data = readData(block);
@@ -392,6 +395,7 @@
     g.velocity = num('VELOCITY');
     g.holdMs = num('HOLD');
     g.lockoutMs = num('LOCKOUT');
+    g.ignoreClock = block.getFieldValue('FOLLOW_CLOCK') !== 'TRUE';
     if (data.debounceMs !== undefined) g.debounceMs = data.debounceMs;
     return g;
   }
@@ -667,7 +671,7 @@
       fields: {
         NAME: g.name, KEY: String(g.root), SCALE: MASKS.has(g.mask) ? String(g.mask) : 'custom',
         OCTAVE: String(g.octave), TEMPO: g.tempo / 10, CHANNEL: String(g.channel),
-        VELOCITY: g.velocity, HOLD: g.holdMs, LOCKOUT: g.lockoutMs,
+        VELOCITY: g.velocity, HOLD: g.holdMs, LOCKOUT: g.lockoutMs, FOLLOW_CLOCK: !g.ignoreClock,
       },
     }, {
       mask: MASKS.has(g.mask) ? undefined : g.mask,

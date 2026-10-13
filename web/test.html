@@ -223,9 +223,11 @@ function fakeBoard() {
     const seen = [];
     board.onInput = (i, ev) => seen.push([i, ev]);
     board.onMidi = (d) => seen.push(Array.from(d));
+    board.onClock = (ext, bpm) => seen.push(['clock', ext, bpm]);
     input.onmidimessage({ data: new Uint8Array(S.encode(0x60, 0, [7, 4])) });
+    input.onmidimessage({ data: new Uint8Array(S.encode(0x63, 0, [1, 0xe8, 0x03])) });
     input.onmidimessage({ data: new Uint8Array([0x90, 60, 100]) });
-    assertEq(seen, [[7, 'tap'], [0x90, 60, 100]]);
+    assertEq(seen, [[7, 'tap'], ['clock', true, 100], [0x90, 60, 100]]);
   });
 
   const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -261,6 +263,7 @@ function fakeBoard() {
     f.switches[3] = { action: 'seq-step', seq: 1 };
     f.switches[4] = { action: 'seq-restart', seq: 1 };
     f.analog[1] = { cc: 11, reversed: true };
+    f.ignoreClock = true;
     return f;
   }
 
@@ -271,6 +274,7 @@ function fakeBoard() {
     assertEq(back.form.sequences, f.sequences);
     assertEq(back.form.switches, f.switches);
     assertEq(back.form.tempo, 900);
+    assertEq(back.form.ignoreClock, true);
   });
 
   // Every kind of modulator the form offers.

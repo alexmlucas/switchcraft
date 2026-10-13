@@ -56,6 +56,14 @@ void mods_load(const table_t *t, bool live) {
     tab = t;
 }
 
+void mods_clock_start(void) {
+    if (!tab)
+        return;
+    for (int i = 0; i < MAX_MODS; i++)
+        if (mods[i].active && mods[i].type == MOD_LFO && (tab->mods[i].flags & MOD_SYNCED))
+            mods[i].start_tick = 0;
+}
+
 void mods_silence(void) {
     for (int i = 0; i < MAX_MODS; i++)
         reset(&mods[i]);

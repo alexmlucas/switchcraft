@@ -17,6 +17,10 @@ const globals_t *engine_globals(void);
 void engine_input(uint8_t input, bool pressed, uint64_t now_us);
 void engine_analog(uint8_t analog, uint8_t value);
 
+// A MIDI realtime message from the music port: clock 0xF8, start 0xFA,
+// continue 0xFB, stop 0xFC (spec B.11).
+void engine_clock(uint8_t msg, uint64_t now_us);
+
 // Call often: runs the internal clock, hold detection and note timing.
 void engine_task(uint64_t now_us);
 

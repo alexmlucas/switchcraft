@@ -31,6 +31,7 @@ static bool load_globals(const uint8_t *p, uint16_t off, globals_t *g, table_err
     g->scale_mask = rd16(p + 20);
     g->tempo = rd16(p + 22);
     g->debounce_ms = p[24];
+    g->flags = p[25];
     g->lockout_ms = rd16(p + 26);
     g->hold_ms = rd16(p + 28);
     // Bytes 30-39 are reserved (analog calibration before 0.3.0): ignored.
@@ -44,6 +45,8 @@ static bool load_globals(const uint8_t *p, uint16_t off, globals_t *g, table_err
         FAIL(off + 19, INVALID_PARAM);
     if (!valid_mask(g->scale_mask))
         FAIL(off + 20, INVALID_PARAM);
+    if (g->flags & GLOBAL_FLAGS_RESERVED)
+        FAIL(off + 25, INVALID_PARAM);
     if (g->tempo < 200 || g->tempo > 3000)  // 20-300 BPM
         FAIL(off + 22, INVALID_PARAM);
     return true;

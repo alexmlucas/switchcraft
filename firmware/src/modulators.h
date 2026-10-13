@@ -22,6 +22,9 @@ void mods_release_owned(uint8_t input);
 // A note started or stopped in sequence `seq` (envelopes can follow one).
 void mods_seq_note(int seq, bool on);
 
+// MIDI Start: synced LFOs restart their cycle at tick 0.
+void mods_clock_start(void);
+
 // Stops everything without sending (all notes off, preset change).
 void mods_silence(void);
 

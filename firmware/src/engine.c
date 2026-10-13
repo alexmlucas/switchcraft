@@ -33,7 +33,17 @@ static uint8_t selected_seq;
 static uint64_t now_us;
 static uint32_t tick;
 static uint64_t next_tick_us;
-static uint32_t tick_us;
+static uint32_t tick_us;      // current tick length (internal or estimated)
+static uint32_t int_tick_us;  // from the preset's tempo
+
+// External clock (spec B.11)
+#define EXT_TIMEOUT_US 500000
+static bool ext_active;         // following external clock
+static bool ext_first_after_start;  // the next clock message is tick 0
+static uint64_t ext_last_us;
+static uint32_t ext_est_us;     // average time between clock messages
+static bool reported_ext;
+static uint64_t next_clock_report;
 static uint64_t next_hold_scan;
 static uint32_t rng = 0x12345678;
 
@@ -537,6 +547,79 @@ static void on_tick(void) {
     }
 }
 
+// --- External clock (spec B.11) ---
+
+static void report_clock(uint64_t now, bool force) {
+    if (!force && now < next_clock_report)
+        return;
+    reported_ext = ext_active;
+    next_clock_report = now + 1000000;  // while following: once a second
+    protocol_report_clock(ext_active, (uint16_t)(25000000u / tick_us));
+}
+
+static void clock_internal(uint64_t now) {
+    if (!ext_active)
+        return;
+    ext_active = false;
+    ext_est_us = 0;
+    ext_first_after_start = false;
+    tick_us = int_tick_us;
+    next_tick_us = now + tick_us;
+    report_clock(now, true);
+}
+
+void engine_clock(uint8_t msg, uint64_t now) {
+    now_us = now;
+    if (!tab || (tab->g.flags & GLOBAL_IGNORE_CLOCK))
+        return;
+    switch (msg) {
+    case 0xF8: {
+        if (ext_active && !ext_first_after_start) {
+            uint64_t dt = now - ext_last_us;
+            if (dt > 2000 && dt < 200000)  // ignore gaps: 12-1250 BPM
+                ext_est_us = ext_est_us ? (uint32_t)((ext_est_us * 7ull + dt) / 8) : (uint32_t)dt;
+        }
+        ext_active = true;
+        ext_last_us = now;
+        if (ext_est_us)
+            tick_us = ext_est_us;
+        next_tick_us = now + tick_us;  // where the next tick is expected (synced LFOs)
+        if (ext_first_after_start)
+            ext_first_after_start = false;  // this message is tick 0
+        else
+            tick++;
+        if (!reported_ext && ext_est_us)
+            report_clock(now, true);  // once the tempo is known, not on the first message
+        on_tick();
+        break;
+    }
+    case 0xFA:  // Start: line up with the DAW
+        tick = 0;
+        ext_first_after_start = true;
+        ext_active = true;
+        ext_last_us = now;
+        for (int i = 0; i < MAX_SEQS; i++) {
+            seq_rt_t *s = &seqs[i];
+            if (s->running && tab->seqs[i].advance == ADVANCE_CLOCK) {
+                seq_note_off(s);
+                s->pos = 0;
+                s->slot = 0;
+                s->finish = false;
+                s->next_tick = 0;  // play the first step on tick 0
+            }
+        }
+        mods_clock_start();
+        break;
+    case 0xFB:  // Continue
+        ext_active = true;
+        ext_last_us = now;
+        break;
+    case 0xFC:  // Stop: back to the internal tempo straight away
+        clock_internal(now);
+        break;
+    }
+}
+
 static void apply_pending_preset(void) {
     int mode = pending_preset_mode;
     pending_preset_mode = -1;
@@ -568,7 +651,13 @@ void engine_task(uint64_t now) {
         scan_holds();
     }
 
-    if (now >= next_tick_us) {
+    if (ext_active) {
+        if (now - ext_last_us > EXT_TIMEOUT_US)
+            clock_internal(now);  // the external clock stopped
+        else
+            report_clock(now, false);
+    }
+    if (!ext_active && now >= next_tick_us) {
         if (now - next_tick_us > 10ull * tick_us)
             next_tick_us = now;  // fell behind (e.g. flash write): skip ahead
         next_tick_us += tick_us;
@@ -637,7 +726,11 @@ void engine_load(const table_t *t, bool live) {
         transpose = 0;  // an edit keeps it (spec A.4)
     root = t->g.scale_root;
     mask = t->g.scale_mask;
-    tick_us = 25000000u / t->g.tempo;  // tempo is tenths of BPM, 24 ticks per beat
+    int_tick_us = 25000000u / t->g.tempo;  // tempo is tenths of BPM, 24 ticks per beat
+    if (t->g.flags & GLOBAL_IGNORE_CLOCK)
+        clock_internal(now_us);
+    if (!ext_active)
+        tick_us = int_tick_us;
     memset(hold_fired, 0, sizeof(hold_fired));
     pending_preset_mode = -1;
     selected_seq = 0;

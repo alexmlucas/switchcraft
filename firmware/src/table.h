@@ -64,6 +64,10 @@ enum { GATE_HOLD = 0, GATE_LATCH = 1, GATE_ONESHOT = 2 };
 
 #define DEFAULT_ONESHOT_MS 250
 
+// GLOBALS flags (spec B.3)
+#define GLOBAL_IGNORE_CLOCK 0x01
+#define GLOBAL_FLAGS_RESERVED 0xFE
+
 #define CHANNEL_DEFAULT 0xFF
 #define SEQ_SELECTED 0xFF
 
@@ -94,6 +98,7 @@ typedef struct {
     uint16_t scale_mask;
     uint16_t tempo;  // tenths of BPM
     uint8_t debounce_ms;
+    uint8_t flags;  // GLOBAL_IGNORE_CLOCK
     uint16_t lockout_ms;
     uint16_t hold_ms;
 } globals_t;

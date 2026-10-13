@@ -1,6 +1,7 @@
 #include "midi.h"
 
 #include "pico/time.h"
+#include "engine.h"
 #include "protocol.h"
 #include "tusb.h"
 
@@ -67,8 +68,15 @@ void midi_poll(void) {
     while (tud_midi_available() && tud_midi_packet_read(p)) {
         uint8_t cable = p[0] >> 4;
         uint8_t cin = p[0] & 0x0F;
+        if (cable == CABLE_MUSIC) {
+            // MIDI clock from a DAW (spec B.11). Realtime bytes come as CIN 0xF
+            // (some hosts use the 1-byte system CIN 5).
+            if ((cin == 0x0F || cin == MIDI_CIN_SYSEX_END_1BYTE) && p[1] >= 0xF8)
+                engine_clock(p[1], time_us_64());
+            continue;
+        }
         if (cable != CABLE_CONFIG)
-            continue;  // cable 0 input (clock) is not handled yet
+            continue;
         int n;
         switch (cin) {
         case MIDI_CIN_SYSEX_START:

@@ -23,7 +23,7 @@
     WRITE_DATA: 0x05, WRITE_COMMIT: 0x06, SLOT_SAVE: 0x07, SLOT_LOAD: 0x08,
     SLOT_ERASE: 0x09, ALL_NOTES_OFF: 0x0a, CALIBRATION_GET: 0x0b, CALIBRATION_SET: 0x0c,
   };
-  const REPORT = { INPUT: 0x60, ANALOG: 0x61, SLOT: 0x62 };
+  const REPORT = { INPUT: 0x60, ANALOG: 0x61, SLOT: 0x62, CLOCK: 0x63 };
   const EVENTS = { 1: 'press', 2: 'release', 3: 'hold', 4: 'tap' };
 
   const STATUS = {
@@ -135,7 +135,7 @@
     while (name.length < 16) name.push(0);
     return [
       ...name, g.channel, g.velocity, g.root, g.octave, ...u16(g.mask), ...u16(g.tempo),
-      g.debounceMs, 0, ...u16(g.lockoutMs), ...u16(g.holdMs),
+      g.debounceMs, g.ignoreClock ? 1 : 0, ...u16(g.lockoutMs), ...u16(g.holdMs),
       // Reserved: analog calibration is board-wide (spec B.10).
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
@@ -196,7 +196,7 @@
         table.globals = {
           name: String.fromCharCode(...b.subarray(0, 16)).replace(/\0+$/, ''),
           channel: b[16], velocity: b[17], root: b[18], octave: b[19],
-          mask: rd16(b, 20), tempo: rd16(b, 22), debounceMs: b[24],
+          mask: rd16(b, 20), tempo: rd16(b, 22), debounceMs: b[24], ignoreClock: !!(b[25] & 1),
           lockoutMs: rd16(b, 26), holdMs: rd16(b, 28),
         };
       } else if (id === 0x02) {
@@ -276,7 +276,7 @@
   function defaultForm() {
     return {
       name: 'Scale player', channel: 0, velocity: 100, root: 0, octave: 4, mask: 0x0ab5,
-      holdMs: 500, lockoutMs: 0, debounceMs: 10, tempo: 1200,
+      holdMs: 500, lockoutMs: 0, debounceMs: 10, tempo: 1200, ignoreClock: false,
       switches: [
         ...Array.from({ length: 10 }, (_, i) => ({ action: 'scale', degree: i, gate: 'hold' })),
         { action: 'transpose', semitones: -12 },
@@ -362,7 +362,7 @@
     const f = {
       name: g.name, channel: g.channel, velocity: g.velocity, root: g.root, octave: g.octave,
       mask: g.mask, holdMs: g.holdMs, lockoutMs: g.lockoutMs, debounceMs: g.debounceMs,
-      tempo: g.tempo,
+      tempo: g.tempo, ignoreClock: !!g.ignoreClock,
       switches: Array.from({ length: NUM_INPUTS }, () => ({ action: 'none' })),
       analog: Array.from({ length: NUM_ANALOG }, () => ({ cc: null })),
       sequences: Array.from({ length: 4 }, defaultSequence),
@@ -623,6 +623,7 @@
       this.onInput = null;   // (input, event)
       this.onAnalog = null;  // (analog, raw, value)
       this.onSlot = null;    // (slot)
+      this.onClock = null;   // (external, bpm)
       this.onMidi = null;    // (data) musical messages copied to port 2
       input.onmidimessage = (e) => this._receive(e.data);
     }
@@ -662,6 +663,7 @@
       if (m.cmd === REPORT.INPUT && this.onInput) this.onInput(p[0], EVENTS[p[1]]);
       else if (m.cmd === REPORT.ANALOG && this.onAnalog) this.onAnalog(p[0], rd16(p, 1), p[3]);
       else if (m.cmd === REPORT.SLOT && this.onSlot) this.onSlot(p[0]);
+      else if (m.cmd === REPORT.CLOCK && this.onClock) this.onClock(p[0] === 1, rd16(p, 1) / 10);
       else if (this.pending && m.cmd === (this.pending.cmd | 0x40) && m.seq === this.pending.seq)
         this.pending.resolve(p);
     }

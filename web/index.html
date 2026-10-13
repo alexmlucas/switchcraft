@@ -66,6 +66,7 @@
   .dot.busy { background: var(--warn); }
   .spacer { flex: 1; }
   #save-status { color: var(--muted); min-width: 10ch; }
+  .clock-status { color: var(--ok); font-weight: 600; }
   #save-status.error { color: var(--error); }
 
   main {
@@ -210,6 +211,7 @@
   <button class="primary" id="connect">Connect</button>
   <span class="spacer"></span>
   <span id="save-status" role="status" aria-live="polite"></span>
+  <span id="clock-status" class="clock-status" role="status" hidden></span>
   <button id="sound" aria-pressed="false" title="Play the board’s notes in this browser">Sound: off</button>
   <button id="panic" disabled title="Send note-off for every sounding note">All notes off</button>
 </header>
@@ -361,8 +363,9 @@
         <input type="number" id="velocity" min="1" max="127">
       </label>
       <label class="field">Ignore repeat presses within <select id="lockout"></select></label>
+      <label class="check" style="min-height: 44px;"><input type="checkbox" id="follow-clock"> Follow MIDI clock from a DAW</label>
     </div>
-    <p class="hint">“Ignore repeat presses” helps if a switch gets pressed twice by accident, for example with a tremor.</p>
+    <p class="hint">“Ignore repeat presses” helps if a switch gets pressed twice by accident, for example with a tremor. With “Follow MIDI clock”, if your DAW sends clock to the board’s first MIDI port, sequences and LFOs play at the DAW’s tempo and start with it; when the clock stops, the board goes back to its own tempo.</p>
   </section>
 
   <section class="card" id="sound-card" aria-labelledby="sound-h">
@@ -996,6 +999,7 @@ function renderAll() {
   if (![...$('lockout').options].some((o) => o.value === String(form.lockoutMs)))
     $('lockout').append(el('option', { value: String(form.lockoutMs), textContent: `${form.lockoutMs} ms` }));
   $('lockout').value = String(form.lockoutMs);
+  $('follow-clock').checked = !form.ignoreClock;
   for (let i = 0; i < S.NUM_INPUTS; i++) renderSwitch(i);
   form.analog.forEach((a, i) => {
     options($(`cc-${i}`), withValue(CC_CHOICES, a.cc, `CC ${a.cc}`), a.cc);
@@ -1191,6 +1195,7 @@ function buildStatic() {
     changed();
   });
   $('lockout').addEventListener('change', () => { form.lockoutMs = Number($('lockout').value); changed(); });
+  $('follow-clock').addEventListener('change', () => { form.ignoreClock = !$('follow-clock').checked; changed(); });
 
   // Sequence editor
   const seq = () => form.sequences[currentSeq];
@@ -1500,6 +1505,7 @@ function attach(b) {
   b.onInput = showInput;
   b.onAnalog = showAnalog;
   b.onMidi = showMidi;
+  b.onClock = showClock;
   b.onSlot = async (slot) => {
     activeSlot = slot;
     await loadWorking();
@@ -1507,6 +1513,7 @@ function attach(b) {
 }
 
 function detach(reason) {
+  showClock(false, 0);
   synth.allNotesOff();  // their note-offs will never arrive
   if (board) board.close();
   board = null;
@@ -1908,6 +1915,14 @@ function showAnalog(i, raw, value) {
   meter.firstChild.style.width = `${(value / 127) * 100}%`;
   meter.setAttribute('aria-valuenow', String(value));
   $(`val-${i}`).textContent = value;
+}
+
+// The board follows a DAW's MIDI clock (spec B.11): show it, and let the
+// browser echo use that tempo.
+function showClock(external, bpm) {
+  $('clock-status').hidden = !external;
+  $('clock-status').textContent = external ? `Clock: from DAW, ${bpm.toFixed(1)} BPM` : '';
+  synth.setTempo(external ? bpm : currentTable().globals.tempo / 10);
 }
 
 function showMidi(d) {

@@ -35,7 +35,7 @@ CMD = {
     "WRITE_DATA": 0x05, "WRITE_COMMIT": 0x06, "SLOT_SAVE": 0x07, "SLOT_LOAD": 0x08,
     "SLOT_ERASE": 0x09, "ALL_NOTES_OFF": 0x0A, "CALIBRATION_GET": 0x0B, "CALIBRATION_SET": 0x0C,
 }
-REPORT_INPUT, REPORT_ANALOG, REPORT_SLOT = 0x60, 0x61, 0x62
+REPORT_INPUT, REPORT_ANALOG, REPORT_SLOT, REPORT_CLOCK = 0x60, 0x61, 0x62, 0x63
 EVENTS = {1: "press", 2: "release", 3: "hold", 4: "tap"}
 
 STATUS = {
@@ -88,10 +88,10 @@ MAJOR = 0x0AB5
 
 
 def globals_section(name="", channel=0, velocity=100, root=0, octave=4, mask=MAJOR,
-                    tempo=1200, debounce=10, lockout=0, hold=500):
+                    tempo=1200, debounce=10, lockout=0, hold=500, ignore_clock=False):
     body = name.encode("ascii")[:16].ljust(16, b"\0")
     body += struct.pack("<BBBBHHBBHH", channel, velocity, root, octave, mask, tempo,
-                        debounce, 0, lockout, hold)
+                        debounce, 1 if ignore_clock else 0, lockout, hold)
     body += bytes(10)  # reserved: analog calibration is board-wide (spec B.10)
     return section(0x01, body)
 
@@ -327,6 +327,9 @@ class Board:
                     print(f"analog {a}  raw {raw:4}  value {scaled}")
                 elif r and r[0] == REPORT_SLOT:
                     print(f"preset slot {r[2][0]}")
+                elif r and r[0] == REPORT_CLOCK:
+                    source, tempo = struct.unpack("<BH", r[2])
+                    print(f"clock {'external' if source else 'internal'} {tempo / 10:g} BPM")
             else:
                 print(f"  midi  {msg}")
 
