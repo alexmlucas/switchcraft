@@ -206,15 +206,17 @@
 
   @media (max-width: 640px) {
     body { font-size: 16px; }
+    header { position: static; }  /* wrapped onto several lines, it would cover too much */
     .panel { grid-template-columns: minmax(0, 1fr); }
     .analog-row { grid-template-columns: minmax(0, 1fr) 4ch; }
-    .analog-row select { grid-column: 1 / -1; }
+    .analog-row .analog-map { grid-column: 1 / -1; }
   }
 </style>
+<link rel="stylesheet" href="brand.css">
 </head>
 <body>
 <header>
-  <h1>Switchcraft</h1>
+  <h1><img src="img/ng_logo.png" alt="noise guaranteed" width="40" height="40"> Switchcraft</h1>
   <div class="status" role="status" aria-live="polite">
     <span class="dot" id="dot"></span><span id="conn-text">Not connected</span>
   </div>
@@ -225,6 +227,7 @@
   <button id="sound" aria-pressed="false" title="Play the board’s notes in this browser">Sound: off</button>
   <button id="panic" disabled title="Send note-off for every sounding note">All notes off</button>
 </header>
+<canvas class="noise" aria-hidden="true" data-seed="switchcraft" data-cell="5" data-density="0.6"></canvas>
 
 <main>
   <div class="notice error" id="no-midi" hidden>
@@ -426,6 +429,8 @@
   </form>
 </dialog>
 
+<script src="vendor/noiseguaranteed/noise.js"></script>
+<script>NoiseGuaranteed.favicon({ seed: 'switchcraft' });</script>
 <script src="switchcraft.js"></script>
 <script src="synth.js"></script>
 <script src="vendor/blockly/blockly_compressed.js"></script>
@@ -1707,16 +1712,18 @@ function blocklyTheme() {
     ? Blockly.registry.getObject(Blockly.registry.Type.THEME, name)
     : Blockly.Theme.defineTheme(name, {
       base: Blockly.Themes.Classic,
+      // Brand colours (see brand.css): cream paper, or black in dark mode.
       componentStyles: dark ? {
-        workspaceBackgroundColour: '#1b1b1b', toolboxBackgroundColour: '#262626',
-        toolboxForegroundColour: '#eeece8', flyoutBackgroundColour: '#2d2d2d',
-        flyoutForegroundColour: '#eeece8', flyoutOpacity: 1, scrollbarColour: '#666',
-        insertionMarkerColour: '#ffffff', cursorColour: '#a9c0ff',
+        workspaceBackgroundColour: '#000000', toolboxBackgroundColour: '#161616',
+        toolboxForegroundColour: '#fdeac8', flyoutBackgroundColour: '#222222',
+        flyoutForegroundColour: '#fdeac8', flyoutOpacity: 1, scrollbarColour: '#5a5244',
+        insertionMarkerColour: '#fdeac8', cursorColour: '#81ff73',
       } : {
-        workspaceBackgroundColour: '#fbfaf8', toolboxBackgroundColour: '#f0eee9',
-        toolboxForegroundColour: '#1d1d1b', flyoutBackgroundColour: '#e8e5df',
-        flyoutOpacity: 1, scrollbarColour: '#b8b4ab', cursorColour: '#2f5fd0',
+        workspaceBackgroundColour: '#fdeac8', toolboxBackgroundColour: '#ffffff',
+        toolboxForegroundColour: '#000000', flyoutBackgroundColour: '#f6dcae',
+        flyoutOpacity: 1, scrollbarColour: '#c4ab80', cursorColour: '#000000',
       },
+      fontStyle: { family: "'Atkinson Hyperlegible Mono', 'Courier New', monospace", weight: 'bold' },
     });
 }
 

@@ -1,0 +1,156 @@
+/* brand.css: the noise guaranteed look for the editor, from BRAND.md in
+   noiseguaranteed.github.io. Loaded after the page's own styles, so it only
+   restyles: layout and behaviour stay in index.html.
+
+   Contrast (WCAG): black on cream 17.8:1, green on black 16.5:1, black on
+   magenta 8.7:1. Muted and status colours are all at least 5.5:1 on cream
+   and white. Bright brand colours are never used as text on light backgrounds. */
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible Mono';
+  src: url('fonts/ahmono.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible Mono';
+  src: url('fonts/ahmono-italic.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --ink: #000000;      /* text, borders */
+  --nav: #81ff73;      /* header bar, highlights */
+  --hot: #f273ff;      /* hover */
+  --bg: #fdeac8;       /* paper */
+  --card: #ffffff;     /* panel */
+  --text: #000000;
+  --muted: #3b352c;
+  --line: #c4ab80;     /* light rules and grid lines only, never text */
+  --accent: #000000;
+  --accent-text: #81ff73;
+  --ok: #06561f;
+  --warn: #6e3c00;
+  --error: #95120b;
+  --pressed: #81ff73;
+  --pressed-text: #000000;
+  --meter: #000000;
+  --focus: #000000;
+  --inkey: #e3fadf;    /* piano roll rows in the key: a pale nav green */
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #fdeac8; --bg: #000000; --card: #161616; --text: #fdeac8; --muted: #d6c4a2;
+    --line: #5a5244; --accent: #81ff73; --accent-text: #000000; --ok: #81ff73;
+    --warn: #fff273; --error: #ff9ab8; --pressed: #81ff73; --pressed-text: #000000;
+    --meter: #81ff73; --focus: #81ff73; --inkey: #1c3319;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #fdeac8; --bg: #000000; --card: #161616; --text: #fdeac8; --muted: #d6c4a2;
+  --line: #5a5244; --accent: #81ff73; --accent-text: #000000; --ok: #81ff73;
+  --warn: #fff273; --error: #ff9ab8; --pressed: #81ff73; --pressed-text: #000000;
+  --meter: #81ff73; --focus: #81ff73; --inkey: #1c3319;
+}
+
+body {
+  font: 16px/1.6 'Atkinson Hyperlegible Mono', 'Courier New', monospace;
+}
+.hint { max-width: 75ch; }
+/* Blockly's toolbox, menus and tooltips set their own font; the blocks get
+   theirs from blocklyTheme() in index.html. */
+.blocklyToolbox, .blocklyToolboxCategoryLabel, .blocklyTreeLabel,
+.blocklyDropDownDiv, .blocklyWidgetDiv, .blocklyTooltipDiv {
+  font-family: 'Atkinson Hyperlegible Mono', 'Courier New', monospace !important;
+}
+
+/* Header: the nav green bar with a black rule, logo and name on the left.
+   It stays green with black text in dark mode too. */
+header {
+  background: var(--nav);
+  color: #000;
+  border-bottom: 2px solid #000;
+}
+header h1 {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 22px; text-transform: lowercase; letter-spacing: 0;
+}
+header h1 img { width: 40px; height: 40px; }
+header .status, header #save-status { color: #000; }
+header .clock-status { color: #000; }
+header #save-status.error { color: #000; font-weight: bold; }
+header .dot { background: #fff; border: 2px solid #000; }
+header .dot.on { background: #000; }
+header .dot.busy { background: var(--hot); }
+header button { background: #fff; color: #000; border-color: #000; }
+header button.primary,
+header button[aria-pressed="true"] { background: #000; color: var(--nav); }
+canvas.noise { display: block; width: 100%; height: 16px; }
+
+/* Square corners everywhere, black borders on panels and controls. */
+section.card, .notice, .tile, .step, .roll-box, #blockly, dialog#midi-dialog,
+#midi-preview, .meter, select, input, button {
+  border-radius: 0;
+}
+section.card { border: 2px solid var(--ink); }
+.notice { border-width: 2px; }
+dialog#midi-dialog, .roll-box, #blockly { border: 2px solid var(--ink); }
+.dot { border-radius: 0; }  /* a pixel, not a circle */
+
+/* Section headings, numbered like a lab sheet: "01 preset ·········" */
+main { counter-reset: section; }
+section.card { counter-increment: section; }
+h2 { text-transform: lowercase; font-size: 20px; }
+section.card h2 { display: flex; align-items: baseline; gap: 0.6em; flex: 1 1 auto; }
+section.card h2::before {
+  content: counter(section, decimal-leading-zero) / "";
+  font-weight: normal;
+}
+section.card h2::after {
+  content: ""; flex: 1; min-width: 2ch;
+  border-bottom: 2px dotted var(--ink);
+}
+.column h3 { text-transform: lowercase; }
+
+/* Controls */
+select, input, button {
+  border: 2px solid var(--ink);
+}
+input.slider { border: 0; }
+input[type="range"], input[type="checkbox"] { accent-color: var(--accent); }
+button { font-weight: bold; }
+button.primary,
+button[aria-pressed="true"] {
+  background: var(--accent); color: var(--accent-text); border-color: var(--ink);
+}
+button:not(:disabled):hover {
+  background: var(--hot); color: #000; border-color: var(--ink);
+}
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+header :focus-visible { outline-color: #000; }
+
+/* Switch tiles light up nav green while pressed. */
+.tile { border: 2px solid var(--ink); }
+.tile.down { border-color: var(--ink); }
+.step { border: 2px dotted var(--ink); }
+
+.meter { height: 16px; background: var(--card); border: 2px solid var(--ink); }
+
+/* Graphs: black (or green in dark mode) lines with a magenta fill, like the
+   brand's line drawings. */
+.mod-graph .shape { fill: color-mix(in srgb, var(--hot) 45%, transparent); }
+svg.roll .row.inkey { fill: var(--inkey); }
+svg.roll .row.black.inkey { fill: color-mix(in srgb, var(--text) 7%, var(--inkey)); }
+
+/* Notices: black text on soft brand colours in light mode. */
+.notice { background: #fff273; color: #000; border-color: #000; }
+.notice.error { background: #fbe6ec; border-color: #000; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .notice { background: var(--card); color: var(--text); border-color: var(--warn); }
+  :root:not([data-theme="light"]) .notice.error { border-color: var(--error); }
+}
+:root[data-theme="dark"] .notice { background: var(--card); color: var(--text); border-color: var(--warn); }
+:root[data-theme="dark"] .notice.error { border-color: var(--error); }
