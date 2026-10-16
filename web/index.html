@@ -162,6 +162,28 @@
   .step select { min-height: 40px; padding: 4px 6px; }
   .step button { min-height: 40px; padding: 4px 10px; }
   .steps-empty { color: var(--muted); margin: 12px 0; }
+
+  /* Piano roll */
+  .notes-view { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .notes-view span { color: var(--muted); font-size: 15px; }
+  .notes-view button { min-height: 36px; padding: 4px 12px; }
+  .notes-view button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .roll-box { overflow: auto; max-height: 420px; border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; }
+  svg.roll { display: block; cursor: crosshair; touch-action: none; user-select: none; }
+  svg.roll .row { fill: var(--card); }
+  svg.roll .row.black { fill: color-mix(in srgb, var(--text) 7%, var(--card)); }
+  svg.roll .row.inkey { fill: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+  svg.roll .row.black.inkey { fill: color-mix(in srgb, var(--accent) 8%, color-mix(in srgb, var(--text) 7%, var(--card))); }
+  svg.roll .col { stroke: var(--line); stroke-width: 1; }
+  svg.roll .col.beat { stroke: var(--muted); stroke-opacity: 0.45; }
+  svg.roll .rootline { stroke: var(--accent); stroke-opacity: 0.5; }
+  svg.roll .endline { stroke: var(--warn); stroke-width: 2; stroke-dasharray: 4 3; }
+  svg.roll .label { fill: var(--muted); font-size: 11px; font-family: inherit; }
+  svg.roll .note { cursor: grab; }
+  svg.roll .note .body { fill: var(--accent); }
+  svg.roll .note .edge { fill: var(--accent-text); fill-opacity: 0.45; cursor: ew-resize; }
+  svg.roll .note:focus { outline: none; }
+  svg.roll .note:focus-visible .body { stroke: var(--focus); stroke-width: 3; }
   .step .len { grid-column: 1 / -1; min-height: 34px; padding: 2px 6px; font-size: 14px; }
 
   dialog#midi-dialog {
@@ -288,10 +310,17 @@
       <label class="field">Plays <select id="seq-mode"></select></label>
       <label class="field">Notes are <select id="seq-type"></select></label>
     </div>
+    <div class="notes-view" role="group" aria-label="Show the notes as">
+      <span>Notes as</span>
+      <button type="button" id="notes-list" class="keep-enabled" aria-pressed="true">List</button>
+      <button type="button" id="notes-roll" class="keep-enabled" aria-pressed="false">Piano roll</button>
+    </div>
     <div id="steps" class="steps" aria-label="Notes in this sequence"></div>
+    <div id="roll" class="roll-box" hidden></div>
+    <p class="hint" id="roll-hint" hidden>Click a cell to add a note; click a note to remove it; drag it up or down to change it, or drag its right edge to make it longer (when it plays in time). With a keyboard: Tab to a note, then the arrow keys (Shift with left and right for its length) and Delete. The dashed line is the end of the sequence.</p>
     <div class="row">
-      <button id="add-note">Add note</button>
-      <button id="add-rest">Add rest</button>
+      <button id="add-note" class="list-only">Add note</button>
+      <button id="add-rest" class="list-only">Add rest</button>
       <button id="clear-steps">Clear</button>
       <button id="import-midi">Import a MIDI file…</button>
     </div>
@@ -436,6 +465,7 @@
 <script src="vendor/blockly/blockly_compressed.js"></script>
 <script src="vendor/blockly/en.js"></script>
 <script src="blocks.js"></script>
+<script src="pianoroll.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -739,6 +769,30 @@ function renderRhythm() {
     : `Rhythm: no hits in ${steps} steps`);
 }
 
+// Notes as a list or a piano roll (remembered in this browser).
+let notesView = 'list';
+try {
+  if (localStorage.getItem('switchcraft.notesView') === 'roll') notesView = 'roll';
+} catch (e) { /* not important */ }
+let roll = null;
+
+function renderNotesView() {
+  $('notes-list').setAttribute('aria-pressed', String(notesView === 'list'));
+  $('notes-roll').setAttribute('aria-pressed', String(notesView === 'roll'));
+  $('steps').hidden = notesView !== 'list';
+  $('roll').hidden = $('roll-hint').hidden = notesView !== 'roll';
+  document.querySelectorAll('.list-only').forEach((e) => { e.hidden = notesView !== 'list'; });
+  if (notesView !== 'roll') return;
+  roll = roll || SwitchcraftPianoRoll.mount($('roll'), {
+    get: () => form.sequences[currentSeq],
+    settings: () => ({ root: form.root, octave: form.octave, mask: form.mask }),
+    editable: () => editable,
+    changed: seqChanged,
+    message: (text) => setSave(text, true),
+  });
+  roll.render();
+}
+
 function renderSeq() {
   const q = form.sequences[currentSeq];
   options($('seq-mode'), MODE_CHOICES, q.mode);
@@ -751,6 +805,7 @@ function renderSeq() {
   options($('seq-length'), withValue(lengths, q.gate, `${q.gate}%`), q.gate);
   updateStepButtons();
   renderSteps();
+  renderNotesView();
   renderRhythm();
 }
 
@@ -1298,6 +1353,15 @@ function buildStatic() {
     else addStep(last === undefined ? 60 : Math.min(last + 2, 96));
   });
   $('add-rest').addEventListener('click', () => addStep(null));
+  for (const [id, v] of [['notes-list', 'list'], ['notes-roll', 'roll']])
+    $(id).addEventListener('click', () => {
+      notesView = v;
+      try {
+        localStorage.setItem('switchcraft.notesView', v);
+      } catch (e) { /* not important */ }
+      renderSteps();
+      renderNotesView();
+    });
   // Modulation editor
   const mod = () => form.modulators[currentMod];
   const clampInput = (id, lo, hi, fallback) => {

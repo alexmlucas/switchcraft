@@ -16,6 +16,7 @@
 <script src="vendor/blockly/blockly_compressed.js"></script>
 <script src="vendor/blockly/en.js"></script>
 <script src="blocks.js"></script>
+<script src="pianoroll.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -681,6 +682,54 @@ function fakeBoard() {
     assertEq(toHex(S.buildTable(viaBlocks.table)), toHex(S.buildTable(table)));
     assertEq(B.formatNotes([60, 67, null, 69], 'fixed', [2, 1, 1, 4]), 'C4:2 G4 -:1 A4:4'.replace('-:1', '-'));
     assertEq(B.parseNotes('C4:2 G4 - A4:4', 'fixed').lengths, [2, 1, 1, 4]);
+  });
+
+  // --- Piano roll (editing rules) ---
+
+  const PR = SwitchcraftPianoRoll;
+  const clockSeq = (notes, lengths) => ({ ...S.defaultSequence(), mode: 'clock', noteType: 'fixed', notes, lengths });
+
+  await test('piano roll: timeline from notes, rests and lengths', () => {
+    const q = clockSeq([60, null, 64, 67], [2, 1, 3, 1]);
+    assertEq(PR.timeline(q), { events: [{ start: 0, length: 2, note: 60 }, { start: 3, length: 3, note: 64 }, { start: 6, length: 1, note: 67 }], end: 7 });
+    const press = { ...q, mode: 'press' };  // lengths don't count one note per press
+    assertEq(PR.timeline(press).events.map((e) => [e.start, e.length]), [[0, 1], [2, 1], [3, 1]]);
+  });
+
+  await test('piano roll: click to add, change and remove notes', () => {
+    const q = clockSeq([60, null, 64], [2, 1, 1]);
+    assert(PR.clickCell(q, 6, 72));                // after the end: a rest, then the note
+    assertEq([q.notes, q.lengths], [[60, null, 64, null, 72], [2, 1, 1, 2, 1]]);
+    assert(PR.clickCell(q, 1, 62));                // inside the long C4: changes its pitch
+    assertEq(q.notes[0], 62);
+    assert(PR.clickCell(q, 0, 62));                // the same pitch again: removes it
+    assertEq([q.notes, q.lengths], [[null, 64, null, 72], [3, 1, 2, 1]]);
+    assert(PR.clickCell(q, 2, 65));                // into the rest
+    assertEq([q.notes, q.lengths], [[null, 65, 64, null, 72], [2, 1, 1, 2, 1]]);
+  });
+
+  await test('piano roll: lengths stop at the next note; all-1 lengths are dropped', () => {
+    const q = clockSeq([60, 64], undefined);
+    assert(PR.setLength(q, 0, 5));                 // can't run into E4 at step 2
+    assertEq([q.notes, q.lengths], [[60, 64], undefined]);
+    assert(PR.setLength(q, 1, 4));
+    assertEq(q.lengths, [1, 4]);
+    assert(PR.setLength(q, 1, 1));
+    assertEq(q.lengths, undefined);
+    assert(PR.setPitch(q, 0, 59));
+    assertEq(q.notes, [59, 64]);
+    assert(PR.removeNote(q, 1));
+    assertEq(q.notes, [59]);
+  });
+
+  await test('piano roll: press mode gaps are separate rests; full sequences refuse more', () => {
+    const q = { ...S.defaultSequence(), mode: 'press', noteType: 'scale', notes: [0] };
+    assert(PR.clickCell(q, 3, 4));
+    assertEq([q.notes, q.lengths], [[0, null, null, 4], undefined]);
+    const full = clockSeq(Array.from({ length: S.MAX_FORM_STEPS }, (_, i) => 60 + (i % 12)));
+    const before = JSON.stringify(full);
+    assert(!PR.clickCell(full, S.MAX_FORM_STEPS + 2, 60), 'should refuse');
+    assertEq(JSON.stringify(full), before);
   });
 
   // Tables for tools/check_page_tables.py to send to a real board.
