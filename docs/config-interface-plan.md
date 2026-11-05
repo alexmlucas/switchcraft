@@ -175,6 +175,19 @@ No new features before 27 November beyond this list.
 | 5 | Blockly, starter templates, browser synth |
 | 6 | Stop adding features; practice workshop with a colleague; prepare backup board with demo config |
 
+## Musician view (5 November 2026)
+
+The form's per-switch menus are replaced by a **musician view**, for the
+workshops: each musician picks devices (notes, sequencer, arpeggiator,
+wobble/LFO, swell/envelope, controls), then gives each device's jobs a
+switch, from a menu or by pressing it. Each musician has their own MIDI
+channel; a wobble or swell changes its own musician's sound or another's.
+Page-only (`web/band.js`): the rule table and firmware are unchanged, and the
+musicians are kept in the table's `EDITOR` section (spec B.7), so they come
+back when a preset is read from the board. The Blocks view is switched off in
+the page until after the workshops. Not yet done: per-musician access
+settings (lockout, hold time), which need per-input values in the table.
+
 ## Status and next steps (13 October 2026)
 
 Items 1–7 are done and tested on the board (firmware 0.6.0 on the board;

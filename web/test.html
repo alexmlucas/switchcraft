@@ -17,6 +17,7 @@
 <script src="vendor/blockly/en.js"></script>
 <script src="blocks.js"></script>
 <script src="pianoroll.js"></script>
+<script src="band.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -732,6 +733,107 @@ function fakeBoard() {
     assertEq(JSON.stringify(full), before);
   });
 
+  // --- Musician view (band.js) ---
+  const BD = SwitchcraftBand;
+
+  await test('band templates: valid tables that reopen with the same musicians', () => {
+    for (const t of BD.TEMPLATES) {
+      const band = t.band();
+      const blob = S.buildTable(BD.tableFromBand(band));
+      assert(blob.length <= 4080, `${t.id}: ${blob.length} bytes`);
+      assert(band.name.length <= 16, `${t.id}: name too long`);
+      const inputs = BD.slots(band).map((x) => x.input);
+      assertEq(inputs.length, new Set(inputs).size);
+      const back = BD.bandFromTable(S.parseTable(blob));
+      assert(back.band, `${t.id}: ${back.reason}`);
+      assertEq(BD.editorJson(back.band), BD.editorJson(band));
+      assertEq(S.tableFromForm(BD.toForm(back.band)).rules, S.tableFromForm(BD.toForm(band)).rules);
+    }
+  });
+
+  await test('band: each musician plays on their own channel; modulators can target another', () => {
+    const b = BD.TEMPLATES.find((t) => t.id === 'mod').band();
+    const table = BD.tableFromBand(b);
+    const keys = b.musicians.find((m) => m.name === 'Keys');
+    const noteRules = table.rules.filter((r) => r.act === S.ACT.NOTE);
+    assert(noteRules.length === 6 && noteRules.every((r) => r.p0 === keys.channel));
+    // The effects musician (channel 1) changes Keys' sound (channel 0).
+    assertEq(table.modulators.filter((m) => m.id < 3).map((m) => m.channel), [0, 0, 0]);
+    const arp = b.musicians.find((m) => m.name === 'Arp');
+    assertEq(table.sequences.map((q) => q.channel), [arp.channel]);
+    assertEq(table.modulators[3].channel, arp.channel);
+    assertEq(table.modulators[3].follow, 0);
+  });
+
+  await test('band: a switch has one job; assigning it elsewhere moves it', () => {
+    const b = BD.defaultBand();
+    const m1 = BD.addMusician(b, 'Sam');
+    const m2 = BD.addMusician(b, 'Ríona');
+    assert(m1.channel !== m2.channel && m1.colour !== m2.colour);
+    const seq = BD.addDevice(b, m1, 'seq');
+    const notes = BD.addDevice(b, m2, 'notes');
+    notes.keys.push({ input: null, value: 0 });
+    assert(BD.assign(b, seq, { role: 'step' }, 3) === null);
+    const was = BD.assign(b, notes, { key: 0 }, 3);
+    assert(was && was.device === seq && was.role === 'step');
+    assertEq([seq.roles.step, notes.keys[0].input], [null, 3]);
+    assertEq(BD.owner(b, 3).device, notes);
+    assert(!BD.freeInputs(b).includes(3));
+  });
+
+  await test('band: the board has room for four sequences and four modulators', () => {
+    const b = BD.defaultBand();
+    const m = BD.addMusician(b);
+    for (let i = 0; i < 4; i++) assert(BD.addDevice(b, m, i % 2 ? 'arp' : 'seq'));
+    assert(!BD.canAdd(b, 'arp') && BD.addDevice(b, m, 'seq') === null);
+    for (let i = 0; i < 4; i++) assert(BD.addDevice(b, m, i % 2 ? 'env' : 'lfo'));
+    assert(!BD.canAdd(b, 'lfo'));
+    BD.removeDevice(b, m, m.devices[1]);
+    assert(BD.canAdd(b, 'seq'));
+    assertEq(b.sequences[1].notes, []);
+  });
+
+  await test('band: a sequencer’s next-note switch becomes its play switch', () => {
+    const b = BD.defaultBand();
+    const m = BD.addMusician(b);
+    const d = BD.addDevice(b, m, 'seq');
+    BD.assign(b, d, { role: 'step' }, 0);
+    BD.setSequenceMode(b, d.seq, 'clock');
+    assertEq(d.roles, { play: 0 });
+    assertEq(BD.toForm(b).switches[0].action, 'seq-play');
+    BD.setSequenceMode(b, d.seq, 'press');
+    assertEq(d.roles, { step: 0 });
+  });
+
+  await test('band: older presets (no musicians stored) open as musicians', () => {
+    const strip = (s) => { const c = { ...s }; delete c.channel; return c; };
+    for (const t of S.TEMPLATES) {
+      const f = t.form();
+      const band = BD.bandFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).band;
+      assert(band && band.musicians.length >= 1, t.id);
+      assertEq(BD.toForm(band).switches.map(strip), f.switches.map(strip));
+      for (const m of band.musicians) assertEq(m.channel, f.channel);
+    }
+  });
+
+  await test('band: stored musicians are ignored if the rules were changed elsewhere', () => {
+    const b = BD.TEMPLATES[0].band();
+    const table = BD.tableFromBand(b);
+    table.rules = table.rules.filter((r) => r.src !== 0);
+    const back = BD.bandFromTable(S.parseTable(S.buildTable(table)));
+    assert(back.band);
+    assertEq(BD.owner(back.band, 0), null);
+    assertEq(back.band.musicians[0].name, 'Musician 1');
+  });
+
+  await test('form: per-switch channels and next preset survive the table', () => {
+    const f = S.defaultForm();
+    f.switches[0] = { action: 'scale', degree: 2, gate: 'hold', channel: 5 };
+    f.switches[11] = { action: 'preset-next' };
+    const back = S.formFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).form;
+    assertEq([back.switches[0], back.switches[11]], [f.switches[0], f.switches[11]]);
+  });
+
   // Tables for tools/check_page_tables.py to send to a real board.
   const samples = { default: S.defaultForm(), sequences: sequenceForm(), modulators: modulatorForm(), imported: importedForm() };
   for (const t of S.TEMPLATES) samples[`template ${t.id}`] = t.form();
@@ -739,7 +841,9 @@ function fakeBoard() {
   blobs.id = 'blobs';
   blobs.hidden = true;
   blobs.textContent = Object.entries(samples)
-    .map(([name, f]) => `${name} ${toHex(S.buildTable(S.tableFromForm(f)))}`).join('\n');
+    .map(([name, f]) => `${name} ${toHex(S.buildTable(S.tableFromForm(f)))}`)
+    .concat(SwitchcraftBand.TEMPLATES.map((t) => `band ${t.id} ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(t.band())))}`))
+    .join('\n');
   document.body.append(blobs);
 
   log(failed ? 'fail' : 'pass', `\n${passed} passed, ${failed} failed`);

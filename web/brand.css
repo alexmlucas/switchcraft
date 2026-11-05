@@ -1,10 +1,13 @@
 /* brand.css: the noise guaranteed look for the editor, from BRAND.md in
-   noiseguaranteed.github.io. Loaded after the page's own styles, so it only
-   restyles: layout and behaviour stay in index.html.
+   noiseguaranteed.github.io (November 2026: the sage wash, as on every page of
+   the site). Loaded after the page's own styles, so it only restyles: layout
+   and behaviour stay in index.html.
 
-   Contrast (WCAG): black on cream 17.8:1, green on black 16.5:1, black on
-   magenta 8.7:1. Muted and status colours are all at least 5.5:1 on cream
-   and white. Bright brand colours are never used as text on light backgrounds. */
+   Contrast (WCAG): black on the sage page 18.9:1, black on sage 11.8:1,
+   black on the sage hover 16.3:1, white on black 21:1. Muted and status
+   colours are at least 8:1 on the page and on white; black on every
+   musician colour (band.js) at least 8.7:1. Bright brand colours are never
+   used as text on light backgrounds. */
 
 @font-face {
   font-family: 'Atkinson Hyperlegible Mono';
@@ -21,129 +24,128 @@
   font-display: swap;
 }
 
+/* The sage wash (css/noise-fx.css on the site). */
+[data-wash="sage"] {
+  --wash: #a9cba2;       /* highlights, pressed switches, chosen buttons */
+  --wash-hover: #d6e8d0; /* hover */
+  --wash-soft: #eef5eb;  /* page background */
+  --wash-noise: #4e6a49, #8fb488, #d6e8d0, #ff40ff;
+}
+
 :root {
   --ink: #000000;      /* text, borders */
-  --nav: #81ff73;      /* header bar, highlights */
-  --hot: #f273ff;      /* hover */
-  --bg: #fdeac8;       /* paper */
+  --bg: var(--wash-soft);
   --card: #ffffff;     /* panel */
   --text: #000000;
-  --muted: #3b352c;
-  --line: #c4ab80;     /* light rules and grid lines only, never text */
+  --muted: #3b3d36;
+  --line: #9db896;     /* light rules and grid lines only, never text */
   --accent: #000000;
-  --accent-text: #81ff73;
+  --accent-text: #ffffff;
   --ok: #06561f;
   --warn: #6e3c00;
   --error: #95120b;
-  --pressed: #81ff73;
+  --pressed: var(--wash);
   --pressed-text: #000000;
   --meter: #000000;
   --focus: #000000;
-  --inkey: #e3fadf;    /* piano roll rows in the key: a pale nav green */
+  --inkey: #e3efdf;    /* piano roll rows in the key: a pale sage */
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ink: #fdeac8; --bg: #000000; --card: #161616; --text: #fdeac8; --muted: #d6c4a2;
-    --line: #5a5244; --accent: #81ff73; --accent-text: #000000; --ok: #81ff73;
-    --warn: #fff273; --error: #ff9ab8; --pressed: #81ff73; --pressed-text: #000000;
-    --meter: #81ff73; --focus: #81ff73; --inkey: #1c3319;
+    --ink: #eef5eb; --bg: #000000; --card: #161616; --text: #eef5eb; --muted: #c9d8c4;
+    --line: #4a5a46; --accent: #a9cba2; --accent-text: #000000; --ok: #a9cba2;
+    --warn: #fff273; --error: #ff9ab8; --pressed: #a9cba2; --pressed-text: #000000;
+    --meter: #a9cba2; --focus: #a9cba2; --inkey: #1f2d1c;
   }
 }
 :root[data-theme="dark"] {
-  --ink: #fdeac8; --bg: #000000; --card: #161616; --text: #fdeac8; --muted: #d6c4a2;
-  --line: #5a5244; --accent: #81ff73; --accent-text: #000000; --ok: #81ff73;
-  --warn: #fff273; --error: #ff9ab8; --pressed: #81ff73; --pressed-text: #000000;
-  --meter: #81ff73; --focus: #81ff73; --inkey: #1c3319;
+  --ink: #eef5eb; --bg: #000000; --card: #161616; --text: #eef5eb; --muted: #c9d8c4;
+  --line: #4a5a46; --accent: #a9cba2; --accent-text: #000000; --ok: #a9cba2;
+  --warn: #fff273; --error: #ff9ab8; --pressed: #a9cba2; --pressed-text: #000000;
+  --meter: #a9cba2; --focus: #a9cba2; --inkey: #1f2d1c;
 }
 
 body {
-  font: 16px/1.6 'Atkinson Hyperlegible Mono', 'Courier New', monospace;
+  font: 17px/1.6 'Atkinson Hyperlegible Mono', 'Courier New', monospace;
+  background: var(--bg);
 }
 .hint { max-width: 75ch; }
-/* Blockly's toolbox, menus and tooltips set their own font; the blocks get
-   theirs from blocklyTheme() in index.html. */
-.blocklyToolbox, .blocklyToolboxCategoryLabel, .blocklyTreeLabel,
-.blocklyDropDownDiv, .blocklyWidgetDiv, .blocklyTooltipDiv {
-  font-family: 'Atkinson Hyperlegible Mono', 'Courier New', monospace !important;
-}
 
-/* Header: the nav green bar with a black rule, logo and name on the left.
-   It stays green with black text in dark mode too. */
-header {
-  background: var(--nav);
-  color: #000;
-  border-bottom: 2px solid #000;
-}
+/* Header: white, with the logo and the name in bold on the left. */
+header { background: var(--card); color: var(--text); }
 header h1 {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 22px; text-transform: lowercase; letter-spacing: 0;
+  display: flex; align-items: center; gap: 12px;
+  font-size: clamp(22px, 3.4vw, 30px); text-transform: lowercase; letter-spacing: 0;
 }
-header h1 img { width: 40px; height: 40px; }
-header .status, header #save-status { color: #000; }
-header .clock-status { color: #000; }
-header #save-status.error { color: #000; font-weight: bold; }
-header .dot { background: #fff; border: 2px solid #000; }
-header .dot.on { background: #000; }
-header .dot.busy { background: var(--hot); }
-header button { background: #fff; color: #000; border-color: #000; }
-header button.primary,
-header button[aria-pressed="true"] { background: #000; color: var(--nav); }
-canvas.noise { display: block; width: 100%; height: 16px; }
+header h1 img { width: 56px; height: 56px; }
+header .status, header #save-status, header .clock-status { color: var(--text); }
+header #save-status.error { color: var(--error); font-weight: bold; }
+.dot { border-radius: 0; border: 2px solid var(--ink); background: var(--card); }  /* a pixel, not a circle */
+.dot.on { background: var(--ink); }
+.dot.busy { background: var(--wash); }
+
+/* The noise band under the header, with a square pause button at its right-hand end,
+   beside the noise and never on it (WCAG 2.2.2). As on the site. */
+.topband { display: flex; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); background: var(--card); }
+.topband canvas.noise { display: block; flex: 1; min-width: 0; width: auto; height: 32px; }
+.motion {
+  flex: none; width: 34px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center;
+  background: var(--card); color: var(--ink); border: 0; border-left: 2px solid var(--ink); cursor: pointer;
+}
+.motion svg { width: 14px; height: 14px; fill: currentColor; }
+button.motion:not(:disabled):hover { background: var(--wash-hover); color: #000; }
+.motion:focus-visible { outline-offset: -5px; }
+.motion .i-play, .motion[aria-pressed="true"] .i-pause { display: none; }
+.motion[aria-pressed="true"] .i-play { display: block; }
+.motion[aria-pressed="true"] { background: var(--wash); color: #000; }
+@media (max-width: 480px) { .topband canvas.noise, .motion { height: 24px; } }
 
 /* Square corners everywhere, black borders on panels and controls. */
-section.card, .notice, .tile, .step, .roll-box, #blockly, dialog#midi-dialog,
-#midi-preview, .meter, select, input, button {
+section.card, .notice, .tile, .step, .roll-box, dialog#midi-dialog,
+#midi-preview, .meter, select, input, button, .musician, .device {
   border-radius: 0;
 }
 section.card { border: 2px solid var(--ink); }
 .notice { border-width: 2px; }
-dialog#midi-dialog, .roll-box, #blockly { border: 2px solid var(--ink); }
-.dot { border-radius: 0; }  /* a pixel, not a circle */
 
 /* Section headings, numbered like a lab sheet: "01 preset ·········" */
 main { counter-reset: section; }
 section.card { counter-increment: section; }
-h2 { text-transform: lowercase; font-size: 20px; }
-section.card h2 { display: flex; align-items: baseline; gap: 0.6em; flex: 1 1 auto; }
+h2 { text-transform: lowercase; font-size: 24px; line-height: 1.2; }
+section.card h2 { display: flex; align-items: baseline; gap: 14px; flex: 1 1 auto; }
 section.card h2::before {
   content: counter(section, decimal-leading-zero) / "";
-  font-weight: normal;
+  font-weight: normal; font-size: 13px;
 }
 section.card h2::after {
-  content: ""; flex: 1; min-width: 2ch;
-  border-bottom: 2px dotted var(--ink);
+  content: ""; flex: 1; min-width: 24px;
+  border-bottom: 2px dotted var(--ink); transform: translateY(-6px);
 }
-.column h3 { text-transform: lowercase; }
+h3, h4, .column h3 { text-transform: lowercase; }
 
-/* Controls */
-select, input, button {
-  border: 2px solid var(--ink);
-}
+/* Controls. Buttons are black with white bold text; the hover is the wash.
+   "Quiet" buttons (small, repeated ones) are white with a black border. */
+select, input { border: 2px solid var(--ink); background: var(--card); color: var(--text); }
 input.slider { border: 0; }
-input[type="range"], input[type="checkbox"] { accent-color: var(--accent); }
-button { font-weight: bold; }
-button.primary,
-button[aria-pressed="true"] {
-  background: var(--accent); color: var(--accent-text); border-color: var(--ink);
+input[type="range"], input[type="checkbox"] { accent-color: var(--ink); }
+button {
+  font-weight: bold; border: 2px solid var(--ink);
+  background: var(--accent); color: var(--accent-text);
 }
-button:not(:disabled):hover {
-  background: var(--hot); color: #000; border-color: var(--ink);
-}
+button.quiet { background: var(--card); color: var(--text); }
+button[aria-pressed="true"] { background: var(--wash); color: #000; border-color: var(--ink); }
+button:not(:disabled):hover { background: var(--wash-hover); color: #000; border-color: var(--ink); }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-header :focus-visible { outline-color: #000; }
+label.field { color: var(--text); }
 
-/* Switch tiles light up nav green while pressed. */
-.tile { border: 2px solid var(--ink); }
+/* Switch tiles and jobs light up in the wash colour, with a black edge, while pressed. */
+.tile { border-color: var(--ink); background: var(--card); }
+.tile:not(.used) { border-left-color: var(--line); }
 .tile.down { border-color: var(--ink); }
 .step { border: 2px dotted var(--ink); }
+.roll-box, dialog#midi-dialog { border: 2px solid var(--ink); }
 
 .meter { height: 16px; background: var(--card); border: 2px solid var(--ink); }
-
-/* Graphs: black (or green in dark mode) lines with a magenta fill, like the
-   brand's line drawings. */
-.mod-graph .shape { fill: color-mix(in srgb, var(--hot) 45%, transparent); }
-svg.roll .row.inkey { fill: var(--inkey); }
-svg.roll .row.black.inkey { fill: color-mix(in srgb, var(--text) 7%, var(--inkey)); }
 
 /* Notices: black text on soft brand colours in light mode. */
 .notice { background: #fff273; color: #000; border-color: #000; }
@@ -154,3 +156,7 @@ svg.roll .row.black.inkey { fill: color-mix(in srgb, var(--text) 7%, var(--inkey
 }
 :root[data-theme="dark"] .notice { background: var(--card); color: var(--text); border-color: var(--warn); }
 :root[data-theme="dark"] .notice.error { border-color: var(--error); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tile { transition: none; }
+}

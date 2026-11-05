@@ -242,7 +242,8 @@
 
   // --- Form view model <-> rule table ---
   //
-  // The form edits a simple model: one action per switch, one CC per analog
+  // The form edits a simple model: one action per switch (with an optional
+  // MIDI channel, set by band.js), one CC per analog
   // input, and up to four sequences A-D. Tables made by other editors
   // (tap/hold, several rules per switch...) can't be shown in it;
   // formFromTable says why.
@@ -299,7 +300,8 @@
   function sequenceToTable(q, id) {
     return {
       id, advance: q.mode === 'clock' ? 1 : 0, order: ORDERS.indexOf(q.order),
-      octaves: q.octaves, channel: DEFAULT, velocity: 0, division: q.division,
+      // A musician's channel (band.js), or the preset's default.
+      octaves: q.octaves, channel: q.channel ?? DEFAULT, velocity: 0, division: q.division,
       // Clock mode needs a length; "until the next note" only exists in press mode.
       gate: q.mode === 'clock' && q.gate === 0 ? 100 : q.gate,
       noteMode: q.noteType === 'scale' ? 1 : 0,
@@ -321,10 +323,12 @@
         rules.push({
           trig: TRIG.PRESS, src: i, act: ACT.NOTE,
           flags: GATE[s.gate] | (degree ? FLAG.DEGREE : 0),
-          p0: DEFAULT, p1: 0, p2: degree ? s.degree : s.note,
+          p0: s.channel ?? DEFAULT, p1: 0, p2: degree ? s.degree : s.note,
         });
       } else if (s.action === 'transpose') {
         rules.push({ trig: TRIG.PRESS, src: i, act: ACT.TRANSPOSE, p0: 1, p2: s.semitones });
+      } else if (s.action === 'preset-next') {
+        rules.push({ trig: TRIG.PRESS, src: i, act: ACT.PRESET, p0: 1 });
       } else if (s.action in MOD_ACTIONS && f.modulators && f.modulators[s.mod].kind !== 'off') {
         const flags = s.action === 'mod-run' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
         rules.push({ trig: TRIG.PRESS, src: i, act: MOD_ACTIONS[s.action], flags, p0: s.mod });
@@ -350,7 +354,7 @@
       if (m.kind === 'off') return;
       const base = {
         id, type: m.kind === 'lfo' ? 0 : 1, output: MOD_OUTPUTS.indexOf(m.output),
-        controller: m.output === 'cc' ? m.cc : 0, channel: DEFAULT, from: m.from, to: m.to,
+        controller: m.output === 'cc' ? m.cc : 0, channel: m.channel ?? DEFAULT, from: m.from, to: m.to,
         flags: (m.exponential ? 1 : 0) | (m.kind === 'lfo' && m.synced ? 2 : 0),
       };
       modulators.push(m.kind === 'lfo'
@@ -379,7 +383,7 @@
     if ((table.extra || []).length) return { reason: 'it has sections the form doesn’t edit' };
 
     for (const q of table.sequences || []) {
-      const simple = q.id < 4 && q.channel === DEFAULT && q.velocity === 0 &&
+      const simple = q.id < 4 && q.velocity === 0 &&
         q.steps.length <= MAX_FORM_STEPS &&
         q.steps.every((st) => st.velocity === 0);
       if (!simple) return { reason: 'its sequences use settings the form doesn’t show' };
@@ -391,10 +395,11 @@
         order: ORDERS[q.order], octaves: q.octaves, division: q.division, gate: q.gate,
         rhythm: q.euclid ? { ...q.euclid } : null,
       };
+      if (q.channel !== DEFAULT) f.sequences[q.id].channel = q.channel;
     }
 
     for (const m of table.modulators || []) {
-      if (m.id > 3 || m.channel !== DEFAULT) return { reason: 'its modulators use settings the form doesn’t show' };
+      if (m.id > 3) return { reason: 'its modulators use settings the form doesn’t show' };
       const fm = {
         ...defaultModulator(m.type === 0 ? 'lfo' : 'env'), output: MOD_OUTPUTS[m.output],
         cc: m.output === 0 ? m.controller : 74, from: m.from, to: m.to, exponential: !!(m.flags & 1),
@@ -404,6 +409,7 @@
         attack: m.attack, decay: m.decay, sustain: m.sustain, release: m.release,
         follow: m.follow === DEFAULT ? null : m.follow,
       });
+      if (m.channel !== DEFAULT) fm.channel = m.channel;
       f.modulators[m.id] = fm;
     }
 
@@ -414,12 +420,15 @@
       if (r.trig === TRIG.PRESS && r.src < NUM_INPUTS && !usedSwitch.has(r.src)) {
         let s = null;
         if (r.act === ACT.NOTE && (r.flags & ~(3 | FLAG.DEGREE)) === 0 && gate &&
-            r.p0 === DEFAULT && r.p1 === 0 && r.p3 === 0) {
+            r.p1 === 0 && r.p3 === 0) {
           s = r.flags & FLAG.DEGREE
             ? { action: 'scale', degree: r.p2, gate }
             : { action: 'note', note: r.p2, gate };
+          if (r.p0 !== DEFAULT) s.channel = r.p0;
         } else if (r.act === ACT.TRANSPOSE && r.flags === 0 && r.p0 === 1) {
           s = { action: 'transpose', semitones: r.p2 };
+        } else if (r.act === ACT.PRESET && r.flags === 0 && r.p0 === 1) {
+          s = { action: 'preset-next' };
         } else if (r.act === ACT.SEQ_RUN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 && gate &&
                    r.p0 < 4) {
           s = { action: 'seq-play', seq: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
