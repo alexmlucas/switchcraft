@@ -560,7 +560,7 @@ function fakeBoard() {
     assertEq(toHex(S.buildTable(back.table)), toHex(S.buildTable(table)));
     assertEq(back.blocks, blocks);
     assertEq(S.presetFileName('Chord arp'), 'chord-arp.switchcraft.json');
-    assertEq(S.presetFileName('  ∆∆ '), 'preset.switchcraft.json');
+    assertEq(S.presetFileName('  ∆∆ '), 'template.switchcraft.json');
   });
 
   await test('preset files: bad files are refused with a clear message', () => {

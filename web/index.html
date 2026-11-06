@@ -125,6 +125,17 @@
   .add-more[open] summary { margin-bottom: 10px; }
   .board-use { font-size: 15px; margin: 12px 0 0; }
 
+  /* The board's 8 templates, as square buttons */
+  .slots { display: flex; flex-wrap: wrap; gap: 8px; }
+  .slots button { width: 48px; height: 48px; min-height: 0; padding: 0; font-size: 20px; }
+  .template-card > .row input#name { width: 15ch; }
+  .slots button.empty { border-style: dotted; font-weight: normal; }
+  .file-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  /* The template holds the other sections: they sit inside its frame. */
+  section.template-card { background: var(--frame); display: grid; gap: 16px; }
+  section.template-card h2 { margin-bottom: 0; }
+  .template-parts { display: grid; gap: 16px; }
+
   /* Switch map: two columns, like the board */
   .panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
   .column { display: grid; gap: 10px; align-content: start; }
@@ -225,6 +236,7 @@
     body { font-size: 16px; }
     main { padding: 16px 8px; }
     section.card { padding: 14px 12px 16px; }
+    section.template-card { padding: 12px 8px; }
     .panel { grid-template-columns: minmax(0, 1fr); }
     .analog-row { grid-template-columns: minmax(0, 1fr) 4ch; }
     .analog-row .analog-map { grid-column: 1 / -1; }
@@ -261,84 +273,81 @@
     <p><strong>This browser can’t talk to MIDI devices.</strong> Open this page in Chrome or Edge on a laptop.</p>
   </div>
 
-  <div class="notice" id="foreign" hidden>
-    <p id="foreign-text"></p>
-    <p class="row">
-      <button id="replace">Replace it with a scale player</button>
-    </p>
-  </div>
-
-  <section class="card" aria-labelledby="preset-h">
-    <h2 id="preset-h">preset</h2>
+  <section class="card template-card" aria-labelledby="template-h">
+    <h2 id="template-h">template</h2>
     <div class="row">
-      <label class="field">Preset slot
-        <select id="slot" class="keep-enabled" disabled></select>
-      </label>
+      <div class="slots" id="slots" role="group" aria-label="Templates on the board"></div>
       <label class="field">Name
         <input type="text" id="name" maxlength="16" autocomplete="off" spellcheck="false">
       </label>
-      <label class="field">Start from a template
-        <select id="template" class="keep-enabled"></select>
-      </label>
-      <button id="use-template" class="keep-enabled" disabled>Use template</button>
-      <button id="save-file" class="keep-enabled quiet">Save to file</button>
-      <button id="open-file" class="keep-enabled quiet">Open file…</button>
+      <div class="file-actions">
+        <button id="save-file" class="keep-enabled quiet" aria-label="Save the template to a file">Save</button>
+        <button id="open-file" class="keep-enabled quiet" aria-label="Open a template file">Open</button>
+      </div>
       <input type="file" id="file-input" class="keep-enabled" accept=".json,application/json" hidden>
     </div>
-    <p class="hint" id="template-text" hidden></p>
-    <p class="hint">Changes play on the board straight away and are saved to the preset a moment later. The board remembers its last preset when unplugged.</p>
-  </section>
 
-  <section class="card" aria-labelledby="band-h">
-    <h2 id="band-h">the whole band</h2>
-    <div class="row">
-      <label class="field">Key <select id="root"></select></label>
-      <label class="field">Scale <select id="scale"></select></label>
-      <label class="field">Starting octave <select id="octave"></select></label>
-      <label class="field">Tempo (BPM)
-        <input type="number" id="tempo" min="40" max="240" step="1">
-      </label>
+    <div class="notice" id="foreign" hidden>
+      <p id="foreign-text"></p>
+      <p class="row">
+        <button id="replace">Replace it with a scale player</button>
+      </p>
     </div>
-    <div class="row" style="margin-top: 12px;">
-      <label class="field">Loudness (velocity)
-        <input type="number" id="velocity" min="1" max="127">
-      </label>
-      <label class="field">Ignore repeat presses within <select id="lockout"></select></label>
-      <label class="check"><input type="checkbox" id="follow-clock"> Follow MIDI clock from a DAW</label>
-    </div>
-    <p class="hint">Everyone plays in this key, scale and tempo, so it all fits together. “Ignore repeat presses” helps if a switch gets pressed twice by accident, for example with a tremor; it applies to every switch. With “Follow MIDI clock”, if your DAW sends clock to the board’s first MIDI port, sequences and wobbles play at the DAW’s tempo.</p>
-  </section>
 
-  <section class="card" aria-labelledby="musicians-h">
-    <h2 id="musicians-h">musicians</h2>
-    <p class="hint" style="margin: -4px 0 14px;">For each musician: <strong>1.</strong> add a device, such as notes or a sequencer, <strong>2.</strong> choose the switch for each of its jobs (or press <strong>press a switch</strong> and then the switch), <strong>3.</strong> play, and change its notes or shape. Each musician plays on their own MIDI channel, so a DAW can give each one their own sound.</p>
-    <div class="musicians" id="musicians"></div>
-    <div class="row" style="margin-top: 16px;">
-      <button id="add-musician">Add a musician</button>
-    </div>
-    <p class="board-use" id="board-use"></p>
-    <p class="visually-hidden" id="musician-status" role="status" aria-live="polite"></p>
-  </section>
+    <!-- Everything a template holds: the band's settings, musicians, switches and analog inputs. -->
+    <div class="template-parts">
+    <section class="card" aria-labelledby="band-h">
+      <h2 id="band-h">the whole band</h2>
+      <div class="row">
+        <label class="field">Key <select id="root"></select></label>
+        <label class="field">Scale <select id="scale"></select></label>
+        <label class="field">Starting octave <select id="octave"></select></label>
+        <label class="field">Tempo (BPM)
+          <input type="number" id="tempo" min="40" max="240" step="1">
+        </label>
+      </div>
+      <div class="row" style="margin-top: 12px;">
+        <label class="field">Loudness (velocity)
+          <input type="number" id="velocity" min="1" max="127">
+        </label>
+        <label class="field">Ignore repeat presses within <select id="lockout"></select></label>
+        <label class="check"><input type="checkbox" id="follow-clock"> Follow MIDI clock from a DAW</label>
+      </div>
+      <p class="hint">Everyone plays in this key, scale and tempo, so it all fits together. “Ignore repeat presses” helps if a switch gets pressed twice by accident, for example with a tremor; it applies to every switch. With “Follow MIDI clock”, if your DAW sends clock to the board’s first MIDI port, sequences and wobbles play at the DAW’s tempo.</p>
+    </section>
 
-  <section class="card" aria-labelledby="switches-h">
-    <div class="row" style="justify-content: space-between; align-items: baseline;">
-      <h2 id="switches-h">switches</h2>
-      <span class="last-note" id="last-note" aria-hidden="true"></span>
-    </div>
-    <p class="hint" style="margin: -4px 0 12px;">Who plays each switch, laid out like the board. A switch lights up when it’s pressed.</p>
-    <div class="panel">
-      <div class="column" id="col-left"><h3>Left</h3></div>
-      <div class="column" id="col-right"><h3>Right</h3></div>
-    </div>
-  </section>
+    <section class="card" aria-labelledby="musicians-h">
+      <h2 id="musicians-h">musicians</h2>
+      <p class="hint" style="margin: -4px 0 14px;">For each musician: <strong>1.</strong> add a device, such as notes or a sequencer, <strong>2.</strong> choose the switch for each of its jobs (or press <strong>press a switch</strong> and then the switch), <strong>3.</strong> play, and change its notes or shape. Each musician plays on their own MIDI channel, so a DAW can give each one their own sound.</p>
+      <div class="musicians" id="musicians"></div>
+      <div class="row" style="margin-top: 16px;">
+        <button id="add-musician">Add a musician</button>
+      </div>
+      <p class="board-use" id="board-use"></p>
+      <p class="visually-hidden" id="musician-status" role="status" aria-live="polite"></p>
+    </section>
 
-  <section class="card" aria-labelledby="analog-h">
-    <h2 id="analog-h">analog inputs</h2>
-    <div id="analog"></div>
-    <div class="row">
-      <label class="field">MIDI channel for the analog inputs <select id="channel"></select></label>
+    <section class="card" aria-labelledby="switches-h">
+      <div class="row" style="justify-content: space-between; align-items: baseline;">
+        <h2 id="switches-h">switches</h2>
+        <span class="last-note" id="last-note" aria-hidden="true"></span>
+      </div>
+      <p class="hint" style="margin: -4px 0 12px;">Who plays each switch, laid out like the board. A switch lights up when it’s pressed.</p>
+      <div class="panel">
+        <div class="column" id="col-left"><h3>Left</h3></div>
+        <div class="column" id="col-right"><h3>Right</h3></div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="analog-h">
+      <h2 id="analog-h">analog inputs</h2>
+      <div id="analog"></div>
+      <div class="row">
+        <label class="field">MIDI channel for the analog inputs <select id="channel"></select></label>
+      </div>
+      <p class="hint">For the Logitech variable triggers, expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. The range starts set for the Logitech triggers. For anything else, use <strong>Set range</strong> so it covers the whole bar, and <strong>Invert</strong> if it moves the wrong way. The range belongs to the board, so it applies to every template. <strong>Reversed</strong> flips an input in this template only. To change a musician’s sound, use the same channel as that musician.</p>
+    </section>
     </div>
-    <p class="hint">For the Logitech variable triggers, expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. The range starts set for the Logitech triggers. For anything else, use <strong>Set range</strong> so it covers the whole bar, and <strong>Invert</strong> if it moves the wrong way. The range belongs to the board, so it applies to every preset. <strong>Reversed</strong> flips an input in this preset only. To change a musician’s sound, use the same channel as that musician.</p>
   </section>
 
   <section class="card" id="sound-card" aria-labelledby="sound-h">
@@ -557,7 +566,6 @@ function setConn(state, text) {
   $('conn-text').textContent = text;
   $('connect').hidden = state === 'on';
   $('panic').disabled = state !== 'on';
-  $('slot').disabled = state !== 'on';
   updateListenButtons();
 }
 
@@ -1464,7 +1472,7 @@ function setEditable(on) {
   document.querySelectorAll("main section:not(#sound-card) :is(select, input, button)")
     .forEach((c) => {
       // Controls marked keep-enabled (slot, templates, files) and the board-wide
-      // analog range aren't part of the preset's own settings.
+      // analog range aren't part of the template's own settings.
       if (!c.classList.contains('keep-enabled') && !c.closest('.analog-cal')) c.disabled = !on;
     });
   updateListenButtons();
@@ -1474,15 +1482,25 @@ function setEditable(on) {
   if (form.musicians.length >= B.MAX_MUSICIANS) $('add-musician').disabled = true;
 }
 
+// The board's templates as buttons 1-8: the one playing is pressed, empty
+// ones have a dotted edge. Their names are in the label and tooltip.
 function renderSlots() {
-  if (!board) {
-    options($('slot'), [[0, 'Connect to see presets']], 0);
-    return;
-  }
-  options($('slot'),
-    Array.from({ length: S.NUM_SLOTS }, (_, i) =>
-      [i, `${i + 1}: ${slotNames[i] === undefined ? '(empty)' : slotNames[i] || 'Untitled'}`]),
-    activeSlot);
+  const focused = document.activeElement && document.activeElement.closest('#slots') ? document.activeElement.id : null;
+  $('slots').replaceChildren(...Array.from({ length: S.NUM_SLOTS }, (_, i) => {
+    const empty = slotNames[i] === undefined;
+    const name = empty ? 'empty' : slotNames[i] || 'Untitled';
+    const b = el('button', {
+      type: 'button', id: `slot-${i}`, textContent: String(i + 1),
+      className: `keep-enabled${!board || empty ? ' quiet' : ''}${board && empty ? ' empty' : ''}`,
+      'aria-pressed': String(!!board && i === activeSlot),
+      'aria-label': board ? `Template ${i + 1}: ${name}` : `Template ${i + 1}`,
+      title: board ? `${i + 1}: ${name}` : 'Connect the board to choose a template',
+    });
+    b.disabled = !board;
+    b.addEventListener('click', () => { if (i !== activeSlot) switchSlot(i); });
+    return b;
+  }));
+  if (focused && $(focused)) $(focused).focus();
 }
 
 // --- Building the page ---
@@ -1515,7 +1533,7 @@ function buildStatic() {
     });
     // Per preset: pressing further sends lower values (calibration stays board-wide).
     const rev = el('input', { type: 'checkbox', id: `rev-${i}` });
-    rev.setAttribute('aria-label', `${label}: reversed in this preset`);
+    rev.setAttribute('aria-label', `${label}: reversed in this template`);
     rev.addEventListener('change', () => {
       form.analog[i] = rev.checked ? { cc: form.analog[i].cc, reversed: true } : { cc: form.analog[i].cc };
       changed();
@@ -1710,26 +1728,6 @@ function buildStatic() {
     $('add-note').focus();
   });
 
-  // Templates replace the whole preset (after asking).
-  options($('template'), [['', 'Choose…'], ...B.TEMPLATES.map((t) => [t.id, t.name])], '');
-  const chosenTemplate = () => B.TEMPLATES.find((t) => t.id === $('template').value);
-  $('template').addEventListener('change', () => {
-    const t = chosenTemplate();
-    $('template-text').textContent = t ? t.description : '';
-    $('template-text').hidden = !t;
-    $('use-template').disabled = !t;
-  });
-  $('use-template').addEventListener('click', () => {
-    const t = chosenTemplate();
-    if (!t) return;
-    const name = currentTable().globals.name || 'Untitled';
-    const where = board ? `preset ${activeSlot + 1} (“${name}”)` : 'the settings on this page';
-    if (!confirm(`Replace ${where} with the “${t.name}” template?`)) return;
-    replaceWith(t.band());
-    $('template').value = '';
-    $('template').dispatchEvent(new Event('change'));
-  });
-
   // Browser synth
   const prefs = loadPrefs();
   synth.setSound(prefs.sound || 'warm');
@@ -1780,7 +1778,6 @@ function buildStatic() {
     synth.allNotesOff();
     if (board) board.allNotesOff().catch(showError);
   });
-  $('slot').addEventListener('change', () => switchSlot(Number($('slot').value)));
   $('replace').addEventListener('click', () => replaceWith(B.TEMPLATES[0].band()));
   $('save-file').addEventListener('click', saveFile);
   // MIDI file import
@@ -1859,7 +1856,7 @@ async function save() {
     unsaved = false;
     slotNames[activeSlot] = currentTable().globals.name;
     renderSlots();
-    setSave(`Saved to preset ${activeSlot + 1}`);
+    setSave(`Saved to template ${activeSlot + 1}`);
   } catch (e) {
     showError(e);
   }
@@ -1954,7 +1951,7 @@ function onPortChange(e) {
 
 async function loadFromBoard() {
   calibration = await board.getCalibration();
-  setSave('Reading presets…');
+  setSave('Reading templates…');
   slotNames = [];
   for (let s = 0; s < S.NUM_SLOTS; s++) {
     try {
@@ -1970,7 +1967,7 @@ async function loadWorking() {
   const table = S.parseTable(await board.readTable());
   renderSlots();
   unsaved = false;
-  setSave(slotNames[activeSlot] === undefined ? 'Preset slot is empty: edits will save here' : '');
+  setSave(slotNames[activeSlot] === undefined ? 'Template is empty: edits will save here' : '');
   showTable(table);
 }
 
@@ -2119,20 +2116,20 @@ function saveFile() {
 async function openFile(file) {
   let preset;
   try {
-    if (file.size > 1_000_000) throw new Error('This file is too big to be a Switchcraft preset.');
+    if (file.size > 1_000_000) throw new Error('This file is too big to be a Switchcraft template.');
     preset = S.readPresetFile(await file.text());
   } catch (e) {
     setSave(e.message, true);
     return;
   }
   const current = currentTable().globals.name || 'Untitled';
-  const where = board ? `preset ${activeSlot + 1} (“${current}”)` : 'the settings on this page';
+  const where = board ? `template ${activeSlot + 1} (“${current}”)` : 'the settings on this page';
   if (!confirm(`Replace ${where} with “${preset.name || 'Untitled'}” from the file?`)) return;
   foreignTable = null;
   showTable(preset.table);
   restartNext = true;
   changed();
-  if (!board) setSave('Opened. Not connected: connecting will show the board’s preset instead.');
+  if (!board) setSave('Opened. Not connected: connecting will show the board’s template instead.');
 }
 
 async function switchSlot(slot) {
@@ -2144,9 +2141,9 @@ async function switchSlot(slot) {
       activeSlot = slot;
     } catch (e) {
       if (!(e instanceof S.BoardError) || e.status !== 0x09) throw e;
-      // Empty slot: start a new scale player there.
+      // Empty template: start a new scale player there.
       const band = B.TEMPLATES[0].band();
-      band.name = `Preset ${slot + 1}`;
+      band.name = `Template ${slot + 1}`;
       await board.writeTable(S.buildTable(B.tableFromBand(band)));
       await board.saveSlot(slot);
       await board.loadSlot(slot);

@@ -49,20 +49,21 @@
   --meter: #000000;
   --focus: #000000;
   --inkey: #e3efdf;    /* piano roll rows in the key: a pale sage */
+  --frame: var(--wash-hover);  /* the template's frame around its sections */
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --ink: #eef5eb; --bg: #000000; --card: #161616; --text: #eef5eb; --muted: #c9d8c4;
     --line: #4a5a46; --accent: #a9cba2; --accent-text: #000000; --ok: #a9cba2;
     --warn: #fff273; --error: #ff9ab8; --pressed: #a9cba2; --pressed-text: #000000;
-    --meter: #a9cba2; --focus: #a9cba2; --inkey: #1f2d1c;
+    --meter: #a9cba2; --focus: #a9cba2; --inkey: #1f2d1c; --frame: #0f1a0d;
   }
 }
 :root[data-theme="dark"] {
   --ink: #eef5eb; --bg: #000000; --card: #161616; --text: #eef5eb; --muted: #c9d8c4;
   --line: #4a5a46; --accent: #a9cba2; --accent-text: #000000; --ok: #a9cba2;
   --warn: #fff273; --error: #ff9ab8; --pressed: #a9cba2; --pressed-text: #000000;
-  --meter: #a9cba2; --focus: #a9cba2; --inkey: #1f2d1c;
+  --meter: #a9cba2; --focus: #a9cba2; --inkey: #1f2d1c; --frame: #0f1a0d;
 }
 
 body {

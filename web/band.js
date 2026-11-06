@@ -39,14 +39,14 @@
     arp: { name: 'arpeggiator', what: 'Plays the notes of a chord one after another, in time.', uses: 'seq' },
     lfo: { name: 'wobble', sub: 'LFO', what: 'Moves a sound up and down, over and over.', uses: 'mod' },
     env: { name: 'swell', sub: 'envelope', what: 'Makes a sound rise and fall, once each time.', uses: 'mod' },
-    controls: { name: 'controls', what: 'Shifts everyone up or down, or changes preset.' },
+    controls: { name: 'controls', what: 'Shifts everyone up or down, or changes template.' },
   };
   const KINDS = Object.keys(DEVICES);
 
   const CONTROL_ROLES = [
     ['down', 'octave down', -12], ['up', 'octave up', 12],
     ['sdown', 'semitone down', -1], ['sup', 'semitone up', 1],
-    ['next', 'next preset', null],
+    ['next', 'next template', null],
   ];
 
   // The roles a device's switches can fill, as [key, label]. A sequencer's

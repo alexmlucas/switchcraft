@@ -452,7 +452,7 @@
         usedAnalog.add(r.src);
         continue;
       }
-      return { reason: 'it uses rules the form doesn’t show (such as tap, hold or presets)' };
+      return { reason: 'it uses rules the form doesn’t show (such as tap, hold or changing template)' };
     }
     return { form: f };
   }
@@ -733,15 +733,15 @@
     try {
       data = JSON.parse(text);
     } catch (e) {
-      throw new Error('This isn’t a Switchcraft preset file.');
+      throw new Error('This isn’t a Switchcraft template file.');
     }
     if (!data || typeof data !== 'object' || data.format !== FILE_FORMAT)
-      throw new Error('This isn’t a Switchcraft preset file.');
+      throw new Error('This isn’t a Switchcraft template file.');
     if (!Number.isInteger(data.version) || data.version > FILE_VERSION)
       throw new Error('This file was saved by a newer version of the Switchcraft page. Update the page to open it.');
     const hex = typeof data.table === 'string' ? data.table : '';
     if (!/^([0-9a-f]{2})+$/i.test(hex) || hex.length / 2 > MAX_TABLE_LEN)
-      throw new Error('The preset in this file is damaged.');
+      throw new Error('The template in this file is damaged.');
     const bytes = new Uint8Array(hex.match(/../g).map((h) => parseInt(h, 16)));
     let table;
     try {
@@ -750,7 +750,7 @@
       table = null;
     }
     if (!table || !table.globals || rd16(bytes, 2) !== bytes.length)
-      throw new Error('The preset in this file is damaged or was made for newer firmware.');
+      throw new Error('The template in this file is damaged or was made for newer firmware.');
     const blocks = data.blocks && typeof data.blocks === 'object' && !Array.isArray(data.blocks) ? data.blocks : null;
     return { name: table.globals.name, table, blocks };
   }
@@ -758,7 +758,7 @@
   // A file name from the preset name: "Chord arp" -> "chord-arp.switchcraft.json".
   function presetFileName(name) {
     const base = String(name || '').replace(/[^A-Za-z0-9 _-]/g, '').trim().replace(/\s+/g, '-').toLowerCase();
-    return `${base || 'preset'}.switchcraft.json`;
+    return `${base || 'template'}.switchcraft.json`;
   }
 
   // --- Board connection over Web MIDI ---
