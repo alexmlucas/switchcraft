@@ -447,8 +447,15 @@ static void fire(uint8_t trig, uint8_t src, uint8_t value, uint8_t owner) {
             do_action(i, value, owner, false);
 }
 
+// The input's hold time: its own (INPUTS section, spec B.4.1) or the global one.
+static uint64_t input_hold_us(uint8_t input) {
+    uint16_t ms = tab->has_inputs && input < TABLE_INPUTS ? tab->input_hold_ms[input] : tab->g.hold_ms;
+    return (uint64_t)ms * 1000;
+}
+
+// A hold or tap rule's threshold: its own, or its input's hold time.
 static uint64_t threshold_us(const rule_t *r) {
-    return (uint64_t)(r->trig_arg ? r->trig_arg : tab->g.hold_ms) * 1000;
+    return r->trig_arg ? (uint64_t)r->trig_arg * 1000 : input_hold_us(r->trig_src);
 }
 
 // --- Events ---
@@ -489,7 +496,7 @@ void engine_input(uint8_t input, bool down, uint64_t now) {
     pressed[input] = false;
     uint64_t held = now - press_time[input];
     protocol_report_input(input, EVENT_RELEASE);
-    if (held < (uint64_t)tab->g.hold_ms * 1000)
+    if (held < input_hold_us(input))
         protocol_report_input(input, EVENT_TAP);
     release_owned(input);
     for (uint8_t i = 0; i < tab->rule_count; i++) {
@@ -510,7 +517,7 @@ static void scan_holds(void) {
         if (!pressed[in])
             continue;
         uint64_t held = now_us - press_time[in];
-        if (!hold_reported[in] && held >= (uint64_t)tab->g.hold_ms * 1000) {
+        if (!hold_reported[in] && held >= input_hold_us(in)) {
             hold_reported[in] = true;
             protocol_report_input(in, EVENT_HOLD);
         }
@@ -759,4 +766,10 @@ void engine_load(const table_t *t, bool live) {
 
 const globals_t *engine_globals(void) {
     return tab ? &tab->g : &fallback_globals;
+}
+
+uint16_t engine_lockout_ms(uint8_t input) {
+    if (tab && tab->has_inputs && input < TABLE_INPUTS)
+        return tab->input_lockout_ms[input];
+    return engine_globals()->lockout_ms;
 }

@@ -18,12 +18,15 @@ enum {
     SECTION_SEQUENCE = 0x03,
     SECTION_EUCLID = 0x04,
     SECTION_MODULATOR = 0x05,
+    SECTION_INPUTS = 0x06,
 };
 #define GLOBALS_LEN 40
 #define RULE_LEN 12
 #define SEQ_HEADER_LEN 12
 #define EUCLID_LEN 4
 #define MODULATOR_LEN 16
+#define TABLE_INPUTS 12   // switch inputs with their own settings (NUM_INPUTS)
+#define INPUTS_LEN (4 * TABLE_INPUTS)  // u16 lockout, then u16 hold, per input
 #define EUCLID_MAX_STEPS 32
 #define STEP_LEN 3
 
@@ -162,6 +165,11 @@ typedef struct {
     rule_t rules[MAX_RULES];
     seq_def_t seqs[MAX_SEQS];
     mod_def_t mods[MAX_MODS];
+    // INPUTS section (spec B.4.1): each input's own lockout and hold time,
+    // used instead of the global ones when present.
+    bool has_inputs;
+    uint16_t input_lockout_ms[TABLE_INPUTS];
+    uint16_t input_hold_ms[TABLE_INPUTS];
 } table_t;
 
 typedef struct {

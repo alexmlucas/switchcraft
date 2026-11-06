@@ -226,6 +226,10 @@ def describe(blob):
             pattern = "".join("x" if h else "." for h in euclid_hits(body[1], body[2], body[3]))
             out.append(f"euclid for sequence {body[0]}: {body[2]} hits in {body[1]} steps, "
                        f"rotation {body[3]}: {pattern}")
+        elif sid == 0x06:
+            ms = struct.unpack_from("<24H", body)
+            out.append("inputs: lockout ms " + " ".join(str(v) for v in ms[:12]))
+            out.append("        hold ms    " + " ".join(str(v) for v in ms[12:]))
         elif sid == 0x03:
             out.append(f"sequence {body[0]}: {struct.unpack_from('<H', body, 10)[0]} steps, "
                        f"{'clock' if body[1] else 'press'} mode, order {body[2]}")

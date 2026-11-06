@@ -185,8 +185,13 @@ channel; a wobble or swell changes its own musician's sound or another's.
 Page-only (`web/band.js`): the rule table and firmware are unchanged, and the
 musicians are kept in the table's `EDITOR` section (spec B.7), so they come
 back when a preset is read from the board. The Blocks view is switched off in
-the page until after the workshops. Not yet done: per-musician access
-settings (lockout, hold time), which need per-input values in the table.
+the page until after the workshops. Each musician also has their own
+loudness (velocity on their notes and sequences) and "ignore repeat
+presses" time; the latter uses the `INPUTS` section (spec B.4.1, firmware
+0.7.0), sent only when musicians' times differ, with older firmware falling
+back to the longest. Hold time is still global. The key, scale, tempo and
+clock settings sit with the template; the starting octave is no longer
+shown (it stays at 4).
 
 ## Status and next steps (13 October 2026)
 

@@ -14,6 +14,9 @@ void engine_load(const table_t *t, bool live);
 
 const globals_t *engine_globals(void);
 
+// The input's lockout: its own (INPUTS section, spec B.4.1) or the global one.
+uint16_t engine_lockout_ms(uint8_t input);
+
 void engine_input(uint8_t input, bool pressed, uint64_t now_us);
 void engine_analog(uint8_t analog, uint8_t value);
 

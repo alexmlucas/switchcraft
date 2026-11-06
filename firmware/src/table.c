@@ -268,6 +268,17 @@ bool table_load(const uint8_t *blob, uint16_t len, table_t *out, table_error_t *
             if (!load_modulator(blob + body, slen, body, out, err))
                 return false;
             break;
+        case SECTION_INPUTS:
+            if (out->has_inputs)
+                FAIL(off, INVALID_SECTION_ID);
+            if (slen != INPUTS_LEN)
+                FAIL(off, INVALID_SECTION_BOUNDS);
+            for (int in = 0; in < TABLE_INPUTS; in++) {
+                out->input_lockout_ms[in] = rd16(blob + body + 2 * in);
+                out->input_hold_ms[in] = rd16(blob + body + 2 * (TABLE_INPUTS + in));
+            }
+            out->has_inputs = true;
+            break;
         case SECTION_EUCLID:
             if (slen != EUCLID_LEN)
                 FAIL(off, INVALID_SECTION_BOUNDS);

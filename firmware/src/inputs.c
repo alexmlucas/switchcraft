@@ -60,7 +60,6 @@ void inputs_init(void) {
 static void scan_switches(uint64_t now) {
     const globals_t *g = engine_globals();
     uint64_t debounce = (uint64_t)g->debounce_ms * 1000;
-    uint64_t lockout = (uint64_t)g->lockout_ms * 1000;
     uint32_t all = gpio_get_all();
 
     for (int i = 0; i < NUM_INPUTS; i++) {
@@ -74,6 +73,7 @@ static void scan_switches(uint64_t now) {
             continue;
         s->stable = s->raw;
         if (s->stable) {
+            uint64_t lockout = (uint64_t)engine_lockout_ms((uint8_t)i) * 1000;
             if (lockout && last_press[i] && now - last_press[i] < lockout) {
                 s->suppressed = true;
                 continue;

@@ -806,7 +806,7 @@ function fakeBoard() {
   });
 
   await test('band: older presets (no musicians stored) open as musicians', () => {
-    const strip = (s) => { const c = { ...s }; delete c.channel; return c; };
+    const strip = (s) => { const c = { ...s }; delete c.channel; delete c.velocity; return c; };
     for (const t of S.TEMPLATES) {
       const f = t.form();
       const band = BD.bandFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).band;
@@ -826,6 +826,42 @@ function fakeBoard() {
     assertEq(back.band.musicians[0].name, 'Musician 1');
   });
 
+  await test('band: each musician has their own loudness', () => {
+    const b = BD.TEMPLATES.find((t) => t.id === 'four').band();
+    b.musicians[0].velocity = 40;   // Melody: notes
+    b.musicians[2].velocity = 120;  // Tune: a sequencer
+    const table = S.parseTable(S.buildTable(BD.tableFromBand(b)));
+    assertEq(table.rules.filter((r) => r.act === S.ACT.NOTE && r.src < 4).map((r) => r.p1), [40, 40, 40, 40]);
+    assertEq(table.sequences.find((q) => q.id === b.musicians[2].devices[0].seq).velocity, 120);
+    const back = BD.bandFromTable(table).band;
+    assertEq(back.musicians.map((m) => m.velocity), [40, 100, 120, 100]);
+  });
+
+  await test('band: lockout and hold time per musician (INPUTS section only when they differ)', () => {
+    const b = BD.TEMPLATES.find((t) => t.id === 'four').band();
+    for (const m of b.musicians) Object.assign(m, { lockoutMs: 250, holdMs: 750 });
+    let table = BD.tableFromBand(b);
+    assertEq([table.inputs, table.globals.lockoutMs, table.globals.holdMs], [undefined, 250, 750]);
+    b.musicians[0].lockoutMs = 1000;  // Melody, switches 1-4
+    b.musicians[2].holdMs = 2000;     // Tune, switches 7-8
+    table = BD.tableFromBand(b);
+    assertEq(table.inputs, {
+      lockout: [1000, 1000, 1000, 1000, 250, 250, 250, 250, 250, 250, 0, 250],
+      hold: [750, 750, 750, 750, 750, 750, 2000, 2000, 750, 750, 500, 750],
+    });
+    const parsed = S.parseTable(S.buildTable(table));
+    assertEq(parsed.inputs, table.inputs);
+    assertEq(BD.bandFromTable(parsed).band.musicians.map((m) => [m.lockoutMs, m.holdMs]),
+      [[1000, 750], [250, 750], [250, 2000], [250, 750]]);
+    // Older firmware: no INPUTS section, everyone gets the longest.
+    table = BD.tableFromBand(b, { perInput: false });
+    assertEq([table.inputs, table.globals.lockoutMs, table.globals.holdMs], [undefined, 1000, 2000]);
+    // Without stored musicians, the settings come back from the section.
+    parsed.extra = [];
+    const back = BD.bandFromTable(parsed).band;
+    assertEq(back.musicians.map((m) => `${m.lockoutMs}/${m.holdMs}`).sort(), ['1000/750', '250/2000', '250/750', '250/750']);
+  });
+
   await test('form: per-switch channels and next preset survive the table', () => {
     const f = S.defaultForm();
     f.switches[0] = { action: 'scale', degree: 2, gate: 'hold', channel: 5 };
@@ -843,6 +879,14 @@ function fakeBoard() {
   blobs.textContent = Object.entries(samples)
     .map(([name, f]) => `${name} ${toHex(S.buildTable(S.tableFromForm(f)))}`)
     .concat(SwitchcraftBand.TEMPLATES.map((t) => `band ${t.id} ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(t.band())))}`))
+    .concat((() => {
+      // Musicians with different "ignore repeat presses" times and loudness: an INPUTS section (firmware 0.7.0).
+      const b = SwitchcraftBand.TEMPLATES.find((t) => t.id === 'four').band();
+      b.musicians[0].lockoutMs = 1000;
+      b.musicians[1].velocity = 60;
+      b.musicians[2].holdMs = 2000;
+      return [`band per-musician ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(b)))}`];
+    })())
     .join('\n');
   document.body.append(blobs);
 

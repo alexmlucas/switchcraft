@@ -176,6 +176,8 @@
       ...(table.modulators || []).map((m) => section(0x05, modulatorBody(m))),
       ...(table.sequences || []).filter((s) => s.euclid)
         .map((s) => section(0x04, [s.id, s.euclid.steps, s.euclid.hits, s.euclid.rotation])),
+      // Each input's own lockout and hold time (spec B.4.1, firmware 0.7.0).
+      ...(table.inputs ? [section(0x06, [...table.inputs.lockout, ...table.inputs.hold].flatMap(u16))] : []),
       ...(table.extra || []),
     ];
     const body = sections.flat();
@@ -226,6 +228,11 @@
         if (m.type === 0) Object.assign(m, { wave: b[8], rate: rd16(b, 10) });
         else Object.assign(m, { sustain: b[8], follow: b[9], attack: rd16(b, 10), decay: rd16(b, 12), release: rd16(b, 14) });
         table.modulators.push(m);
+      } else if (id === 0x06) {
+        table.inputs = {
+          lockout: Array.from({ length: NUM_INPUTS }, (_, i) => rd16(b, 2 * i)),
+          hold: Array.from({ length: NUM_INPUTS }, (_, i) => rd16(b, 2 * (NUM_INPUTS + i))),
+        };
       } else if (id === 0x04) {
         rhythms.push({ id: b[0], euclid: { steps: b[1], hits: b[2], rotation: b[3] } });
       } else {
@@ -301,7 +308,7 @@
     return {
       id, advance: q.mode === 'clock' ? 1 : 0, order: ORDERS.indexOf(q.order),
       // A musician's channel (band.js), or the preset's default.
-      octaves: q.octaves, channel: q.channel ?? DEFAULT, velocity: 0, division: q.division,
+      octaves: q.octaves, channel: q.channel ?? DEFAULT, velocity: q.velocity ?? 0, division: q.division,
       // Clock mode needs a length; "until the next note" only exists in press mode.
       gate: q.mode === 'clock' && q.gate === 0 ? 100 : q.gate,
       noteMode: q.noteType === 'scale' ? 1 : 0,
@@ -323,7 +330,7 @@
         rules.push({
           trig: TRIG.PRESS, src: i, act: ACT.NOTE,
           flags: GATE[s.gate] | (degree ? FLAG.DEGREE : 0),
-          p0: s.channel ?? DEFAULT, p1: 0, p2: degree ? s.degree : s.note,
+          p0: s.channel ?? DEFAULT, p1: s.velocity ?? 0, p2: degree ? s.degree : s.note,
         });
       } else if (s.action === 'transpose') {
         rules.push({ trig: TRIG.PRESS, src: i, act: ACT.TRANSPOSE, p0: 1, p2: s.semitones });
@@ -365,7 +372,9 @@
           follow: m.follow !== null && sequenceInUse(f, m.follow) ? m.follow : DEFAULT,
         });
     });
-    return { globals: { ...f }, rules, sequences, modulators };
+    const table = { globals: { ...f }, rules, sequences, modulators };
+    if (f.inputs) table.inputs = { lockout: [...f.inputs.lockout], hold: [...f.inputs.hold] };
+    return table;
   }
 
   // Returns {form} or {reason} if the table uses things the form can't show.
@@ -380,10 +389,11 @@
       sequences: Array.from({ length: 4 }, defaultSequence),
       modulators: Array.from({ length: 4 }, () => defaultModulator()),
     };
+    if (table.inputs) f.inputs = { lockout: [...table.inputs.lockout], hold: [...table.inputs.hold] };
     if ((table.extra || []).length) return { reason: 'it has sections the form doesn’t edit' };
 
     for (const q of table.sequences || []) {
-      const simple = q.id < 4 && q.velocity === 0 &&
+      const simple = q.id < 4 &&
         q.steps.length <= MAX_FORM_STEPS &&
         q.steps.every((st) => st.velocity === 0);
       if (!simple) return { reason: 'its sequences use settings the form doesn’t show' };
@@ -396,6 +406,7 @@
         rhythm: q.euclid ? { ...q.euclid } : null,
       };
       if (q.channel !== DEFAULT) f.sequences[q.id].channel = q.channel;
+      if (q.velocity) f.sequences[q.id].velocity = q.velocity;
     }
 
     for (const m of table.modulators || []) {
@@ -419,12 +430,12 @@
       const gate = Object.keys(GATE).find((k) => GATE[k] === (r.flags & 3));
       if (r.trig === TRIG.PRESS && r.src < NUM_INPUTS && !usedSwitch.has(r.src)) {
         let s = null;
-        if (r.act === ACT.NOTE && (r.flags & ~(3 | FLAG.DEGREE)) === 0 && gate &&
-            r.p1 === 0 && r.p3 === 0) {
+        if (r.act === ACT.NOTE && (r.flags & ~(3 | FLAG.DEGREE)) === 0 && gate && r.p3 === 0) {
           s = r.flags & FLAG.DEGREE
             ? { action: 'scale', degree: r.p2, gate }
             : { action: 'note', note: r.p2, gate };
           if (r.p0 !== DEFAULT) s.channel = r.p0;
+          if (r.p1) s.velocity = r.p1;
         } else if (r.act === ACT.TRANSPOSE && r.flags === 0 && r.p0 === 1) {
           s = { action: 'transpose', semitones: r.p2 };
         } else if (r.act === ACT.PRESET && r.flags === 0 && r.p0 === 1) {

@@ -300,6 +300,7 @@ section …
 | 0x10 | `EDITOR` | no | v1, ignored by firmware (B.7) |
 | 0x04 | `EUCLID` | no, one per sequence | v1 (firmware 0.4.0), B.6.1 |
 | 0x05 | `MODULATOR` | no, up to 4 | v1 (firmware 0.5.0), B.6.2 |
+| 0x06 | `INPUTS` | no, once | v1 (firmware 0.7.0), B.4.1 |
 
 The firmware **rejects** a blob with an unknown section ID below 0x10 and
 **skips** unknown IDs from 0x10 up. So adding editor-only data later never
@@ -534,6 +535,21 @@ output sends `from + (to − from) × value` (`value²` with `EXPONENTIAL`).
 
 **Output** is updated at most 100 times a second, and only when the value
 sent would change. Pitch bend uses the full 14 bits.
+
+### B.4.1 `INPUTS` section (0x06), 48 bytes
+
+Settings for each switch input, so musicians sharing a board can each have
+their own. When present, it replaces the global `lockout_ms` and `hold_ms`
+(B.3).
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | lockout_ms[12] | `u16` × 12 | Lockout for inputs 0–11 (B.4 step 2); 0 = none |
+| 24 | hold_ms[12] | `u16` × 12 | Hold time for inputs 0–11: when **hold** is reported, and the threshold of `HOLD` and `TAP` rules whose trigger arg is 0 |
+
+Firmware before 0.7.0 rejects tables with this section (unknown ID below
+0x10), so the page only sends it when the inputs' settings differ, and
+otherwise puts the shared values in `lockout_ms` and `hold_ms`.
 
 ### B.7 `EDITOR` section (0x10)
 

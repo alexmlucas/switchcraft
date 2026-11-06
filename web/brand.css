@@ -82,7 +82,8 @@ header h1 img { width: 56px; height: 56px; }
 header .status, header #save-status, header .clock-status { color: var(--text); }
 header #save-status.error { color: var(--error); font-weight: bold; }
 .dot { border-radius: 0; border: 2px solid var(--ink); background: var(--card); }  /* a pixel, not a circle */
-.dot.on { background: var(--ink); }
+.dot.on { background: #81ff73; }  /* nav green: connected (black edge in light mode) */
+header .dot { width: 16px; height: 16px; }
 .dot.busy { background: var(--wash); }
 
 /* The noise band under the header, with a square pause button at its right-hand end,

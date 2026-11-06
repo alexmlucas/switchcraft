@@ -111,7 +111,12 @@
     // (9 here) is drums, so it's skipped.
     let channel = 0;
     while ((channels.has(channel) || channel === 9) && channel < 15) channel++;
-    const m = { name: name || `Musician ${band.musicians.length + 1}`, colour, channel, devices: [] };
+    const m = {
+      name: name || `Musician ${band.musicians.length + 1}`, colour, channel, devices: [],
+      velocity: 100,  // loudness of their notes and sequences
+      lockoutMs: 0,   // "ignore repeat presses within", for their switches
+      holdMs: 500,    // how long a press lasts before it counts as held
+    };
     band.musicians.push(m);
     return m;
   }
@@ -235,6 +240,7 @@
       modulators: band.modulators.map((m) => ({ ...m })),
     };
     delete f.musicians;
+    delete f.inputs;  // tableFromBand works it out
     const seqs = new Set();
     const mods = new Set();
     const set = (input, s) => { if (input !== null && input !== undefined) f.switches[input] = s; };
@@ -243,10 +249,10 @@
       if (d.kind === 'notes') {
         for (const k of d.keys)
           set(k.input, d.noteType === 'scale'
-            ? { action: 'scale', degree: k.value, gate: d.gate, channel: m.channel }
-            : { action: 'note', note: k.value, gate: d.gate, channel: m.channel });
+            ? { action: 'scale', degree: k.value, gate: d.gate, channel: m.channel, velocity: m.velocity }
+            : { action: 'note', note: k.value, gate: d.gate, channel: m.channel, velocity: m.velocity });
       } else if (d.kind === 'seq' || d.kind === 'arp') {
-        if (!seqs.has(d.seq)) f.sequences[d.seq].channel = m.channel;
+        if (!seqs.has(d.seq)) Object.assign(f.sequences[d.seq], { channel: m.channel, velocity: m.velocity });
         seqs.add(d.seq);
         const valid = new Set(roles(band, d).map(([k]) => k));
         if (valid.has('play')) set(r.play, { action: 'seq-play', seq: d.seq, gate: d.gate, onBeat: !!d.onBeat });
@@ -274,7 +280,7 @@
     return {
       v: EDITOR_VERSION,
       m: band.musicians.map((m) => ({
-        n: m.name, c: m.colour, ch: m.channel,
+        n: m.name, c: m.colour, ch: m.channel, v: m.velocity, l: m.lockoutMs, h: m.holdMs,
         d: m.devices.map((d) => {
           const out = { k: d.kind };
           if (d.kind === 'notes') Object.assign(out, { t: d.noteType, g: d.gate, keys: d.keys.map((k) => [k.input, k.value]) });
@@ -299,8 +305,33 @@
     return [EDITOR_ID, 0, body.length & 0xff, (body.length >> 8) & 0xff, ...body];
   }
 
-  function tableFromBand(band) {
-    const table = S.tableFromForm(toForm(band));
+  // Each switch's lockout and hold time: its musician's. Returns {lockout,
+  // hold} (the shared values, or the longest) and, if musicians with
+  // switches differ, {perInput: {lockout: [12], hold: [12]}}.
+  const DEFAULT_HOLD_MS = 500;
+  function inputSettings(band) {
+    const used = slots(band);
+    const lockout = Array(S.NUM_INPUTS).fill(0);
+    const hold = Array(S.NUM_INPUTS).fill(DEFAULT_HOLD_MS);
+    for (const s of used) {
+      lockout[s.input] = s.musician.lockoutMs || 0;
+      hold[s.input] = s.musician.holdMs || DEFAULT_HOLD_MS;
+    }
+    const ls = used.map((s) => s.musician.lockoutMs || 0);
+    const hs = used.map((s) => s.musician.holdMs || DEFAULT_HOLD_MS);
+    const out = { lockout: Math.max(0, ...ls), hold: hs.length ? Math.max(...hs) : DEFAULT_HOLD_MS };
+    if (new Set(ls).size > 1 || new Set(hs).size > 1) out.perInput = { lockout, hold };
+    return out;
+  }
+
+  // perInput: the board takes each switch's own settings (firmware 0.7.0 and
+  // later). Otherwise everyone gets the longest lockout and hold time.
+  function tableFromBand(band, { perInput = true } = {}) {
+    const f = toForm(band);
+    const settings = inputSettings(band);
+    Object.assign(f, { lockoutMs: settings.lockout, holdMs: settings.hold });
+    if (settings.perInput && perInput) f.inputs = settings.perInput;
+    const table = S.tableFromForm(f);
     const editor = editorSection(band);
     // The musicians only go along if there's room; without them the preset
     // still plays, and reopens as one musician per channel.
@@ -362,7 +393,10 @@
         }
         devices.push(d);
       }
-      musicians.push({ name: m.n.slice(0, 24), colour: m.c, channel: m.ch, devices });
+      const velocity = Number.isInteger(m.v) && m.v >= 1 && m.v <= 127 ? m.v : null;
+      const lockoutMs = Number.isInteger(m.l) && m.l >= 0 && m.l <= 60000 ? m.l : null;
+      const holdMs = Number.isInteger(m.h) && m.h >= 1 && m.h <= 60000 ? m.h : null;
+      musicians.push({ name: m.n.slice(0, 24), colour: m.c, channel: m.ch, devices, velocity, lockoutMs, holdMs });
     }
     return musicians;
   }
@@ -383,6 +417,11 @@
       if (musicians) {
         const band = { ...form, musicians };
         delete band.switches;
+        for (const m of musicians) {
+          if (m.velocity === null) m.velocity = form.velocity;
+          if (m.lockoutMs === null) m.lockoutMs = form.lockoutMs;
+          if (m.holdMs === null) m.holdMs = form.holdMs;
+        }
         // Use the stored musicians only if they still make the same rules
         // (another tool may have changed the table since).
         const rules = S.tableFromForm(toForm(band)).rules.map(ruleKey).join(';');
@@ -401,7 +440,10 @@
     const musicianFor = (channel) => {
       const ch = channel === undefined || channel === null ? form.channel : channel;
       if (!byChannel.has(ch)) {
-        const m = { name: `Musician ${band.musicians.length + 1}`, colour: band.musicians.length % COLOURS.length, channel: ch, devices: [] };
+        const m = {
+          name: `Musician ${band.musicians.length + 1}`, colour: band.musicians.length % COLOURS.length, channel: ch,
+          devices: [], velocity: form.velocity, lockoutMs: form.lockoutMs, holdMs: form.holdMs,
+        };
         if (band.musicians.length < MAX_MUSICIANS) band.musicians.push(m);
         else return byChannel.get([...byChannel.keys()][0]);
         byChannel.set(ch, m);
@@ -431,6 +473,7 @@
     form.switches.forEach((s, input) => {
       if (s.action === 'scale' || s.action === 'note') {
         const m = musicianFor(s.channel);
+        if (s.velocity) m.velocity = s.velocity;
         const noteType = s.action === 'scale' ? 'scale' : 'fixed';
         let d = m.devices.find((x) => x.kind === 'notes' && x.noteType === noteType && x.gate === s.gate);
         if (!d) m.devices.push(d = { kind: 'notes', noteType, gate: s.gate, keys: [] });
@@ -438,6 +481,7 @@
       } else if (s.action.startsWith('seq-')) {
         const q = form.sequences[s.seq];
         const m = musicianFor(q.channel);
+        if (q.velocity) m.velocity = q.velocity;
         const role = { 'seq-play': 'play', 'seq-step': 'step', 'seq-restart': 'restart' }[s.action];
         const kind = seqKind(s.seq, stepped.has(s.seq));
         // A press-mode sequence is stepped; a clock one is played.
@@ -476,6 +520,10 @@
     form.modulators.forEach((mod, id) => {
       if (mod.kind !== 'off' && !mods.has(id)) deviceFor(musicianFor(mod.channel), mod.kind, { mod: id }, 'run', 'hold', false);
     });
+    // Each musician's lockout and hold time, from their switches' (spec B.4.1).
+    if (form.inputs)
+      for (const s of slots(band))
+        Object.assign(s.musician, { lockoutMs: form.inputs.lockout[s.input], holdMs: form.inputs.hold[s.input] });
     for (const m of band.musicians) {
       // Modulators were put with the musician on their channel already.
       for (const d of m.devices) if (d.kind === 'lfo' || d.kind === 'env') d.target = null;
@@ -612,6 +660,6 @@
     COLOURS, DEVICES, KINDS, MAX_MUSICIANS, NUM_SEQS, NUM_MODS, TEMPLATES, EDITOR_ID,
     roles, defaultBand, addMusician, removeMusician, addDevice, removeDevice, canAdd,
     setSequenceMode, slots, owner, release, assign, freeInputs, seqIdsInUse, modIdsInUse,
-    toForm, tableFromBand, bandFromTable, bandFromForm, editorJson,
+    toForm, tableFromBand, bandFromTable, bandFromForm, editorJson, inputSettings,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
