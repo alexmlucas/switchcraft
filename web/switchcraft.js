@@ -777,7 +777,8 @@
       this.onSlot = null;    // (slot)
       this.onClock = null;   // (external, bpm)
       this.onMidi = null;    // (data) musical messages copied to port 2
-      input.onmidimessage = (e) => this._receive(e.data);
+      this._handler = (e) => this._receive(e.data);
+      input.onmidimessage = this._handler;
     }
 
     // Finds the config port pair: sends IDENTIFY on every Switchcraft-like
@@ -800,8 +801,9 @@
       return null;
     }
 
+    // Stops listening, unless another Board has taken over the input since.
     close() {
-      this.input.onmidimessage = null;
+      if (this.input.onmidimessage === this._handler) this.input.onmidimessage = null;
     }
 
     _receive(data) {

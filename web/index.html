@@ -565,6 +565,7 @@ function setConn(state, text) {
   $('dot').className = 'dot' + (state === 'on' ? ' on' : state === 'busy' ? ' busy' : '');
   $('conn-text').textContent = text;
   $('connect').hidden = state === 'on';
+  $('connect').disabled = state === 'busy';
   $('panic').disabled = state !== 'on';
   updateListenButtons();
 }
@@ -1878,7 +1879,17 @@ function showError(e) {
 
 // --- Board ---
 
-async function connect() {
+// One connection attempt at a time: the page reconnects by itself (on load,
+// and when the board is plugged back in), and two attempts at once would
+// fight over the board's MIDI port, so one never hears its replies.
+let connecting = null;
+function connect() {
+  if (board) return Promise.resolve();
+  if (!connecting) connecting = connectNow().finally(() => { connecting = null; });
+  return connecting;
+}
+
+async function connectNow() {
   if (!navigator.requestMIDIAccess) {
     $('no-midi').hidden = false;
     return;
@@ -1901,6 +1912,9 @@ async function connect() {
     if (e.name === 'SecurityError' || e.name === 'NotAllowedError')
       setConn('off', 'MIDI access was blocked. Allow it in the address bar and try again.');
     else {
+      // Let go of the board, so Connect can try again from the start.
+      if (board) board.close();
+      board = null;
       setConn('off', 'Connection failed');
       showError(e);
     }
