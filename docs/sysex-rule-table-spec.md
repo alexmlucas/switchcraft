@@ -301,6 +301,7 @@ section …
 | 0x04 | `EUCLID` | no, one per sequence | v1 (firmware 0.4.0), B.6.1 |
 | 0x05 | `MODULATOR` | no, up to 4 | v1 (firmware 0.5.0), B.6.2 |
 | 0x06 | `INPUTS` | no, once | v1 (firmware 0.7.0), B.4.1 |
+| 0x07 | `GENERATOR` | no, up to 4 | v1 (firmware 0.8.0, proposed), B.6.3 |
 
 The firmware **rejects** a blob with an unknown section ID below 0x10 and
 **skips** unknown IDs from 0x10 up. So adding editor-only data later never
@@ -379,7 +380,7 @@ trigger matches an event fires (no "first match wins").
 
 #### Actions
 
-**Gate modes** (bits 0–1 of `action_flags`, used by `NOTE`, `SEQ_RUN` and `MOD_RUN`):
+**Gate modes** (bits 0–1 of `action_flags`, used by `NOTE`, `SEQ_RUN`, `MOD_RUN` and the sounding generator actions `GEN_NOTE`, `GEN_HOME` and `GEN_AGAIN`):
 
 | Value | Mode | Behaviour |
 |---|---|---|
@@ -415,6 +416,13 @@ Channel `0xFF` and velocity `0` mean "use the default from globals".
 | 0x40 | `MOD_RUN` | modulator 0–3 | 0 | 0 | 0 |
 | 0x41 | `MOD_STOP` | modulator 0–3 | 0 | 0 | 0 |
 | 0x42–0x4F | | reserved: modulators | | | |
+| 0x50 | `GEN_NOTE` | generator 0–3 | 0 | 0 | ONESHOT length ms; 0 = 250 ms |
+| 0x51 | `GEN_HOME` | generator 0–3 | 0 | 0 | ONESHOT length ms; 0 = 250 ms |
+| 0x52 | `GEN_AGAIN` | generator 0–3 | 0 | 0 | ONESHOT length ms; 0 = 250 ms |
+| 0x53 | `GEN_NEW` | generator 0–3 | 0 | 0 | 0 |
+| 0x54–0x5F | | reserved: generators | | | |
+
+The generator actions are described with the `GENERATOR` section (B.6.3).
 
 **`MOD_RUN`** starts an LFO from the start of its cycle, or opens an
 envelope (attack, from wherever its value is now). Gate modes as for
@@ -536,6 +544,130 @@ output sends `from + (to − from) × value` (`value²` with `EXPONENTIAL`).
 **Output** is updated at most 100 times a second, and only when the value
 sent would change. Pitch bend uses the full 14 bits.
 
+#### B.6.3 `GENERATOR` section (0x07), 20 bytes
+
+*Proposed for firmware 0.8.0.* A generator makes up a new note each time a
+switch asks for one (`GEN_NOTE`). Unlike a sequence it has no list of notes:
+it chooses each note from the one before, by a weighted random walk through
+the scale. It can remember what it played as a short looping tune and change
+that tune a little each time round. The player sets the rhythm by pressing;
+the generator keeps the notes related to each other.
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | id | `u8` | 0–3, unique |
+| 1 | channel | `u8` | 0–15, `0xFF` = default |
+| 2 | velocity | `u8` | 0 = default |
+| 3 | flags | `u8` | bit 0 `GAP_FILL`: after a move of 2 or more degrees, the next move is one step back the other way (when that note is in range). Bits 1–7 reserved, 0 |
+| 4 | low | `i8` | Lowest scale degree, −48…48 (degrees as in `NOTE`) |
+| 5 | high | `i8` | Highest scale degree, `low`…48 |
+| 6 | home | `i8` | The tonic: where the generator starts and where phrases end. `low`…`high` |
+| 7 | max_leap | `u8` | Largest move, in degrees, 3–12 |
+| 8 | w_repeat | `u8` | Weight of playing the same degree again |
+| 9 | w_step | `u8` | Weight of each of the moves ±1 |
+| 10 | w_skip | `u8` | Weight of each of the moves ±2 |
+| 11 | w_leap | `u8` | Weight shared between the moves ±3 … ±`max_leap`: each gets `w_leap / (max_leap − 2)` |
+| 12 | stable_mask | `u16` | Bit *n* set = notes *n* semitones above the root (mod 12) are **stable** (e.g. `0x0081` = root and fifth). Only bits that are also in `scale_mask` matter |
+| 14 | accent_every | `u8` | 0 = off. On every *n*-th note of a phrase (counting the first as note 0), stable notes are favoured |
+| 15 | stable_boost | `u8` | How strongly, in tenths: 10–100 = ×1.0–×10.0 |
+| 16 | phrase_len | `u8` | 0 = no phrases. 2–64: every *n*-th note ends a phrase on `home` (cadence) |
+| 17 | loop_len | `u8` | 0 = no memory: every note is new. 1–32: the generator remembers a tune of this many notes and plays it round |
+| 18 | change | `u8` | With a loop: the chance, 0–100 %, that a remembered note is replaced by a new one when its turn comes. 0 = the tune never changes; 100 = always new |
+| 19 | reserved | `u8` | 0 |
+
+**Run-time state** (not stored; cleared when the table loads and by
+`GEN_NEW`): the last degree played (none yet), the last move, the
+position in the phrase (0), the remembered tune (empty) and its position (0).
+
+**Choosing a new note.** Let *p* be the last degree played (`home` if none)
+and *m* the last move.
+
+1. **Cadence.** If `phrase_len` > 0 and this is the last note of the phrase
+   (phrase position = `phrase_len` − 1), play the degree nearest *p* that
+   is `home` plus a whole number of octaves (an octave is `popcount(scale_mask)`
+   degrees) and lies in `low`…`high`, the lower one on a tie. Stop here.
+   (The cadence comes first so that a phrase always ends at home, even
+   straight after a jump.)
+2. **Gap fill.** If `GAP_FILL` is set, |*m*| ≥ 2 and *p* − sign(*m*) is in
+   range, play *p* − sign(*m*). Stop here.
+3. **Candidates.** *p* (weight `w_repeat`), *p* ± 1 (`w_step` each),
+   *p* ± 2 (`w_skip` each) and *p* ± *k* for *k* = 3 … `max_leap`
+   (`w_leap / (max_leap − 2)` each). Drop any outside `low`…`high`.
+4. **Accent.** If `accent_every` > 0 and the phrase position is a multiple
+   of it, multiply the weight of each candidate whose pitch, in semitones
+   above the root mod 12, is in `stable_mask` by `stable_boost / 10`.
+5. **Pick** one candidate at random in proportion to its weight. If every
+   weight is 0 (or nothing is in range), play `home`.
+
+The phrase position wraps to 0 after the cadence.
+The note is a scale degree, so `SET_SCALE` and `TRANSPOSE` apply to it
+exactly as to a `NOTE` with `DEGREE` set.
+
+**The loop.** With `loop_len` > 0, each `GEN_NOTE` looks at the tune's
+current position. If that position is still empty, or a random draw
+under `change` % succeeds, it chooses a new note as above (continuing the
+walk from the last note played) and stores it there; otherwise it plays
+the stored note. Then the position moves on, wrapping after `loop_len`.
+Every `GEN_NOTE`, new or remembered, updates the last degree and last
+move and moves the phrase position on, so gap fill and cadences carry on
+across remembered notes.
+Phrase and loop counters run independently; with `phrase_len` equal to
+`loop_len` (the usual choice), the tune's last note is always the cadence,
+so every time round the tune comes home.
+
+**Actions.**
+
+- **`GEN_NOTE`** plays the next note: a new or remembered one, as above.
+- **`GEN_HOME`** plays the cadence note (step 1 above), whatever the phrase
+  position, then sets the phrase position and the tune's position to 0. So
+  "home" ends the tune now, and the next `GEN_NOTE` starts it again.
+- **`GEN_AGAIN`** plays the last note again and moves nothing on. With no
+  note yet, it plays `home`.
+- **`GEN_NEW`** forgets the tune and resets the phrase. It makes no sound.
+  The next `GEN_NOTE` starts a fresh walk from `home`.
+
+The sounding actions use the gate modes of B.5 like `NOTE` (`HOLD`: until
+the input is released; `LATCH`: until the next firing; `ONESHOT`: p3 ms)
+and may set `QUANTIZE`. Only one note per generator sounds at a time: a new
+note from the same generator ends the one before it.
+
+**Randomness.** Draws come from the same generator as random sequence
+order, seeded from press timing, so the same presses won't give the same
+tune twice. A remembered tune is the way to keep one.
+
+**Defaults the page offers** (a "wander" generator over major pentatonic):
+`low` −2, `high` 7, `home` 0, `max_leap` 4, weights repeat 10, step 60,
+skip 20, leap 10, `GAP_FILL` on, `stable_mask` `0x0081`, `accent_every` 4,
+`stable_boost` 30, `phrase_len` 8, `loop_len` 8, `change` 15.
+
+**In the page.** A *generator* device with the jobs *new note*
+(`GEN_NOTE`), *home* (`GEN_HOME`), *again* (`GEN_AGAIN`) and *new tune*
+(`GEN_NEW`), and plain settings mapped onto the fields above:
+
+| Setting | Fields |
+|---|---|
+| Moves: mostly steps ↔ lots of leaps | the four weights, from (10, 70, 15, 5) to (5, 30, 30, 35) |
+| Range | `low`, `high` |
+| Comes home every … notes | `phrase_len` (and `loop_len`, kept equal) |
+| Remembers its tune: off / on | `loop_len` 0 or `phrase_len` |
+| Changes: never ↔ always | `change` |
+| Lands on strong notes: a little ↔ a lot | `stable_boost` (with `accent_every` 4) |
+
+**Worked example.** Major pentatonic from C4 (degrees 0…4 = C D E G A,
+5 = C5), the defaults above. Presses 1–8 fill the empty loop. One
+possible walk:
+
+| Press | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| Note | C | D | E | D | C | E | D | C |
+| Why | accent (C, G favoured) | step | step | step | accent | skip of 2 | gap fill back | cadence |
+
+Presses 9–16 replay C D E D C E D C, each note having a 15 % chance of
+being replaced by a new walk step when its turn comes (continuing from the
+note actually played before it), while press 16 is always the cadence
+again. *Home* at any point plays the nearest C and restarts the tune;
+*new tune* throws it away.
+
 ### B.4.1 `INPUTS` section (0x06), 48 bytes
 
 Settings for each switch input, so musicians sharing a board can each have
@@ -572,9 +704,9 @@ offset into the blob and one of these reasons, if:
 | 0x04 | `GLOBALS` or `RULES` missing or duplicated |
 | 0x05 | unknown trigger type, or source out of range |
 | 0x06 | unknown action type, or a `PRESET` action on a `LOAD` trigger (it could chain loads forever) |
-| 0x07 | parameter out of range (channel, note, CC number, slot, root, mask without bit 0, modulator fields) |
-| 0x08 | action, `EUCLID` or `MODULATOR` section refers to a sequence or modulator that isn't defined |
-| 0x09 | duplicate sequence or modulator ID, step_count out of range, or two `EUCLID` sections for one sequence |
+| 0x07 | parameter out of range (channel, note, CC number, slot, root, mask without bit 0, modulator fields, generator fields: `low` > `high`, `home` outside them, `max_leap` outside 3–12, `phrase_len` 1 or over 64, `loop_len` over 32, `change` over 100, `stable_boost` outside 10–100) |
+| 0x08 | action, `EUCLID` or `MODULATOR` section refers to a sequence, modulator or generator that isn't defined |
+| 0x09 | duplicate sequence, modulator or generator ID, step_count out of range, or two `EUCLID` sections for one sequence |
 
 The page should run the same checks before sending and show them in the
 editor; the firmware check is the safety net. A table that fails at boot is

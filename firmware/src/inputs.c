@@ -17,6 +17,8 @@
 // Below this raw reading the jack is empty: the value is 0 even when the
 // range is inverted (spec B.10).
 #define UNPLUGGED_RAW 100
+// Inputs 10 and 11 are the buttons beside analog inputs 0 and 1.
+#define FIRST_ANALOG_BUTTON (NUM_INPUTS - NUM_ANALOG)
 
 typedef struct {
     bool raw;
@@ -36,6 +38,23 @@ static analog_state_t an[NUM_ANALOG];
 static uint64_t next_scan, next_analog;
 static uint64_t last_press[NUM_INPUTS];
 static uint8_t analog_turn;
+
+static void set_analog_led(int i) {
+    bool held = sw[FIRST_ANALOG_BUTTON + i].stable;
+    pwm_set_gpio_level(ANALOG_LED_GPIO[i], held ? LED_PWM_WRAP : (uint16_t)(an[i].scaled * an[i].scaled));
+}
+
+// The analog buttons are for MIDI-mapping the analog CCs (in Live, say):
+// while one is held its LED is fully lit, and a press resends the analog's
+// current value through its ANALOG rules. Lockout doesn't apply to this.
+static void analog_button(int input, bool down) {
+    if (input < FIRST_ANALOG_BUTTON)
+        return;
+    int i = input - FIRST_ANALOG_BUTTON;
+    set_analog_led(i);
+    if (down)
+        engine_analog((uint8_t)i, an[i].scaled);
+}
 
 void inputs_init(void) {
     for (int i = 0; i < NUM_INPUTS; i++) {
@@ -72,6 +91,7 @@ static void scan_switches(uint64_t now) {
         if (s->raw == s->stable || now - s->raw_since < debounce)
             continue;
         s->stable = s->raw;
+        analog_button(i, s->stable);
         if (s->stable) {
             uint64_t lockout = (uint64_t)engine_lockout_ms((uint8_t)i) * 1000;
             if (lockout && last_press[i] && now - last_press[i] < lockout) {
@@ -114,7 +134,7 @@ static void scan_analog(int i, uint64_t now) {
         return;
     a->scaled = (uint8_t)(v / 4);
     a->last_report = now;
-    pwm_set_gpio_level(ANALOG_LED_GPIO[i], (uint16_t)(a->scaled * a->scaled));
+    set_analog_led(i);
     protocol_report_analog((uint8_t)i, (uint16_t)smooth, a->scaled);
     engine_analog((uint8_t)i, a->scaled);
 }

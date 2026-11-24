@@ -1,0 +1,99 @@
+[
+  {
+    "request": "When Sam holds switch 3, the swell will make the keys rise and fall.",
+    "note": "The sentence form itself. A rule-based parser should handle this without a model. Assumes the band already has a musician called Keys.",
+    "result": {
+      "version": 1, "mode": "add",
+      "musicians": [{ "name": "Sam" }],
+      "devices": [{ "id": "sam-swell", "who": "Sam", "kind": "swell", "settings": { "changes": "brightness", "staysWhileHeld": true, "onMusician": "Keys" } }],
+      "recipes": [{ "device": "sam-swell", "job": "swell", "switch": 3, "how": { "press": "hold", "onTheBeat": false }, "note": null }],
+      "unmapped": [], "questions": []
+    }
+  },
+  {
+    "request": "Ana should be able to step through Twinkle Twinkle with her big red switch, and go back to the start with the blue one.",
+    "note": "Two recipes share one device. Switch colours aren't known to the editor, so both switches are null and Learn asks for them.",
+    "result": {
+      "version": 1, "mode": "add",
+      "musicians": [{ "name": "Ana" }],
+      "devices": [{ "id": "ana-tune", "who": "Ana", "kind": "sequencer", "settings": { "playback": "one-note-per-press", "tune": "twinkle-twinkle" } }],
+      "recipes": [
+        { "device": "ana-tune", "job": "next-note", "switch": null, "how": null, "note": null },
+        { "device": "ana-tune", "job": "back-to-start", "switch": null, "how": null, "note": null }
+      ],
+      "unmapped": [], "questions": []
+    }
+  },
+  {
+    "request": "Leo presses a lot by accident, sometimes twice in a row. Give him kick and snare on 1 and 2.",
+    "note": "An access need becomes a musician setting, not a recipe.",
+    "result": {
+      "version": 1, "mode": "add",
+      "musicians": [{ "name": "Leo", "ignoreRepeatPressesMs": 300 }],
+      "devices": [{ "id": "leo-drums", "who": "Leo", "kind": "notes" }],
+      "recipes": [
+        { "device": "leo-drums", "job": "play-note", "switch": 1, "how": { "press": "once", "onTheBeat": false }, "note": { "drum": "kick" } },
+        { "device": "leo-drums", "job": "play-note", "switch": 2, "how": { "press": "once", "onTheBeat": false }, "note": { "drum": "snare" } }
+      ],
+      "unmapped": [], "questions": []
+    }
+  },
+  {
+    "request": "I want Mo to make Ana's tune go wobbly with his head switch, but only on the beat.",
+    "note": "A wobble on another musician's sound. 'Head switch' isn't a known input, so switch is null.",
+    "result": {
+      "version": 1, "mode": "add",
+      "musicians": [{ "name": "Mo" }],
+      "devices": [{ "id": "mo-wobble", "who": "Mo", "kind": "wobble", "settings": { "changes": "vibrato", "onMusician": "Ana" } }],
+      "recipes": [{ "device": "mo-wobble", "job": "wobble", "switch": null, "how": { "press": "press-on-press-off", "onTheBeat": true }, "note": null }],
+      "unmapped": [], "questions": []
+    }
+  },
+  {
+    "request": "Make a band in D major: Sam plays chords, Ana plays a beat, and Leo leads with the buttons.",
+    "note": "A whole band from one request. How the chords and the beat are started isn't said, so the defaults are used.",
+    "result": {
+      "version": 1, "mode": "new-band",
+      "band": { "key": { "root": "D", "scale": "major" } },
+      "musicians": [{ "name": "Sam" }, { "name": "Ana" }, { "name": "Leo" }],
+      "devices": [
+        { "id": "sam-chord-i", "who": "Sam", "kind": "arpeggiator", "settings": { "chord": "I" } },
+        { "id": "sam-chord-iv", "who": "Sam", "kind": "arpeggiator", "settings": { "chord": "IV" } },
+        { "id": "ana-beat", "who": "Ana", "kind": "sequencer", "settings": { "playback": "by-itself", "beat": ["kick", "closed-hat", "snare", "closed-hat"] } },
+        { "id": "leo-controls", "who": "Leo", "kind": "controls" }
+      ],
+      "recipes": [
+        { "device": "sam-chord-i", "job": "play", "switch": 1, "how": null, "note": null },
+        { "device": "sam-chord-iv", "job": "play", "switch": 2, "how": null, "note": null },
+        { "device": "ana-beat", "job": "play", "switch": 3, "how": null, "note": null },
+        { "device": "leo-controls", "job": "octave-down", "switch": "left-button", "how": null, "note": null },
+        { "device": "leo-controls", "job": "octave-up", "switch": "right-button", "how": null, "note": null }
+      ],
+      "unmapped": [], "questions": []
+    }
+  },
+  {
+    "request": "Sam should play the melody, and the lights should flash when he does.",
+    "note": "Half buildable: the lights go to the wish pile. Which melody isn't said, so ask.",
+    "result": {
+      "version": 1, "mode": "add",
+      "musicians": [{ "name": "Sam" }],
+      "devices": [{ "id": "sam-melody", "who": "Sam", "kind": "sequencer", "settings": { "playback": "one-note-per-press" } }],
+      "recipes": [{ "device": "sam-melody", "job": "next-note", "switch": null, "how": null, "note": null }],
+      "unmapped": [{ "text": "the lights should flash when he does", "reason": "Switchcraft can't control lights yet." }],
+      "questions": [{ "text": "Which melody should Sam play? A tune you know, or notes you'd like to write?", "recipe": 0 }]
+    }
+  },
+  {
+    "request": "Wenn Lena den Schalter 4 hält, soll der Klang heller werden.",
+    "note": "German: 'When Lena holds switch 4, the sound should get brighter.' The schema is language-neutral; questions are asked in the request's language. Whose sound isn't clear, so ask.",
+    "result": {
+      "version": 1, "mode": "add",
+      "musicians": [{ "name": "Lena" }],
+      "devices": [{ "id": "lena-swell", "who": "Lena", "kind": "swell", "settings": { "changes": "brightness", "rise": "slow", "staysWhileHeld": true } }],
+      "recipes": [{ "device": "lena-swell", "job": "swell", "switch": 4, "how": { "press": "hold", "onTheBeat": false }, "note": null }],
+      "unmapped": [],
+      "questions": [{ "text": "Wessen Klang soll heller werden: Lenas eigener oder der eines anderen Musikers?", "recipe": 0 }]
+    }
+  }
+]

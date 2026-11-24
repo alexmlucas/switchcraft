@@ -113,6 +113,9 @@ section.card { border: 2px solid var(--ink); }
 /* Section headings, numbered like a lab sheet: "01 preset ·········" */
 main { counter-reset: section; }
 section.card { counter-increment: section; }
+/* The template's heading is its name, not numbered: its sections start at 01. */
+section.card.template-card { counter-increment: none; }
+section.card.template-card .template-head h2::before { content: none; }
 h2 { text-transform: lowercase; font-size: 24px; line-height: 1.2; }
 section.card h2 { display: flex; align-items: baseline; gap: 14px; flex: 1 1 auto; }
 section.card h2::before {

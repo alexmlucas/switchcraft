@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/alexmlucas/switchcraft/web/recipe.schema.json",
+  "title": "Switchcraft recipe request",
+  "description": "What a person asked for, as recipes: 'When [who] [how] the [switch], the [device] will [job].' Written by a person, a parser or a language model; checked, shown back as sentences, then compiled to a band by recipe.js. Never compiled straight to a rule table. See docs/recipe-schema.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "mode", "musicians", "devices", "recipes", "unmapped", "questions"],
+  "properties": {
+    "version": { "const": 1 },
+
+    "mode": {
+      "description": "'add': merge into the open band (new musicians and devices are added; a named musician or device id that already exists is updated). 'new-band': start from a blank band.",
+      "enum": ["add", "new-band"]
+    },
+
+    "band": {
+      "description": "Settings for the whole band. Leave out to keep the band's current ones.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tempoBpm": { "type": "integer", "minimum": 40, "maximum": 240 },
+        "key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["root", "scale"],
+          "properties": {
+            "root": { "enum": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] },
+            "scale": { "enum": ["major", "minor", "major-pentatonic", "minor-pentatonic", "dorian"] }
+          }
+        }
+      }
+    },
+
+    "musicians": {
+      "description": "Who is playing. Every 'who' in devices must be listed here or already be in the band. Access settings are per musician, as on the How cards.",
+      "type": "array",
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/musician" }
+    },
+
+    "devices": {
+      "description": "The devices the recipes use. Recipes that share a device id share one device (for example 'next note' and 'back to the start' on one tune).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/device" }
+    },
+
+    "recipes": {
+      "description": "One entry per sentence: one switch doing one job on one device.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/recipe" }
+    },
+
+    "unmapped": {
+      "description": "Parts of the request no recipe can express. These go to the wish pile, not into the band.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "reason"],
+        "properties": {
+          "text": { "type": "string", "description": "The words from the request, as close to the original as possible." },
+          "reason": { "type": "string", "description": "Why it can't be built yet, in plain words." }
+        }
+      }
+    },
+
+    "questions": {
+      "description": "Things to ask before building, when the request is ambiguous. Leave a slot null rather than guess, and ask here.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "recipe"],
+        "properties": {
+          "text": { "type": "string" },
+          "recipe": { "type": ["integer", "null"], "description": "Index into recipes that the question is about, or null for the whole request." }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 24 },
+
+    "musician": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name", "description": "Use initials or a first name only." },
+        "colour": { "enum": ["green", "pink", "blue", "yellow", "violet", "orange", "red", "lime", "grey", "brown"] },
+        "loudness": { "enum": ["quiet", "medium", "loud"], "description": "How loud their notes are (velocity 60 / 100 / 127)." },
+        "ignoreRepeatPressesMs": { "type": "integer", "minimum": 0, "maximum": 2000, "description": "Presses this soon after the last one are ignored. For switches that get pressed twice by accident." },
+        "countsAsHeldMs": { "type": "integer", "minimum": 100, "maximum": 3000, "description": "How long a press must last before it counts as holding." }
+      }
+    },
+
+    "speed": { "enum": ["slow", "medium", "fast"] },
+
+    "drum": {
+      "description": "General MIDI drum sounds (channel 10 in a DAW).",
+      "enum": ["kick", "snare", "clap", "closed-hat", "open-hat", "low-tom", "high-tom", "crash", "ride", "cowbell"]
+    },
+
+    "sound": {
+      "description": "What a wobble or swell changes. 'brightness' = CC 74, 'vibrato' = CC 1, 'volume' = CC 7, 'pitch' = pitch bend, 'pressure' = channel pressure.",
+      "enum": ["brightness", "vibrato", "volume", "pitch", "pressure"]
+    },
+
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "who", "kind"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$", "description": "A short label, e.g. 'sam-drums'. Only used to link recipes to this device." },
+        "who": { "$ref": "#/$defs/name" },
+        "kind": { "enum": ["notes", "sequencer", "arpeggiator", "wobble", "swell", "controls"] },
+        "settings": {
+          "description": "Optional. Anything left out keeps the editor's defaults. Each field says which kinds it applies to.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "playback": { "enum": ["one-note-per-press", "by-itself"], "description": "sequencer." },
+            "tune": {
+              "description": "sequencer: the notes, as scale steps from the key's root (0 = root, 7 = an octave up in a 7-note scale; negative goes down), or null for a rest. Or a named tune.",
+              "anyOf": [
+                { "type": "array", "items": { "type": ["integer", "null"], "minimum": -14, "maximum": 21 }, "minItems": 1, "maxItems": 64 },
+                { "enum": ["ode-to-joy", "twinkle-twinkle"] }
+              ]
+            },
+            "beat": {
+              "description": "sequencer playing by itself: a drum pattern, one entry per step, null = rest.",
+              "type": "array", "items": { "anyOf": [{ "$ref": "#/$defs/drum" }, { "type": "null" }] }, "minItems": 1, "maxItems": 32
+            },
+            "euclid": {
+              "description": "sequencer playing by itself: spread 'hits' evenly over 'steps' (a Euclidean rhythm).",
+              "type": "object", "additionalProperties": false, "required": ["steps", "hits"],
+              "properties": {
+                "steps": { "type": "integer", "minimum": 2, "maximum": 32 },
+                "hits": { "type": "integer", "minimum": 1, "maximum": 32 },
+                "rotation": { "type": "integer", "minimum": 0, "maximum": 31 }
+              }
+            },
+            "chord": {
+              "description": "arpeggiator: a chord of the key, or its notes as scale steps.",
+              "anyOf": [
+                { "enum": ["I", "ii", "iii", "IV", "V", "vi"] },
+                { "type": "array", "items": { "type": "integer", "minimum": -14, "maximum": 21 }, "minItems": 1, "maxItems": 8 }
+              ]
+            },
+            "pattern": { "enum": ["up", "down", "up-down", "random", "as-written"], "description": "arpeggiator." },
+            "octaves": { "type": "integer", "minimum": 1, "maximum": 3, "description": "arpeggiator." },
+            "speed": { "$ref": "#/$defs/speed", "description": "sequencer (by itself), arpeggiator, wobble." },
+            "changes": { "$ref": "#/$defs/sound", "description": "wobble, swell." },
+            "shape": { "enum": ["smooth", "triangle", "ramp", "on-off", "random"], "description": "wobble: sine, triangle, saw, square, random." },
+            "rise": { "$ref": "#/$defs/speed", "description": "swell: how quickly it rises." },
+            "fall": { "$ref": "#/$defs/speed", "description": "swell: how quickly it falls." },
+            "staysWhileHeld": { "type": "boolean", "description": "swell: true = stays up while the switch is held, then falls; false = rises and falls once." },
+            "onEveryNoteOf": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$", "description": "swell: the id of a sequencer or arpeggiator; the swell runs on each of its notes." },
+            "onMusician": { "$ref": "#/$defs/name", "description": "wobble, swell: change another musician's sound instead of this musician's own." }
+          }
+        }
+      }
+    },
+
+    "note": {
+      "description": "notes devices only: which note this switch plays. A scale step, a MIDI note number, or a drum.",
+      "anyOf": [
+        { "type": "object", "additionalProperties": false, "required": ["step"], "properties": { "step": { "type": "integer", "minimum": -14, "maximum": 21 } } },
+        { "type": "object", "additionalProperties": false, "required": ["midi"], "properties": { "midi": { "type": "integer", "minimum": 0, "maximum": 127 } } },
+        { "type": "object", "additionalProperties": false, "required": ["drum"], "properties": { "drum": { "$ref": "#/$defs/drum" } } }
+      ]
+    },
+
+    "recipe": {
+      "description": "When [device.who] [how] the [switch], the [device] will [job].",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "job", "switch", "how", "note"],
+      "properties": {
+        "device": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$", "description": "The id of an entry in devices." },
+        "job": {
+          "description": "What the device does. Which jobs a kind has: notes: play-note. sequencer: next-note, back-to-start (one note per press) or play, back-to-start (by itself). arpeggiator: play. wobble: wobble, stop. swell: swell. controls: octave-down, octave-up, semitone-down, semitone-up, next-template.",
+          "enum": ["play-note", "next-note", "back-to-start", "play", "wobble", "stop", "swell", "octave-down", "octave-up", "semitone-down", "semitone-up", "next-template"]
+        },
+        "switch": {
+          "description": "Switch input 1-10, the left or right button on the box, or null if not said (the editor then asks the person to press the switch: Learn).",
+          "anyOf": [
+            { "type": "integer", "minimum": 1, "maximum": 10 },
+            { "enum": ["left-button", "right-button"] },
+            { "type": "null" }
+          ]
+        },
+        "how": {
+          "description": "How the switch is pressed. Only play-note, play, wobble and swell use it; null for other jobs, or when not said (the device's default is used).",
+          "anyOf": [
+            {
+              "type": "object", "additionalProperties": false, "required": ["press", "onTheBeat"],
+              "properties": {
+                "press": { "enum": ["hold", "press-on-press-off", "once"] },
+                "onTheBeat": { "type": "boolean" }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "note": { "anyOf": [{ "$ref": "#/$defs/note" }, { "type": "null" }] }
+      }
+    }
+  }
+}

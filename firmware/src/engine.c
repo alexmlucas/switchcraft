@@ -478,6 +478,12 @@ void engine_input(uint8_t input, bool down, uint64_t now) {
     now_us = now;
     if (!tab || input >= NUM_INPUTS)
         return;
+    // The analog buttons only MIDI-map the analog CCs (inputs.c): report
+    // them to the page, but no table rules fire for them.
+    if (input >= NUM_INPUTS - NUM_ANALOG) {
+        protocol_report_input(input, down ? EVENT_PRESS : EVENT_RELEASE);
+        return;
+    }
     if (down) {
         rng ^= (uint32_t)now;  // press timing seeds the random arpeggio order
         if (!rng)

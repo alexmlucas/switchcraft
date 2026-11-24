@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en" data-wash="sage">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>generator prototype · switchcraft</title>
+<link rel="icon" href="img/favicon.ico" sizes="16x16 32x32 48x48">
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.5 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 16px; background: var(--card); }
+  header h1 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 10px; }
+  .spacer { flex: 1; }
+  .status { color: var(--muted); }
+  main { max-width: 1040px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section.card { background: var(--card); padding: 16px 20px 20px; }
+  h2 { font-size: 19px; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; }
+  label.field { display: grid; gap: 4px; font-size: 15px; color: var(--muted); }
+  label.check { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 15px; }
+  .hint { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
+  button, select, input { font: inherit; }
+  button { min-height: 44px; padding: 6px 16px; cursor: pointer; }
+  select { min-height: 44px; }
+  input[type=range] { width: 100%; }
+  .row > label.field:has(input[type=range]) { width: 17rem; }
+  .ends { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+
+  /* The four jobs, big enough to press with a fist. */
+  .jobs { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 12px; }
+  .jobs button { min-height: 96px; font-size: 20px; font-weight: 700; display: grid; gap: 2px; align-content: center; }
+  .jobs button small { font-size: 13px; font-weight: 400; }
+  .jobs button.down { background: var(--pressed); color: var(--pressed-text); }
+
+  .now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-top: 14px; }
+  .now .note { font-size: 40px; font-weight: 800; min-width: 4ch; }
+  .now .why { color: var(--muted); }
+
+  /* The remembered tune, one cell per note. */
+  .loop { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+  .loop span { min-width: 3.4rem; text-align: center; padding: 6px 4px; border: 2px solid var(--ink); font-weight: 700; }
+  .loop span.empty { border-style: dashed; color: var(--muted); font-weight: 400; }
+  .loop span.next { outline: 4px solid var(--ink); outline-offset: 2px; }
+  .loop span.cad { background: var(--wash); }
+  svg.history { width: 100%; height: auto; display: block; background: var(--card); border: 2px solid var(--ink); }
+  .key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--muted); margin-top: 6px; }
+  .key i { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--ink); }
+  table.map td { padding: 4px 12px 4px 0; }
+</style>
+<link rel="stylesheet" href="brand.css">
+</head>
+<body>
+<header>
+  <h1><img src="img/ng_logo.png" alt="noise guaranteed" width="44" height="44"> generator prototype</h1>
+  <span class="status" id="conn" role="status" aria-live="polite">Board not connected</span>
+  <button id="connect">Connect the board</button>
+  <span class="spacer"></span>
+  <button class="primary" id="sound" aria-pressed="false">Sound: off</button>
+</header>
+
+<main>
+  <section class="card" aria-labelledby="play-h">
+    <h2 id="play-h">play</h2>
+    <div class="jobs">
+      <button id="job-note" data-job="note">New note <small>Space</small></button>
+      <button id="job-home" data-job="home">Home <small>H</small></button>
+      <button id="job-again" data-job="again">Again <small>A</small></button>
+      <button id="job-new" data-job="new">New tune <small>N</small></button>
+    </div>
+    <div class="now" aria-live="off">
+      <span class="note" id="now-note">–</span><span class="why" id="now-why">Turn the sound on, then press New note.</span>
+    </div>
+    <p class="hint">A note sounds while its button, key or switch is held, like the board's “sounds while held”.</p>
+  </section>
+
+  <section class="card" aria-labelledby="tune-h">
+    <h2 id="tune-h">the tune</h2>
+    <div class="loop" id="loop" aria-label="The remembered tune"></div>
+    <svg class="history" id="history" viewBox="0 0 640 170" role="img" aria-label="The last 40 notes, low to high"></svg>
+    <div class="key">
+      <span><i style="background:#81ff73"></i>new</span>
+      <span><i style="background:#d0d0d0"></i>remembered</span>
+      <span><i style="background:#73f2ff"></i>gap fill</span>
+      <span><i style="background:#f273ff"></i>cadence or home</span>
+      <span><i style="background:#fff273"></i>changed</span>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="set-h">
+    <h2 id="set-h">settings</h2>
+    <div class="row">
+      <label class="field">Moves
+        <input type="range" id="moves" min="0" max="100" value="20">
+        <span class="ends"><span>mostly steps</span><span>lots of leaps</span></span>
+      </label>
+      <label class="field">Changes
+        <input type="range" id="change" min="0" max="100" value="15">
+        <span class="ends"><span>never</span><span>always</span></span>
+      </label>
+      <label class="field">Lands on strong notes
+        <input type="range" id="boost" min="10" max="100" value="30">
+        <span class="ends"><span>a little</span><span>a lot</span></span>
+      </label>
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <label class="field">Comes home every <select id="phrase"></select></label>
+      <label class="check"><input type="checkbox" id="remember" checked> Remembers its tune</label>
+      <label class="check"><input type="checkbox" id="gapfill" checked> Steps back after a jump</label>
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <label class="field">Lowest note <select id="low"></select></label>
+      <label class="field">Highest note <select id="high"></select></label>
+      <label class="field">Key <select id="root"></select></label>
+      <label class="field">Scale <select id="scale"></select></label>
+      <label class="field">Sound <select id="voice"></select></label>
+      <label class="check"><input type="checkbox" id="echo"> Echo</label>
+    </div>
+    <p class="hint">These are the plain settings the editor would offer. Each maps onto the fields in spec B.6.3.</p>
+  </section>
+
+  <section class="card" aria-labelledby="board-h">
+    <h2 id="board-h">board switches</h2>
+    <p class="hint" style="margin-top: 0;">Connect the board to play the prototype from real switches. The board still runs its own template too, so use one where these switches are free, or turn its DAW sound down.</p>
+    <table class="map"><tbody id="map"></tbody></table>
+  </section>
+</main>
+
+<script src="switchcraft.js"></script>
+<script src="synth.js"></script>
+<script src="generator.js"></script>
+<script>
+'use strict';
+const S = window.Switchcraft;
+const G = window.SwitchcraftGenerator;
+const $ = (id) => document.getElementById(id);
+const options = (sel, list, value) => {
+  sel.replaceChildren(...list.map(([v, t]) => Object.assign(document.createElement('option'), { value: String(v), textContent: t })));
+  sel.value = String(value);
+};
+
+const CH = 0, VEL = 100, OCTAVE = 4;
+const synth = new window.SwitchcraftSynth.Synth();
+let soundOn = false;
+const key = { root: 2, mask: 0x0295 };  // D major pentatonic, as in the school sessions
+const gen = new G.Generator({}, key.mask);
+const noteOf = (d) => S.degreeToNote(d, key.root, OCTAVE, key.mask);
+const nameOf = (d) => S.noteName(noteOf(d));
+
+// --- Settings ---
+
+function degreeChoices() {
+  const out = [];
+  for (let d = -7; d <= 14; d++) out.push([d, nameOf(d)]);
+  return out;
+}
+function fillSettings() {
+  options($('root'), S.NOTE_NAMES.map((n, i) => [i, n]), key.root);
+  options($('scale'), S.SCALES.filter((sc) => sc.mask !== 0x0fff).map((sc) => [sc.mask, sc.name]), key.mask);
+  options($('low'), degreeChoices(), gen.s.low);
+  options($('high'), degreeChoices(), gen.s.high);
+  options($('phrase'), [[0, 'never'], [4, '4 notes'], [6, '6 notes'], [8, '8 notes'], [12, '12 notes'], [16, '16 notes']], gen.s.phraseLen);
+  options($('voice'), Object.entries(window.SwitchcraftSynth.SOUNDS).map(([id, s]) => [id, s.name]), 'soft');
+  synth.setSound('soft');
+}
+// Home is the key's root: degree 0, or the octave of it nearest the range.
+function homeIn(low, high) {
+  const oct = G.scaleSemis(key.mask).length;
+  let d = 0;
+  while (d < low) d += oct;
+  while (d > high) d -= oct;
+  return d >= low ? d : low;  // a range narrower than an octave with no root in it
+}
+function readSettings() {
+  const phrase = Number($('phrase').value);
+  let low = Number($('low').value), high = Number($('high').value);
+  if (low > high) [low, high] = [high, low];
+  gen.set({
+    ...G.movesToWeights(Number($('moves').value)),
+    change: Number($('change').value),
+    stableBoost: Number($('boost').value),
+    phraseLen: phrase,
+    // The tune is as long as a phrase, so each time round it comes home.
+    loopLen: $('remember').checked ? (phrase || 8) : 0,
+    gapFill: $('gapfill').checked,
+    low, high,
+    home: homeIn(low, high),
+  });
+  renderLoop();
+}
+function rekey() {
+  key.root = Number($('root').value);
+  key.mask = Number($('scale').value);
+  gen.setScale(key.mask);
+  const lo = $('low').value, hi = $('high').value;
+  options($('low'), degreeChoices(), lo);
+  options($('high'), degreeChoices(), hi);
+  readSettings();  // home depends on the scale's octave
+  renderHistory();
+}
+
+// --- Playing ---
+
+const sounding = new Map();  // source ("btn:note", "key:Space", "sw:3") -> midi note
+function play(job, source) {
+  let r;
+  if (job === 'note') r = gen.newNote();
+  else if (job === 'home') r = gen.home();
+  else if (job === 'again') r = gen.again();
+  else { gen.reset(); history.length = 0; show(null, 'New tune: the next note starts from home.'); renderLoop(); renderHistory(); return; }
+  // One note per generator: a new one ends the one before.
+  for (const [src, n] of sounding) { synth.noteOff(CH, n); sounding.delete(src); }
+  const n = noteOf(r.degree);
+  if (soundOn) synth.noteOn(CH, n, VEL);
+  sounding.set(source, n);
+  history.push({ degree: r.degree, why: r.why, fresh: r.fresh });
+  if (history.length > 40) history.shift();
+  show(r.degree, r.why);
+  renderLoop();
+  renderHistory();
+}
+function release(source) {
+  const n = sounding.get(source);
+  if (n === undefined) return;
+  synth.noteOff(CH, n);
+  sounding.delete(source);
+}
+function show(d, why) {
+  $('now-note').textContent = d === null ? '–' : nameOf(d);
+  $('now-why').textContent = why;
+}
+
+// --- Drawing ---
+
+const history = [];
+const colourOf = (h) => /cadence|home/.test(h.why) ? '#f273ff' : /changed/.test(h.why) ? '#fff273'
+  : h.why === 'gap fill' ? '#73f2ff' : h.why === 'remembered' || h.why === 'again' ? '#d0d0d0' : '#81ff73';
+
+function renderLoop() {
+  const s = gen.s;
+  const box = $('loop');
+  if (!s.loopLen) { box.replaceChildren(Object.assign(document.createElement('span'), { className: 'empty', textContent: 'No tune remembered: every note is new' })); return; }
+  box.replaceChildren(...gen.loop.map((d, i) => {
+    const c = document.createElement('span');
+    c.textContent = d === null ? '·' : nameOf(d);
+    if (d === null) c.classList.add('empty');
+    if (i === gen.loopPos) c.classList.add('next');
+    if (s.phraseLen && i === s.phraseLen - 1) c.classList.add('cad');
+    c.title = `Note ${i + 1}${i === gen.loopPos ? ' (next)' : ''}`;
+    return c;
+  }));
+}
+
+function renderHistory() {
+  const svg = $('history');
+  const NS = 'http://www.w3.org/2000/svg';
+  const lo = gen.s.low, hi = gen.s.high;
+  const rows = Math.max(1, hi - lo + 1);
+  const y = (d) => 160 - ((d - lo) + 0.5) * (150 / rows);
+  const parts = [];
+  // Guide lines at home and its octaves.
+  for (let d = lo; d <= hi; d++) {
+    const homeLike = ((d - gen.s.home) % gen.octave() + gen.octave()) % gen.octave() === 0;
+    if (homeLike) parts.push(`<line x1="0" x2="640" y1="${y(d)}" y2="${y(d)}" stroke="#4e6a49" stroke-dasharray="4 4" stroke-width="1"/>` +
+      `<text x="4" y="${y(d) - 4}" font-size="11" fill="#3b3d36">${nameOf(d)}</text>`);
+  }
+  history.forEach((h, i) => {
+    const x = 36 + i * 15;
+    parts.push(`<rect x="${x}" y="${y(h.degree) - 5}" width="12" height="10" rx="2" fill="${colourOf(h)}" stroke="#000" stroke-width="1"><title>${nameOf(h.degree)}: ${h.why}</title></rect>`);
+    if (i) parts.push(`<line x1="${x - 3}" x2="${x + 6}" y1="${y(history[i - 1].degree)}" y2="${y(h.degree)}" stroke="#000" stroke-opacity="0.25"/>`);
+  });
+  svg.innerHTML = parts.join('');
+}
+
+// --- Inputs: buttons, keys, board switches ---
+
+document.querySelectorAll('.jobs button').forEach((b) => {
+  const src = `btn:${b.dataset.job}`;
+  b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.classList.add('down'); play(b.dataset.job, src); });
+  const up = () => { b.classList.remove('down'); release(src); };
+  b.addEventListener('pointerup', up);
+  b.addEventListener('pointerleave', up);
+  // Keyboard users on the button itself.
+  b.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { e.preventDefault(); e.stopPropagation(); b.classList.add('down'); play(b.dataset.job, src); } });
+  b.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); up(); } });
+});
+
+const KEYS = { ' ': 'note', h: 'home', a: 'again', n: 'new' };
+document.addEventListener('keydown', (e) => {
+  const job = KEYS[e.key.toLowerCase()];
+  if (!job || e.repeat || (e.target.closest && e.target.closest('select, input'))) return;
+  e.preventDefault();
+  $(`job-${job}`).classList.add('down');
+  play(job, `key:${e.key.toLowerCase()}`);
+});
+document.addEventListener('keyup', (e) => {
+  const job = KEYS[e.key.toLowerCase()];
+  if (!job) return;
+  $(`job-${job}`).classList.remove('down');
+  release(`key:${e.key.toLowerCase()}`);
+});
+
+// Which board switch does which job: switches 1-4 by default.
+const swJob = Array(S.NUM_INPUTS).fill('');
+['note', 'home', 'again', 'new'].forEach((j, i) => { swJob[i] = j; });
+const JOB_NAMES = [['', '—'], ['note', 'New note'], ['home', 'Home'], ['again', 'Again'], ['new', 'New tune']];
+function renderMap() {
+  $('map').replaceChildren(...swJob.map((j, i) => {
+    const tr = document.createElement('tr');
+    const label = i < 10 ? `Switch ${i + 1}` : i === 10 ? 'Left button' : 'Right button';
+    const sel = document.createElement('select');
+    sel.setAttribute('aria-label', `${label} job`);
+    options(sel, JOB_NAMES, j);
+    sel.addEventListener('change', () => { swJob[i] = sel.value; });
+    tr.append(Object.assign(document.createElement('td'), { textContent: label }), Object.assign(document.createElement('td'), {}));
+    tr.lastChild.append(sel);
+    return tr;
+  }));
+}
+
+let board = null;
+async function connect() {
+  if (!navigator.requestMIDIAccess) { $('conn').textContent = 'This browser can’t talk to MIDI devices: use Chrome or Edge.'; return; }
+  try {
+    $('conn').textContent = 'Looking for the board…';
+    const access = await navigator.requestMIDIAccess({ sysex: true });
+    const found = await S.Board.find(access);
+    if (!found) { $('conn').textContent = 'Board not found. Is it plugged in, and is the editor closed?'; return; }
+    board = found;
+    $('conn').textContent = `Connected · firmware ${board.info.firmware}`;
+    board.onInput = (i, ev) => {
+      const job = swJob[i];
+      if (!job) return;
+      if (ev === 'press') play(job, `sw:${i}`);
+      else if (ev === 'release') release(`sw:${i}`);
+    };
+  } catch (e) {
+    $('conn').textContent = `Couldn’t connect: ${e.message || e}`;
+  }
+}
+
+$('connect').addEventListener('click', connect);
+$('sound').addEventListener('click', async () => {
+  soundOn = !soundOn;
+  if (soundOn) await synth.start(); else synth.allNotesOff();
+  $('sound').textContent = `Sound: ${soundOn ? 'on' : 'off'}`;
+  $('sound').setAttribute('aria-pressed', String(soundOn));
+});
+for (const id of ['moves', 'change', 'boost', 'phrase', 'remember', 'gapfill', 'low', 'high'])
+  $(id).addEventListener(id === 'moves' || id === 'change' || id === 'boost' ? 'input' : 'change', readSettings);
+$('root').addEventListener('change', rekey);
+$('scale').addEventListener('change', rekey);
+$('voice').addEventListener('change', () => synth.setSound($('voice').value));
+$('echo').addEventListener('change', () => synth.setEcho({ beats: $('echo').checked ? 0.75 : 0 }));
+
+fillSettings();
+readSettings();
+renderMap();
+renderHistory();
+</script>
+</body>
+</html>

@@ -88,6 +88,8 @@
     NONE: 0x00, NOTE: 0x01, CC: 0x02, SEQ_STEP: 0x10, SEQ_RUN: 0x11, SEQ_STOP: 0x12,
     SEQ_RESET: 0x13, SEQ_SELECT: 0x14, TRANSPOSE: 0x20, SET_SCALE: 0x21, PRESET: 0x30,
     MOD_RUN: 0x40, MOD_STOP: 0x41,
+    // Note generator (spec B.6.3, firmware 0.8.0).
+    GEN_NOTE: 0x50, GEN_HOME: 0x51, GEN_AGAIN: 0x52, GEN_NEW: 0x53,
   };
   const GATE = { hold: 0, latch: 1, oneshot: 2 };
   const FLAG = { QUANTIZE: 0x04, VALUE_FROM_TRIGGER: 0x08, DEGREE: 0x10, REVERSE: 0x20 };
@@ -167,7 +169,16 @@
     return [m.id, m.type, m.output, m.controller, m.channel, m.from, m.to, m.flags, ...tail];
   }
 
-  // table: {globals, rules, sequences, modulators, extra: [raw section byte arrays]}
+  // Note generator (spec B.6.3), 20 bytes.
+  function generatorBody(g) {
+    return [
+      g.id, g.channel, g.velocity, g.gapFill ? 1 : 0, g.low & 0xff, g.high & 0xff, g.home & 0xff, g.maxLeap,
+      g.wRepeat, g.wStep, g.wSkip, g.wLeap, ...u16(g.stableMask), g.accentEvery, g.stableBoost,
+      g.phraseLen, g.loopLen, g.change, 0,
+    ];
+  }
+
+  // table: {globals, rules, sequences, modulators, generators, extra: [raw section byte arrays]}
   function buildTable(table) {
     const sections = [
       section(0x01, globalsBody(table.globals)),
@@ -178,6 +189,7 @@
         .map((s) => section(0x04, [s.id, s.euclid.steps, s.euclid.hits, s.euclid.rotation])),
       // Each input's own lockout and hold time (spec B.4.1, firmware 0.7.0).
       ...(table.inputs ? [section(0x06, [...table.inputs.lockout, ...table.inputs.hold].flatMap(u16))] : []),
+      ...(table.generators || []).map((g) => section(0x07, generatorBody(g))),
       ...(table.extra || []),
     ];
     const body = sections.flat();
@@ -187,7 +199,7 @@
 
   function parseTable(blob) {
     if (blob.length < 8 || rd16(blob, 0) !== 1) throw new Error('unsupported table format');
-    const table = { globals: null, rules: [], sequences: [], modulators: [], extra: [] };
+    const table = { globals: null, rules: [], sequences: [], modulators: [], generators: [], extra: [] };
     const rhythms = [];  // EUCLID sections, attached to their sequences below
     let off = 8;
     for (let i = 0; i < blob[4]; i++) {
@@ -233,6 +245,13 @@
           lockout: Array.from({ length: NUM_INPUTS }, (_, i) => rd16(b, 2 * i)),
           hold: Array.from({ length: NUM_INPUTS }, (_, i) => rd16(b, 2 * (NUM_INPUTS + i))),
         };
+      } else if (id === 0x07) {
+        table.generators.push({
+          id: b[0], channel: b[1], velocity: b[2], gapFill: !!(b[3] & 1), low: s8(b[4]), high: s8(b[5]),
+          home: s8(b[6]), maxLeap: b[7], wRepeat: b[8], wStep: b[9], wSkip: b[10], wLeap: b[11],
+          stableMask: rd16(b, 12), accentEvery: b[14], stableBoost: b[15], phraseLen: b[16],
+          loopLen: b[17], change: b[18],
+        });
       } else if (id === 0x04) {
         rhythms.push({ id: b[0], euclid: { steps: b[1], hits: b[2], rotation: b[3] } });
       } else {
@@ -262,6 +281,19 @@
   const MAX_STEP_LENGTH = 127;  // steps (spec B.6 step byte 2)
   const SEQ_ACTIONS = { 'seq-play': ACT.SEQ_RUN, 'seq-step': ACT.SEQ_STEP, 'seq-restart': ACT.SEQ_RESET };
   const MOD_ACTIONS = { 'mod-run': ACT.MOD_RUN, 'mod-stop': ACT.MOD_STOP };
+  const GEN_ACTIONS = { 'gen-note': ACT.GEN_NOTE, 'gen-home': ACT.GEN_HOME, 'gen-again': ACT.GEN_AGAIN, 'gen-new': ACT.GEN_NEW };
+  const NUM_GENS = 4;
+
+  // A note generator in the form (spec B.6.3), with the page's "wander"
+  // defaults. `on` is the form's: an off generator isn't sent.
+  function defaultGenerator() {
+    return {
+      on: false, gapFill: true, low: -2, high: 7, home: 0, maxLeap: 4,
+      wRepeat: 10, wStep: 60, wSkip: 20, wLeap: 10, stableMask: 0x0081,
+      accentEvery: 4, stableBoost: 30, phraseLen: 8, loopLen: 8, change: 15,
+    };
+  }
+  const GEN_FIELDS = Object.keys(defaultGenerator()).filter((k) => k !== 'on');
 
   function defaultSequence() {
     // notes: scale degrees or MIDI notes (by noteType), null = rest
@@ -294,6 +326,7 @@
       analog: [{ cc: 1 }, { cc: 74 }],
       sequences: Array.from({ length: 4 }, defaultSequence),
       modulators: Array.from({ length: 4 }, () => defaultModulator()),
+      generators: Array.from({ length: NUM_GENS }, defaultGenerator),
     };
   }
 
@@ -342,6 +375,10 @@
       } else if (s.action in SEQ_ACTIONS && sequenceInUse(f, s.seq)) {
         const flags = s.action === 'seq-play' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
         rules.push({ trig: TRIG.PRESS, src: i, act: SEQ_ACTIONS[s.action], flags, p0: s.seq });
+      } else if (s.action in GEN_ACTIONS && f.generators && f.generators[s.gen] && f.generators[s.gen].on) {
+        // "new tune" makes no sound, so it has no gate.
+        const flags = s.action === 'gen-new' ? 0 : GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0);
+        rules.push({ trig: TRIG.PRESS, src: i, act: GEN_ACTIONS[s.action], flags, p0: s.gen });
       }
     });
     f.analog.forEach((a, i) => {
@@ -372,7 +409,15 @@
           follow: m.follow !== null && sequenceInUse(f, m.follow) ? m.follow : DEFAULT,
         });
     });
+    const generators = [];
+    (f.generators || []).forEach((g, id) => {
+      if (!g.on) return;
+      const out = { id, channel: g.channel ?? DEFAULT, velocity: g.velocity ?? 0 };
+      for (const k of GEN_FIELDS) out[k] = g[k];
+      generators.push(out);
+    });
     const table = { globals: { ...f }, rules, sequences, modulators };
+    if (generators.length) table.generators = generators;
     if (f.inputs) table.inputs = { lockout: [...f.inputs.lockout], hold: [...f.inputs.hold] };
     return table;
   }
@@ -388,8 +433,17 @@
       analog: Array.from({ length: NUM_ANALOG }, () => ({ cc: null })),
       sequences: Array.from({ length: 4 }, defaultSequence),
       modulators: Array.from({ length: 4 }, () => defaultModulator()),
+      generators: Array.from({ length: NUM_GENS }, defaultGenerator),
     };
     if (table.inputs) f.inputs = { lockout: [...table.inputs.lockout], hold: [...table.inputs.hold] };
+    for (const g of table.generators || []) {
+      if (g.id >= NUM_GENS) return { reason: 'its generators use settings the form doesn’t show' };
+      const fg = { on: true };
+      for (const k of GEN_FIELDS) fg[k] = g[k];
+      if (g.channel !== DEFAULT) fg.channel = g.channel;
+      if (g.velocity) fg.velocity = g.velocity;
+      f.generators[g.id] = fg;
+    }
     if ((table.extra || []).length) return { reason: 'it has sections the form doesn’t edit' };
 
     for (const q of table.sequences || []) {
@@ -449,6 +503,12 @@
           s = { action: 'mod-stop', mod: r.p0 };
         } else if ((r.act === ACT.SEQ_STEP || r.act === ACT.SEQ_RESET) && r.flags === 0 && r.p0 < 4) {
           s = { action: r.act === ACT.SEQ_STEP ? 'seq-step' : 'seq-restart', seq: r.p0 };
+        } else if (r.act === ACT.GEN_NEW && r.flags === 0 && r.p0 < NUM_GENS) {
+          s = { action: 'gen-new', gen: r.p0 };
+        } else if (r.act >= ACT.GEN_NOTE && r.act <= ACT.GEN_AGAIN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 &&
+                   gate && r.p0 < NUM_GENS) {
+          const action = Object.keys(GEN_ACTIONS).find((k) => GEN_ACTIONS[k] === r.act);
+          s = { action, gen: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
         }
         if (s) {
           f.switches[r.src] = s;
@@ -922,6 +982,7 @@
     NUM_INPUTS, NUM_ANALOG, NUM_SLOTS, SOURCE_WORKING, DEFAULT_CALIBRATION,
     encode, decode, crc32, noteName, degreeToNote,
     ORDERS, MAX_FORM_STEPS, TEMPLATES, euclidHits, WAVES, defaultModulator,
+    NUM_GENS, defaultGenerator,
     parseMidiFile, midiParts, midiToSequence, sequenceToTable,
     presetFile, readPresetFile, presetFileName,
     buildTable, parseTable, defaultForm, defaultSequence, sequenceInUse,
