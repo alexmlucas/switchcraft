@@ -31,10 +31,20 @@
     color: var(--text);
     font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
+  /* The header: title and connection on the left, the noise guaranteed mark
+     in the centre, sound controls on the right. */
   header {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px 20px;
     padding: 12px 16px;
     background: var(--card);
+  }
+  .header-side { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-width: 0; }
+  .header-right { justify-content: flex-end; }
+  header img.ng-mark { width: 56px; height: 56px; display: block; }
+  @media (max-width: 900px) {
+    header { grid-template-columns: minmax(0, 1fr); }
+    header img.ng-mark { justify-self: center; grid-row: 1; }
+    .header-right { justify-content: flex-start; }
   }
   header h1 { margin: 0; font-size: 22px; }
   .status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
@@ -59,6 +69,8 @@
   .row { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; }
   label.field { display: grid; gap: 4px; font-size: 15px; color: var(--muted); }
   .hint { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
+  /* A hint that spans its card instead of stopping at a reading width. */
+  .hint.full { max-width: none; }
 
   select, input, button {
     font: inherit;
@@ -78,25 +90,57 @@
   .notice p { margin: 0 0 10px; }
   .notice p:last-child { margin-bottom: 0; }
 
-  /* Musicians, each with devices whose roles are filled by switches */
-  .musicians { display: grid; gap: 16px; }
-  .musician {
+  /* Devices, each with the switches that play it */
+  .devices { display: grid; gap: 16px; }
+  .devcard {
     border: 2px solid var(--ink); border-left: 14px solid var(--mcolour);
     background: var(--card); padding: 12px 16px 16px; display: grid; gap: 14px;
   }
-  .musician h3 { margin: 0; font-size: 21px; display: flex; align-items: center; gap: 10px; }
+  .devcard h3 { margin: 0; font-size: 21px; }
+  .devcard-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+  .devcard-body { display: grid; gap: 14px; }
+  /* The chevron: its own 44px square, the same size as the ✕. */
+  .devcard h3 button.devcard-toggle {
+    flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; margin-right: 6px;
+    display: grid; place-items: center; font-size: 24px;
+    border: none; background: transparent;
+  }
+  .devcard h3 button.devcard-toggle:hover { background: transparent; }
+  .devcard-summary { color: var(--muted); font-size: 15px; }
+  .devcard.collapsed { padding-top: 6px; padding-bottom: 6px; cursor: pointer; }
+  .devcard.collapsed:not(.active):hover { background: var(--wash-hover); }
+  /* The colour badge is a button that opens the palette. */
+  .devcard h3 { position: relative; }
+  .devcard h3 button.colour-button { width: 44px; height: 44px; min-height: 0; padding: 0; font-size: 20px; cursor: pointer; }
+  .devcard h3 button.colour-button, .devcard h3 button.colour-button:hover,
+  .palette button.swatch, .palette button.swatch:hover { background: var(--mcolour); color: #000; border: 2px solid #000; }
+  .devcard h3 button.colour-button:not(:disabled):hover, .palette .swatch:hover { outline: 3px solid var(--ink); outline-offset: 1px; }
+  .palette {
+    position: absolute; z-index: 20; top: calc(100% + 6px); left: 50px;
+    display: grid; grid-template-columns: repeat(5, 44px); gap: 8px; padding: 10px;
+    background: var(--card); border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink);
+  }
+  .palette .swatch { position: relative; width: 44px; height: 44px; min-height: 0; padding: 0; font-size: 20px; }
+  .palette .swatch[aria-checked="true"] { outline: 3px solid var(--ink); outline-offset: 3px; }
+  /* Another device already has this colour. */
+  .palette .swatch.taken::after {
+    content: ""; position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: #000;
+  }
+  /* Where a switch tile has just taken you. */
+  .found { animation: found 1.6s ease-out; }
+  @keyframes found { 0%, 40% { outline: 4px solid var(--ink); outline-offset: 2px; background: var(--pressed); color: var(--pressed-text); } }
+  @media (prefers-reduced-motion: reduce) { .found { animation: none; outline: 4px solid var(--ink); } }
+  /* Lights up while one of the device's switches is held down. */
+  .devcard.active { background: var(--pressed); outline: 3px solid var(--ink); }
+  .devcard.active .devcard-summary { color: var(--pressed-text); }
   .badge {
     display: inline-grid; place-items: center; flex: none; width: 34px; height: 34px;
     background: var(--mcolour); color: #000; border: 2px solid #000; font-size: 18px; line-height: 1;
   }
   .badge.small { width: 26px; height: 26px; font-size: 14px; }
-  .musician-settings { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
-  .musician-settings .remove-musician { margin-left: auto; }
-  .device { border: 2px solid var(--ink); padding: 10px 12px 12px; display: grid; gap: 10px; }
-  .device-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-  .device-head h4 { margin: 0; font-size: 18px; }
-  .device-head h4 small { font-weight: normal; font-size: 14px; }
-  .device-head .sum { color: var(--muted); font-size: 15px; flex: 1 1 14ch; }
+  .devcard-settings { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
+  /* The ✕ that removes a device, at the right-hand end of its heading (top right). */
+  .devcard-head .remove-devcard { margin-left: auto; flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; font-size: 18px; }
   .roles { display: grid; gap: 6px; }
   .role {
     display: grid; grid-template-columns: minmax(9ch, 13ch) minmax(0, 15rem) auto; gap: 8px;
@@ -109,9 +153,9 @@
   .device-settings { border-top: 2px dotted var(--ink); padding-top: 12px; }
   .add-device { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr)); gap: 8px; }
   /* Grid children may shrink below their content, so nothing pushes past a phone's width. */
-  .musician > *, .device > *, .role > *, .device-settings > * { min-width: 0; }
+  .devcard > *, .devcard-body > *, .role > *, .device-settings > * { min-width: 0; }
   .role select { width: 100%; }
-  .musician-settings input[type="text"] { width: min(18ch, 100%); }
+  .devcard-settings input[type="text"] { width: min(18ch, 100%); }
   .add-device button { text-align: left; display: grid; gap: 2px; align-content: start; padding: 8px 12px; }
   .add-device small { font-weight: normal; font-size: 13px; line-height: 1.4; }
   .add-more summary {
@@ -124,58 +168,138 @@
   .add-more summary:hover { background: var(--wash-hover); }
   .add-more[open] summary { margin-bottom: 10px; }
   .board-use { font-size: 15px; margin: 12px 0 0; }
+  .devcard .kind { color: var(--muted); font-size: 15px; }
+  .devcard .sum { color: var(--muted); font-size: 15px; margin: 0; }
+  .devcard .more { margin: 0; }
+  .devcard-settings { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
+  /* A switch in a device: its number, its job (or note), who uses it, ✕. */
+  .role.sw-row { grid-template-columns: minmax(8ch, 9ch) minmax(0, 13rem) minmax(0, 1fr) auto; }
+  .role.sw-row input[type="text"] { width: 100%; }
+  .add-here:empty { display: none; }
+  details.access summary { cursor: pointer; font-weight: bold; min-height: 44px; display: flex; align-items: center; gap: 8px; width: fit-content; list-style: none; }
+  details.access summary::-webkit-details-marker { display: none; }
+  details.access summary::before { content: "+"; font-size: 20px; }
+  details.access[open] summary::before { content: "–"; }
+  .access-grid { display: grid; grid-template-columns: minmax(8ch, auto) auto auto; gap: 6px 12px; align-items: center; }
+  .access-col { font-size: 14px; color: var(--muted); }
+  /* Choosing switches, beside the box drawing. */
+  .selection { display: grid; gap: 10px; align-content: start; }
+  .selection p { margin: 0; }
+  .selection .row { gap: 8px; }
+  #learn[aria-pressed="true"] { background: var(--pressed); color: var(--pressed-text); border-color: var(--ink); }
 
   /* The board's 8 templates, as square buttons */
-  .slots { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* The template's number, in the title: a button that opens the list of
+     the board's 8 templates. */
+  .template-head h2 { position: relative; align-items: center; gap: 4px; }
+  .slot-button {
+    font: inherit; font-weight: bold; display: inline-flex; align-items: center; gap: 6px;
+    min-height: 44px; padding: 2px 8px; border: 2px solid var(--ink); background: var(--card); color: var(--text);
+  }
+  .slot-button .chev { font-size: 16px; }
+
+  /* Not connected: the template card stays empty (Connect is in the header). */
+  body.offline section.template-card { min-height: min(60vh, 560px); }
+  body.offline section.template-card { display: grid; place-items: center; }
+  body.offline section.template-card > :not(.offline-logo) { display: none !important; }
+  .offline-logo { display: none; }
+  body.offline .offline-logo { display: block; width: min(220px, 50vw); color: var(--ink); }
+  .offline-logo svg, .header-logo svg { display: block; width: 100%; height: auto; }
+  .header-logo { display: inline-block; width: 40px; vertical-align: middle; color: var(--ink); }
+  /* The steam sways and the bubbles bob, slowly (logoview.js). */
+  .sc-animate .sc-steam path {
+    transform-box: fill-box; transform-origin: 50% 100%;
+    animation: sc-steam 5s ease-in-out infinite; animation-delay: calc(var(--i) * -1.7s);
+  }
+  .sc-animate .sc-bubble path {
+    transform-box: fill-box; transform-origin: 50% 50%;
+    animation: sc-bubble 4s ease-in-out infinite; animation-delay: calc(var(--i) * -0.9s);
+  }
+  .sc-paused .sc-steam path, .sc-paused .sc-bubble path { animation-play-state: paused; }
+  @keyframes sc-steam {
+    0%, 100% { transform: translateY(0) skewX(0deg); opacity: 1; }
+    50% { transform: translateY(-6%) skewX(-5deg); opacity: 0.55; }
+  }
+  @keyframes sc-bubble {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-30%) scale(1.06); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sc-animate .sc-steam path, .sc-animate .sc-bubble path { animation: none; }
+  }
+  .slot-button:not(:disabled):hover, .slot-button[aria-expanded="true"] { background: var(--wash-hover); }
+  .slot-menu {
+    position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; min-width: 18rem;
+    display: grid; padding: 6px; background: var(--card); border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink);
+    font-size: 17px; text-transform: none;
+  }
+  .slot-menu button {
+    display: grid; grid-template-columns: 2ch 1fr 2ch; gap: 8px; text-align: left; align-items: center;
+    border: 2px solid transparent; background: transparent; color: var(--text); font-weight: normal;
+  }
+  .slot-menu button:hover, .slot-menu button:focus { background: var(--wash-hover); border-color: var(--ink); }
+  .slot-menu button[aria-checked="true"] { font-weight: bold; }
+  .slot-menu .empty { color: var(--muted); }
   div.field { display: grid; gap: 4px; font-size: 15px; }
-  .slots button { width: 48px; height: 48px; min-height: 0; padding: 0; font-size: 20px; }
   /* Two states only: the template playing on the board is black, the others white. */
-  .slots button[aria-pressed="true"] { background: var(--ink); color: var(--card); }
   /* The name sits beside the heading, before its dotted rule. */
   .template-head { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
   /* The name as a heading: bold text with a pencil beside it, which
      becomes an ordinary box while it's being typed in. */
-  .template-head input.title-input {
+  .template-head input.title-input, .devcard h3 input.title-input {
     font: inherit; font-weight: bold; text-transform: none; color: inherit;
     background: transparent; border: 2px solid transparent;
     min-height: 44px; padding: 2px 6px; width: auto; field-sizing: content; min-width: 7ch; max-width: 100%;
   }
-  .template-head input.title-input:hover { background: var(--wash-hover); }
-  .template-head input.title-input:focus { background: var(--card); border: 2px solid var(--ink); }
-  .template-head input.title-input::placeholder { color: var(--muted); }
+  :is(.template-head, .devcard h3) input.title-input:not(:disabled):hover { background: var(--wash-hover); }
+  :is(.template-head, .devcard h3) input.title-input:focus { background: var(--card); border: 2px solid var(--ink); }
+  :is(.template-head, .devcard h3) input.title-input::placeholder { color: var(--muted); }
+  /* A device's heading: fold button (chevron and badge), the name, a pencil. */
+  .devcard h3 { display: flex; align-items: center; gap: 2px; min-width: 0; }
+  .devcard h3 input.title-input { min-width: 4ch; }
+  .devcard h3 .edit-hint { font-size: 18px; }
   .edit-hint { font-size: 22px; cursor: pointer; padding: 0 4px; user-select: none; }
   .template-head .rule { flex: 1; min-width: 24px; border-bottom: 2px dotted var(--ink); }
   section.template-card .template-head h2::after { display: none; }
   section.template-card .template-head h2 { flex: none; }
   .file-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  /* Tempo and clock share the template row, pushed to its right-hand end. */
+  /* Labels on the top line (tempo's, then the clock checkbox), the tempo field below. */
+  .key-fields { display: flex; gap: 12px; align-items: end; margin-left: auto; }
+  .key-fields + .timing { margin-left: 0; }
+  .timing { display: grid; grid-template-columns: auto auto; gap: 4px 20px; align-items: end; margin-left: auto; }
+  .timing-label { font-size: 15px; color: var(--muted); }
+  .timing .clock { min-height: 0; }
+  .timing #tempo { grid-column: 1; }
   /* The template holds the other sections: they sit inside its frame. */
   section.template-card { background: var(--frame); display: grid; gap: 16px; }
   section.template-card h2 { margin-bottom: 0; }
   .template-parts { display: grid; gap: 16px; }
 
-  /* Switch map: two columns, like the board */
-  .panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
-  .column { display: grid; gap: 10px; align-content: start; }
-  .column h3 { margin: 0; font-size: 15px; color: var(--muted); font-weight: 600; }
-  .tile {
-    border: 2px solid var(--line); border-left-width: 12px;
-    padding: 8px 12px; display: grid; gap: 4px; min-height: 76px;
-    transition: background-color 60ms, border-color 60ms;
-  }
-  .tile.used { border-left-color: var(--mcolour); }
-  .tile.down { background: var(--pressed); color: var(--pressed-text); }
-  .tile-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; height: 26px; }
-  .tile-head strong { font-size: 17px; line-height: 26px; }
-  .tile-event { font-size: 14px; line-height: 26px; color: var(--muted); white-space: nowrap; }
-  .tile.down .tile-event { color: var(--pressed-text); }
-  .tile-who { display: flex; align-items: center; gap: 8px; font-size: 15px; }
-  .tile-who.free { color: var(--muted); }
-  .tile.down .tile-who.free { color: var(--pressed-text); }
+  /* The interface: a drawing of the box (boardview.js). */
+  .board-view svg { display: block; width: 100%; height: auto; }
+  .board-view .bv-input.pickable { cursor: pointer; }
+  .board-view .bv-input.pickable:hover .bv-hit { fill: rgba(255, 255, 255, 0.12); }
+  /* A chosen switch: its row on the box is lit and outlined. */
+  .board-view .bv-input.selected .bv-hit { fill: rgba(255, 255, 255, 0.24); stroke: #fff; stroke-width: 0.7; stroke-dasharray: 1.6 1; }
+  .board-view .bv-input:focus { outline: none; }
+  .board-view .bv-input:focus-visible .bv-hit { stroke: #fff; stroke-width: 0.6; }
 
-  .analog-row { display: grid; grid-template-columns: minmax(10ch, auto) minmax(0, auto) 1fr 4ch; gap: 12px; align-items: center; }
-  .map-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-  .analog-cal { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 20px; }
-  .analog-cal:last-child { margin-bottom: 0; }
+  /* V1 and V2 share one grid, so their menus, buttons and knobs line up. */
+  #analog { display: grid; grid-template-columns: 3ch minmax(0, auto) auto auto; justify-content: start; gap: 12px 14px; align-items: center; }
+  .analog-row { display: contents; }
+  .analog-name { font-weight: bold; }
+  #channel { width: 9ch; }
+  /* The value knob: a grey track, the value in ink, the number in the middle. */
+  .knob svg { display: block; }
+  .knob-track { stroke: var(--line); stroke-width: 4; }
+  .knob-value { stroke: var(--ink); stroke-width: 4; }
+  .knob-pointer { stroke: var(--ink); stroke-width: 2.5; stroke-linecap: round; }
+  .knob-text { fill: var(--text); font-size: 12px; font-family: inherit; font-variant-numeric: tabular-nums; }
+  .analog-cal { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .analog-row .cal-text { grid-column: 2 / -1; margin-top: -6px; }
+  .analog-row .cal-text:empty { display: none; }
+  .analog-settings { margin-bottom: 16px; }
   .cal-text { color: var(--muted); font-size: 15px; }
   input.slider { min-height: 44px; width: 10rem; margin: 0; border: 0; padding: 0; }
   .meter { height: 14px; background: var(--line); overflow: hidden; }
@@ -183,6 +307,11 @@
   .value { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 
   .check { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 15px; }
+  /* Generator settings: sliders with words at each end. */
+  .gen-settings { display: grid; gap: 12px; }
+  .gen-slider { width: min(17rem, 100%); }
+  .gen-slider input { width: 100%; }
+  .gen-slider .ends { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
   .check input { width: 22px; height: 22px; min-height: 0; margin: 0; }
 
   /* Sequence editor (inside a sequencer or arpeggiator) */
@@ -249,33 +378,46 @@
   .last-note { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 
+  /* The switches card, at the top: a small drawing of the box, with the
+     choosing (and the device menu) beside it. Stacked on narrow screens. */
+  .switch-picker { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
+  .switch-picker .board-view { max-width: 260px; }
+  @media (max-width: 700px) {
+    .switch-picker { grid-template-columns: minmax(0, 1fr); }
+    .switch-picker .board-view { margin: 0 auto; width: 100%; }
+  }
+
   @media (max-width: 640px) {
     body { font-size: 16px; }
     main { padding: 16px 8px; }
     section.card { padding: 14px 12px 16px; }
     section.template-card { padding: 12px 8px; }
     .panel { grid-template-columns: minmax(0, 1fr); }
-    .analog-row { grid-template-columns: minmax(0, 1fr) 4ch; }
-    .analog-row .analog-map { grid-column: 1 / -1; }
-    .role, .role.key { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    #analog { grid-template-columns: 3ch minmax(0, 1fr) auto; }
+    .analog-row .analog-cal { grid-column: 2 / -1; }
+    .role, .role.key, .role.sw-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .role .role-name { grid-column: 1 / -1; }
-    .musician { padding: 10px 10px 12px; border-left-width: 10px; }
+    .devcard { padding: 10px 10px 12px; border-left-width: 10px; }
   }
 </style>
 <link rel="stylesheet" href="brand.css">
 </head>
-<body>
+<body class="offline">
 <header>
-  <h1><img src="img/ng_logo.png" alt="noise guaranteed" width="56" height="56"> switchcraft</h1>
-  <div class="status" role="status" aria-live="polite">
-    <span class="dot" id="dot"></span><span id="conn-text">Not connected</span>
+  <div class="header-side header-left">
+    <h1><span class="header-logo" id="header-logo"></span> switchcraft</h1>
+    <div class="status" role="status" aria-live="polite">
+      <span class="dot" id="dot"></span><span id="conn-text">Not connected</span>
+    </div>
+    <button class="primary" id="connect">Connect</button>
   </div>
-  <button class="primary" id="connect">Connect</button>
-  <span class="spacer"></span>
-  <span id="save-status" role="status" aria-live="polite"></span>
-  <span id="clock-status" class="clock-status" role="status" hidden></span>
-  <button id="sound" aria-pressed="false" title="Play the board’s notes in this browser">Sound: off</button>
-  <button id="panic" disabled title="Send note-off for every sounding note">All notes off</button>
+  <img class="ng-mark" src="img/ng_logo.png" alt="noise guaranteed" width="56" height="56">
+  <div class="header-side header-right">
+    <span id="save-status" role="status" aria-live="polite"></span>
+    <span id="clock-status" class="clock-status" role="status" hidden></span>
+    <button id="sound" aria-pressed="false" title="Play the board’s notes in this browser">Sound: off</button>
+    <button id="panic" disabled title="Send note-off for every sounding note">All notes off</button>
+  </div>
 </header>
 <div class="topband">
   <canvas class="noise" aria-hidden="true" data-seed="switchcraft" data-style="stripes" data-palette="wash" data-cell="3" data-density="0.85" data-drift="1"></canvas>
@@ -291,30 +433,30 @@
   </div>
 
   <section class="card template-card" aria-labelledby="template-h">
+    <!-- Shown only until a board is connected: the logo, gently bubbling. -->
+    <div class="offline-logo" id="offline-logo"></div>
     <!-- The heading is the template's name, edited in place. -->
     <div class="template-head">
-      <h2 id="template-h"><input type="text" id="name" class="title-input" maxlength="16" autocomplete="off" spellcheck="false" aria-label="Template name" placeholder="Untitled"></h2>
+      <h2 id="template-h"><button type="button" id="slot-button" class="slot-button keep-enabled" aria-haspopup="menu" aria-expanded="false" aria-controls="slot-menu"><span id="slot-number">1</span><span class="chev" aria-hidden="true">▾</span></button><input type="text" id="name" class="title-input" maxlength="16" autocomplete="off" spellcheck="false" aria-label="Template name" placeholder="Untitled"></h2>
       <label for="name" class="edit-hint" aria-hidden="true" title="Rename the template">✎</label>
       <span class="rule" aria-hidden="true"></span>
     </div>
     <div class="row">
-      <div class="field">
-        <span id="slots-label">Template</span>
-        <div class="slots" id="slots" role="group" aria-labelledby="slots-label"></div>
-      </div>
       <div class="file-actions">
         <button id="save-file" class="keep-enabled quiet" aria-label="Save the template to a file">Save</button>
         <button id="open-file" class="keep-enabled quiet" aria-label="Open a template file">Open</button>
+        <button id="clear-template" class="keep-enabled quiet" aria-label="Clear the template: no devices, every switch free">Clear</button>
       </div>
       <input type="file" id="file-input" class="keep-enabled" accept=".json,application/json" hidden>
-    </div>
-    <div class="row">
-      <label class="field">Key <select id="root"></select></label>
-      <label class="field">Scale <select id="scale"></select></label>
-      <label class="field">Tempo (BPM)
+      <div class="key-fields">
+        <label class="field">Key <select id="key"></select></label>
+        <label class="field">Scale <select id="scale"></select></label>
+      </div>
+      <div class="timing">
+        <label for="tempo" class="timing-label">Tempo (BPM)</label>
+        <label class="check clock">External MIDI Clock <input type="checkbox" id="follow-clock"></label>
         <input type="number" id="tempo" min="40" max="240" step="1">
-      </label>
-      <label class="check"><input type="checkbox" id="follow-clock"> Follow MIDI clock from a DAW</label>
+      </div>
     </div>
 
     <div class="notice" id="foreign" hidden>
@@ -324,45 +466,47 @@
       </p>
     </div>
 
-    <!-- Everything else a template holds: musicians, switches and analog inputs. -->
+    <!-- Everything else a template holds: switches, devices and variable inputs.
+         Switches come first: choose some, then give them a device. -->
     <div class="template-parts">
 
-    <section class="card" aria-labelledby="musicians-h">
-      <h2 id="musicians-h">musicians</h2>
-      <p class="hint" style="margin: -4px 0 14px;">For each musician: <strong>1.</strong> add a device, such as notes or a sequencer, <strong>2.</strong> choose the switch for each of its jobs (or press <strong>press a switch</strong> and then the switch), <strong>3.</strong> play, and change its notes or shape. Each musician plays on their own MIDI channel, so a DAW can give each one their own sound.</p>
-      <div class="musicians" id="musicians"></div>
-      <div class="row" style="margin-top: 16px;">
-        <button id="add-musician">Add a musician</button>
-      </div>
-      <p class="board-use" id="board-use"></p>
-      <p class="visually-hidden" id="musician-status" role="status" aria-live="polite"></p>
-    </section>
-
-    <section class="card" aria-labelledby="switches-h">
+    <section class="card switches-card" aria-labelledby="interface-h">
       <div class="row" style="justify-content: space-between; align-items: baseline;">
-        <h2 id="switches-h">switches</h2>
+        <h2 id="interface-h">switches</h2>
         <span class="last-note" id="last-note" aria-hidden="true"></span>
       </div>
-      <p class="hint" style="margin: -4px 0 12px;">Who plays each switch, laid out like the board. A switch lights up when it’s pressed.</p>
-      <div class="panel">
-        <div class="column" id="col-left"><h3>Left</h3></div>
-        <div class="column" id="col-right"><h3>Right</h3></div>
+      <div class="switch-picker">
+      <div class="board-view" id="board-view"></div>
+      <div class="selection">
+        <p id="sel-text" aria-live="polite"></p>
+        <div class="row">
+          <button type="button" id="learn" class="quiet" aria-pressed="false">Learn</button>
+          <button type="button" id="sel-clear" class="quiet" hidden>Clear choice</button>
+        </div>
+        <div class="add-device" id="new-device" role="group" aria-label="Choose a device for the chosen switches" hidden></div>
       </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="devices-h">
+      <h2 id="devices-h">devices</h2>
+      <div class="devices" id="devices"></div>
+      <p class="board-use" id="board-use"></p>
+      <p class="visually-hidden" id="device-status" role="status" aria-live="polite"></p>
     </section>
 
     <section class="card" aria-labelledby="analog-h">
-      <h2 id="analog-h">analog inputs</h2>
-      <div id="analog"></div>
-      <div class="row">
-        <label class="field">MIDI channel for the analog inputs <select id="channel"></select></label>
+      <h2 id="analog-h">variable inputs</h2>
+      <div class="row analog-settings">
+        <label class="field">MIDI channel <select id="channel"></select></label>
       </div>
-      <p class="hint">For the Logitech variable triggers, expression pedals and other variable sensors. Each sends a MIDI controller (CC) as it moves. The range starts set for the Logitech triggers. For anything else, use <strong>Set range</strong> so it covers the whole bar, and <strong>Invert</strong> if it moves the wrong way. The range belongs to the board, so it applies to every template. <strong>Reversed</strong> flips an input in this template only. To change a musician’s sound, use the same channel as that musician.</p>
+      <div id="analog"></div>
     </section>
     </div>
   </section>
 
   <section class="card" id="sound-card" aria-labelledby="sound-h">
-    <h2 id="sound-h">sound in this browser</h2>
+    <h2 id="sound-h">browser sound</h2>
     <div class="row">
       <label class="field">Sound <select id="synth-sound"></select></label>
       <label class="field">Volume
@@ -376,7 +520,7 @@
         <input type="range" id="echo-level" min="0" max="100" step="1" class="slider">
       </label>
     </div>
-    <p class="hint">Turn on with the <strong>Sound</strong> button at the top. The browser plays everything the board sends, for every musician, in one sound. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74). A DAW or synth on the board’s first MIDI port still gets everything as well, on each musician’s channel. Settings here only affect this browser and are not saved to the board.</p>
+    <p class="hint full">Turn on with the <strong>Sound</strong> button at the top. The browser plays everything the board sends, for every device, in one sound. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74).</p>
   </section>
 </main>
 
@@ -473,6 +617,10 @@
 <script src="vendor/noiseguaranteed/motion.js"></script>
 <script src="switchcraft.js"></script>
 <script src="band.js"></script>
+<script src="generator.js"></script>
+<script src="boardview.js"></script>
+<script src="logo.js"></script>
+<script src="logoview.js"></script>
 <script src="synth.js"></script>
 <script src="pianoroll.js"></script>
 <script>
@@ -482,13 +630,15 @@ const B = SwitchcraftBand;
 const $ = (id) => document.getElementById(id);
 
 // Panel layout (docs/pin-map.md): input numbers in each column, top to bottom.
-const COLUMNS = { 'col-left': [0, 1, 2, 3, 4, 10], 'col-right': [5, 6, 7, 8, 9, 11] };
-const SWITCH_LABEL = (i) => (i < 10 ? `Switch ${i + 1}` : i === 10 ? 'Left button' : 'Right button');
-const ANALOG_LABEL = ['Left analog jack', 'Right analog jack'];
+const SWITCH_LABEL = (i) => (i < 10 ? `Switch ${i + 1}` : i === 10 ? 'V1 button' : 'V2 button');
+// The two variable (continuous) inputs, V1 and V2 on the box.
+const ANALOG_LABEL = ['V1', 'V2'];
 const CC_CHOICES = [
   [null, 'Off'], [1, 'Modulation (CC 1)'], [2, 'Breath (CC 2)'], [7, 'Volume (CC 7)'],
   [10, 'Pan (CC 10)'], [11, 'Expression (CC 11)'], [71, 'Resonance (CC 71)'],
   [74, 'Brightness (CC 74)'],
+  // MIDI leaves these undefined, so they change nothing in a DAW until mapped.
+  [20, 'CC 20 (unassigned)'], [21, 'CC 21 (unassigned)'],
 ];
 const GATE_CHOICES = [['hold', 'Sounds while held'], ['latch', 'Press on, press off'], ['oneshot', 'Short note']];
 const SEQ_GATE_CHOICES = [['hold', 'Plays while held'], ['latch', 'Press start, press stop'], ['oneshot', 'Plays once through']];
@@ -497,7 +647,7 @@ const LOCKOUT_CHOICES = [[0, 'Off'], [100, '0.1 s'], [250, '0.25 s'], [500, '0.5
 // How long a press lasts before it counts as held (shown on the switch map).
 const HOLD_CHOICES = [[250, '0.25 s'], [500, '0.5 s'], [750, '0.75 s'], [1000, '1 s'], [1500, '1.5 s'], [2000, '2 s'], [3000, '3 s']];
 const MOD_GATE_CHOICES = [['hold', 'While held'], ['latch', 'Press start, press stop'], ['oneshot', 'Once per press']];
-// General MIDI drums, named for musicians on channel 10.
+// General MIDI drums, named for devices on channel 10.
 const DRUMS = {
   35: 'Kick 2', 36: 'Kick', 37: 'Side stick', 38: 'Snare', 39: 'Clap', 40: 'Snare 2', 41: 'Low floor tom',
   42: 'Closed hi-hat', 43: 'High floor tom', 44: 'Pedal hi-hat', 45: 'Low tom', 46: 'Open hi-hat',
@@ -520,7 +670,7 @@ const LENGTH_PRESS = [[0, 'Until the next note'], [25, 'Very short'], [50, 'Shor
 let currentSeq = 0;
 let currentMod = 0;
 
-// The band being edited: the form model plus musicians (band.js).
+// The band being edited: the form model plus devices (band.js).
 let form = B.TEMPLATES[0].band();
 let board = null;
 let midiAccess = null;
@@ -528,8 +678,6 @@ let activeSlot = 0;
 let slotNames = [];
 let editable = true;
 let openDevice = null;  // the device whose notes or shape are showing
-let listening = null;   // {device, slot, id, label}: waiting for a switch press
-let addOpen = null;     // the musician whose "add another device" list is open
 
 // Browser synth. Its sound and volume are remembered in this browser only.
 const synth = new SwitchcraftSynth.Synth();
@@ -582,7 +730,10 @@ function setConn(state, text) {
   $('connect').hidden = state === 'on';
   $('connect').disabled = state === 'busy';
   $('panic').disabled = state !== 'on';
-  updateListenButtons();
+  // The editor stays blank until the board is connected.
+  document.body.classList.toggle('offline', state !== 'on');
+  if (state !== 'on') learning = false;
+  renderSelection();
 }
 
 function setSave(text, isError = false) {
@@ -591,16 +742,24 @@ function setSave(text, isError = false) {
 }
 
 function say(text) {
-  $('musician-status').textContent = '';
-  setTimeout(() => { $('musician-status').textContent = text; }, 30);
+  $('device-status').textContent = '';
+  setTimeout(() => { $('device-status').textContent = text; }, 30);
 }
 
 // --- Notes ---
 
-function scaleNoteChoices() {
+// The octave a device's scale notes are counted from: the template's, moved
+// by the device's own octave setting (band.js).
+function deviceOctave(d) {
+  return form.octave + (d && B.usesOctave(form, d) ? d.octave || 0 : 0);
+}
+// The device whose sequence is in the sequence editor.
+const seqOctave = () => deviceOctave(openDevice && openDevice.seq === currentSeq ? openDevice : null);
+
+function scaleNoteChoices(octave = form.octave) {
   const out = [];
   for (let d = -7; d <= 14; d++) {
-    const n = S.degreeToNote(d, form.root, form.octave, form.mask);
+    const n = S.degreeToNote(d, form.root, octave, form.mask);
     if (n >= 0 && n <= 127) out.push([d, S.noteName(n)]);
   }
   return out;
@@ -625,28 +784,43 @@ function countLabel(n) {
   return n ? `${n} note${n === 1 ? '' : 's'}` : 'no notes';
 }
 
-// --- Labels for musicians, devices and switches ---
+// --- Labels for devices and switches ---
 
-const musicianOf = (d) => form.musicians.find((m) => m.devices.includes(d));
 const deviceName = (d) => B.DEVICES[d.kind].name;
-const possessive = (name) => `${name || 'Unnamed'}’s`;
+const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
-function slotLabel(d, slot) {
-  if (slot.key !== undefined) return `note ${slot.key + 1}`;
-  const r = B.roles(form, d).find(([k]) => k === slot.role);
-  return r ? r[1] : slot.role;
+// A device's title when it has no name: its kind, numbered if there are several.
+function defaultTitle(d) {
+  const same = form.devices.filter((x) => x.kind === d.kind);
+  return capital(same.length > 1 ? `${deviceName(d)} ${same.indexOf(d) + 1}` : deviceName(d));
+}
+const deviceTitle = (d) => d.name || defaultTitle(d);
+
+// "switch 3", or "switches 1, 2 and 5".
+function listInputs(inputs) {
+  const names = [...inputs].sort((a, b) => a - b).map((i) => (i < 10 ? String(i + 1) : i === 10 ? 'V1' : 'V2'));
+  if (!names.length) return 'no switches';
+  const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `switch${names.length > 1 ? 'es' : ''} ${joined}`;
+}
+
+function noteLabel(d, value) {
+  if (d.noteType === 'scale') {
+    const n = S.degreeToNote(value, form.root, deviceOctave(d), form.mask);
+    return n >= 0 && n <= 127 ? S.noteName(n) : `degree ${value}`;
+  }
+  return d.channel === 9 && DRUMS[value] ? DRUMS[value] : S.noteName(value);
+}
+
+// What a switch does: its note, or its job.
+function slotLabel(s) {
+  if (s.value !== undefined) return noteLabel(s.device, s.value);
+  const r = B.roles(form, s.device).find(([k]) => k === s.role);
+  return r ? r[1] : s.role;
 }
 
 function who(s) {
-  return `${possessive(s.musician.name)} ${deviceName(s.device)} (${slotLabel(s.device, s)})`;
-}
-
-function noteLabel(m, d, value) {
-  if (d.noteType === 'scale') {
-    const n = S.degreeToNote(value, form.root, form.octave, form.mask);
-    return n >= 0 && n <= 127 ? S.noteName(n) : `degree ${value}`;
-  }
-  return m.channel === 9 && DRUMS[value] ? DRUMS[value] : S.noteName(value);
+  return `${deviceTitle(s.device)} (${slotLabel(s)})`;
 }
 
 function outputLabel(mod) {
@@ -656,21 +830,14 @@ function outputLabel(mod) {
   return c ? c[1].toLowerCase() : `CC ${mod.cc}`;
 }
 
-function switchChoices(d, slot) {
-  const here = (s) => s.device === d && s.role === slot.role && s.key === slot.key;
-  return [[null, 'No switch'], ...Array.from({ length: S.NUM_INPUTS }, (_, i) => {
-    const s = B.owner(form, i);
-    return [i, s && !here(s) ? `${SWITCH_LABEL(i)} (now ${s.musician.name || 'Unnamed'})` : SWITCH_LABEL(i)];
-  })];
-}
-
-// --- Musicians ---
+// --- Devices ---
 
 const deviceIds = new Map();
+const accessOpen = new WeakSet();   // devices whose access settings are showing
 
-function deviceSummary(m, d) {
+function deviceSummary(d) {
   if (d.kind === 'notes') {
-    const notes = d.keys.map((k) => noteLabel(m, d, k.value));
+    const notes = d.switches.map((s) => noteLabel(d, s.value));
     return notes.length ? notes.join(' · ') : 'no notes yet';
   }
   if (d.kind === 'seq' || d.kind === 'arp') {
@@ -680,335 +847,539 @@ function deviceSummary(m, d) {
   }
   if (d.kind === 'lfo' || d.kind === 'env') {
     const mod = form.modulators[d.mod];
-    const target = d.target === null || d.target === undefined ? null : form.musicians.find((x) => x.channel === d.target && x !== m);
-    const on = target ? ` · on ${possessive(target.name)} sound` : d.target !== null && d.target !== undefined ? ` · on channel ${d.target + 1}` : '';
+    const on = d.target ? ` · on ${deviceTitle(d.target)}` : ` · on channel ${d.channel + 1}`;
     return d.kind === 'lfo' ? `${mod.wave} wave · ${outputLabel(mod)}${on}` : `${outputLabel(mod)}${on}`;
+  }
+  if (d.kind === 'gen') {
+    const g = B.generatorsOf(form)[d.gen];
+    const home = g.phraseLen ? `comes home every ${g.phraseLen}` : 'never comes home';
+    return `${home} · ${g.loopLen ? `remembers its tune, changes ${g.change}%` : 'always new'}`;
   }
   return 'for everyone';
 }
 
-function deviceWarning(m, d) {
+// One line for a folded device: what it does and its switches.
+function deviceLine(d) {
+  return `${deviceSummary(d)} · ${listInputs(d.switches.map((s) => s.input))}`;
+}
+
+function deviceWarning(d) {
   if ((d.kind === 'seq' || d.kind === 'arp') && !form.sequences[d.seq].notes.length)
     return 'No notes yet: use “change notes” to add some.';
-  if (d.kind === 'notes' && !d.keys.length) return 'No notes yet: use “add a note”.';
-  const switches = B.slots(form).filter((s) => s.device === d).length;
   const follows = d.kind === 'env' && form.modulators[d.mod].follow !== null;
-  if (!switches && !follows) return 'No switch yet: choose one, or use “press a switch” and then press it.';
+  if (!d.switches.length && !follows) return 'No switch yet: choose a switch on the box, then “add it here”.';
   return '';
 }
 
-// Updates the summaries, warnings and switch map without rebuilding the cards
-// (used while notes and shapes are edited, so focus stays put).
+// The jobs still free, as a hint for the next switch.
+function moreHint(d) {
+  const free = B.freeRoles(form, d).map(([, label]) => label);
+  if (!free.length || !d.switches.length) return '';
+  return `Another switch would do: ${free.join(', ')}${free.length > 1 ? ' (in that order)' : ''}.`;
+}
+
+// Updates the summaries, warnings and box drawing without rebuilding the
+// cards (used while notes and shapes are edited, so focus stays put).
 function renderStatus() {
-  for (const m of form.musicians) for (const d of m.devices) {
+  for (const d of form.devices) {
     const id = deviceIds.get(d);
     if (!id || !$(`${id}-sum`)) continue;
-    $(`${id}-sum`).textContent = deviceSummary(m, d);
-    const warn = deviceWarning(m, d);
+    $(`${id}-sum`).textContent = deviceSummary(d);
+    $(`${id}-line`).textContent = deviceLine(d);
+    const warn = deviceWarning(d);
     $(`${id}-warn`).textContent = warn;
     $(`${id}-warn`).hidden = !warn;
   }
-  renderSwitchMap();
+  renderSelection();
   renderBoardUse();
 }
 
 function renderBoardUse() {
-  const seqs = B.seqIdsInUse(form).size;
-  const mods = B.modIdsInUse(form).size;
-  const used = S.NUM_INPUTS - B.freeInputs(form).length;
-  $('board-use').textContent = `The board has room for 4 sequencers and arpeggiators (${seqs} used), ` +
-    `4 wobbles and swells (${mods} used) and 12 switches (${used} used).` +
+  // Only the firmware warnings: the room left shows on the device menu.
+  const gens = B.genIdsInUse(form).size;
+  $('board-use').textContent =
     (!perInputLockout() && B.inputSettings(form).perInput
-      ? ` This board’s firmware is older than 0.7.0, so everyone gets the longest “ignore repeat presses” and “counts as held” times. Update it to set these per musician.`
+      ? 'This board’s firmware is older than 0.7.0, so every switch gets the longest “ignore repeat presses” and “counts as held” times. Update it to set these per switch. '
+      : '') +
+    (gens && !generatorsOnBoard()
+      ? 'This board’s firmware is older than 0.8.0, so melody generators play in this browser only: turn Sound on to hear them. Update the firmware to play them from the board.'
       : '');
+  $('board-use').hidden = !$('board-use').textContent;
 }
 
-function renderMusicians() {
+function renderDevices() {
   const focusId = document.activeElement && document.activeElement.id;
   // Park the shared editors before the cards are rebuilt.
   $('editors').append($('seq-editor'), $('mod-editor'));
-  if (openDevice && !musicianOf(openDevice)) openDevice = null;
-  if (listening && !musicianOf(listening.device)) listening = null;
+  if (openDevice && !form.devices.includes(openDevice)) openDevice = null;
   deviceIds.clear();
-  const box = $('musicians');
-  box.replaceChildren(...form.musicians.map(musicianCard));
-  if (!form.musicians.length)
-    box.append(el('p', { className: 'hint', textContent: 'No musicians yet. Add one to start, or use a template.' }));
-  $('add-musician').disabled = form.musicians.length >= B.MAX_MUSICIANS;
+  const box = $('devices');
+  box.replaceChildren(...form.devices.map(deviceCard));
+  if (!form.devices.length)
+    box.append(el('p', { className: 'hint full', textContent: 'No devices yet. Choose one or more switches on the box, then select a device for them.' }));
   if (openDevice) {
     if (openDevice.kind === 'seq' || openDevice.kind === 'arp') {
       currentSeq = openDevice.seq;
       renderSeq();
-    } else {
+    } else if (openDevice.kind === 'lfo' || openDevice.kind === 'env') {
       currentMod = openDevice.mod;
       renderMod();
     }
   }
   setEditable(editable);
   renderStatus();
+  renderActivity();
   if (focusId && $(focusId) && document.activeElement !== $(focusId)) $(focusId).focus();
 }
 
-function musicianCard(m, mi) {
-  const id = `m${mi}`;
-  const c = B.COLOURS[m.colour];
-  const nameText = el('span', { textContent: m.name || 'Unnamed' });
-  const card = el('article', { className: 'musician', 'aria-labelledby': `${id}-h` },
-    el('h3', { id: `${id}-h` }, el('span', { className: 'badge', textContent: c.symbol, 'aria-hidden': 'true' }), nameText));
-  card.style.setProperty('--mcolour', c.hex);
+function setFolded(d, folded) {
+  closePalette();
+  d.collapsed = folded;
+  renderDevices();
+  changed();
+}
 
-  const name = el('input', { type: 'text', id: `${id}-name`, value: m.name, maxLength: 24, autocomplete: 'off', spellcheck: false });
+// --- Colour palette: the badge opens a grid of the 10 colours, each with its
+// symbol. A fixed palette keeps black text readable on every colour. Colours
+// another device already has are marked with a dot (but can still be picked).
+let palette = null;   // { box, badge }
+
+function closePalette(refocus = false) {
+  if (!palette) return;
+  const { box, badge } = palette;
+  palette = null;
+  box.remove();
+  badge.setAttribute('aria-expanded', 'false');
+  if (refocus) badge.focus();
+}
+
+function openPalette(d, badge) {
+  const again = palette && palette.badge === badge;
+  closePalette();
+  if (again) return;   // a second click on the badge closes it
+  const title = deviceTitle(d);
+  const box = el('div', { className: 'palette', role: 'radiogroup', 'aria-label': `Colour for ${title}` });
+  const swatches = B.COLOURS.map((c, i) => {
+    const holder = form.devices.find((x) => x !== d && x.colour === i);
+    const s = el('button', { type: 'button', className: `badge swatch${holder ? ' taken' : ''}`, role: 'radio',
+      'aria-checked': String(i === d.colour), tabIndex: i === d.colour ? 0 : -1, textContent: c.symbol,
+      'aria-label': `${c.name}${holder ? `, ${deviceTitle(holder)} has it` : ''}`,
+      title: `${c.name}${holder ? ` (${deviceTitle(holder)} has it)` : ''}` });
+    s.style.setProperty('--mcolour', c.hex);
+    s.addEventListener('click', () => {
+      closePalette();
+      if (d.colour !== i) {
+        d.colour = i;
+        renderDevices();
+        changed();
+      }
+      $(badge.id)?.focus();
+      say(`${title} is ${c.name}.`);
+    });
+    return s;
+  });
+  box.append(...swatches);
+  // Arrow keys move around the 5 × 2 grid; Esc closes; Tab leaves it.
+  box.addEventListener('keydown', (e) => {
+    const at = swatches.indexOf(document.activeElement);
+    const n = swatches.length;
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 5, ArrowUp: -5 }[e.key];
+    let to = null;
+    if (step !== undefined) to = (at + step + n) % n;
+    else if (e.key === 'Home') to = 0;
+    else if (e.key === 'End') to = n - 1;
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePalette(true); return; }
+    if (to === null) return;
+    e.preventDefault();
+    swatches.forEach((s, i) => { s.tabIndex = i === to ? 0 : -1; });
+    swatches[to].focus();
+  });
+  box.addEventListener('focusout', (e) => {
+    if (palette && palette.box === box && !box.contains(e.relatedTarget) && e.relatedTarget !== badge) closePalette();
+  });
+  badge.after(box);
+  badge.setAttribute('aria-expanded', 'true');
+  palette = { box, badge };
+  swatches[d.colour].focus();
+}
+
+// A click away from the palette closes it.
+document.addEventListener('pointerdown', (e) => {
+  if (palette && !palette.box.contains(e.target) && e.target !== palette.badge) closePalette();
+});
+
+// Shows the device that has a switch: opens it, scrolls to the switch's
+// row and highlights it. With focus, the keyboard goes to the row's menu.
+function showSwitch(i, focus = false, scroll = true) {
+  const s = B.owner(form, i);
+  if (!s) return;
+  if (s.device.collapsed) setFolded(s.device, false);
+  const id = deviceIds.get(s.device);
+  const card = id && $(id);
+  const row = card && card.querySelector(`.role[data-input="${i}"]`);
+  const target = row || card;
+  if (!target) return;
+  if (scroll) target.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  target.classList.remove('found');
+  void target.offsetWidth;   // restart the highlight if it's already showing
+  target.classList.add('found');
+  setTimeout(() => target.classList.remove('found'), 1600);
+  if (focus) (row && row.querySelector('select'))?.focus({ preventScroll: true });
+}
+
+function deviceCard(d, di) {
+  const id = `d${di}`;
+  deviceIds.set(d, id);
+  const info = B.DEVICES[d.kind];
+  const c = B.COLOURS[d.colour];
+  const collapsed = !!d.collapsed;
+  // The name is edited in place in the heading, with a pencil, like the
+  // template's. Unnamed, it shows its kind.
+  const name = el('input', { type: 'text', id: `${id}-name`, className: 'title-input', value: d.name, maxLength: 24,
+    autocomplete: 'off', spellcheck: false, placeholder: defaultTitle(d), 'aria-label': `Name for this ${deviceName(d)}` });
+  const toggleLabel = () => `${d.collapsed ? 'Show' : 'Fold away'} ${deviceTitle(d)}`;
+  const toggle = el('button', { type: 'button', id: `${id}-toggle`, className: 'quiet devcard-toggle keep-enabled',
+    'aria-expanded': String(!collapsed), 'aria-controls': `${id}-body`, 'aria-label': toggleLabel(),
+    title: collapsed ? 'Show this device' : 'Fold this device away' },
+  el('span', { className: 'chev', textContent: collapsed ? '▸' : '▾', 'aria-hidden': 'true' }));
+  toggle.addEventListener('click', () => setFolded(d, !d.collapsed));
+  const badge = el('button', { type: 'button', id: `${id}-colour`, className: 'badge colour-button',
+    textContent: c.symbol, 'aria-haspopup': 'true', 'aria-expanded': 'false',
+    'aria-label': `Colour: ${c.symbol} ${c.name}`, title: 'Choose a colour' });
+  badge.addEventListener('click', () => openPalette(d, badge));
+  const remove = el('button', { type: 'button', id: `${id}-remove`, className: 'quiet remove-devcard', textContent: '✕',
+    'aria-label': `Remove ${deviceTitle(d)}`, title: 'Remove this device' });
+  remove.addEventListener('click', () => {
+    const title = deviceTitle(d);
+    if (!confirm(`Remove ${title}? Its switches will be free again.`)) return;
+    B.removeDevice(form, d);
+    renderDevices();
+    changed();
+    say(`Removed ${title}.`);
+    (document.querySelector('.bv-input[data-input="0"]') || $('devices')).focus();
+  });
+  const kind = el('span', { className: 'kind', textContent: `${capital(info.name)}${info.sub ? ` (${info.sub})` : ''}`, hidden: !d.name });
+  const line = el('span', { className: 'devcard-summary', id: `${id}-line`, hidden: !collapsed, textContent: deviceLine(d) });
+  const body = el('div', { className: 'devcard-body', id: `${id}-body`, hidden: collapsed });
+  const card = el('article', { className: `devcard${collapsed ? ' collapsed' : ''}`, id, 'aria-label': deviceTitle(d), 'data-device': di },
+    el('div', { className: 'devcard-head' },
+      el('h3', { id: `${id}-h` }, toggle, badge, name,
+        el('label', { htmlFor: `${id}-name`, className: 'edit-hint', textContent: '✎', title: 'Name this device', 'aria-hidden': 'true' })),
+      kind, line, remove),
+    body);
+  card.style.setProperty('--mcolour', c.hex);
+  // Folded, a click anywhere on the line opens it.
+  card.addEventListener('click', (e) => {
+    if (!d.collapsed || e.target.closest('button, input, select, label, .palette')) return;
+    setFolded(d, false);
+    $(`${id}-toggle`)?.focus();
+  });
   name.addEventListener('input', () => {
-    m.name = name.value;
-    nameText.textContent = m.name || 'Unnamed';
+    d.name = name.value;
+    kind.hidden = !d.name;
+    card.setAttribute('aria-label', deviceTitle(d));
+    toggle.setAttribute('aria-label', toggleLabel());
+    remove.setAttribute('aria-label', `Remove ${deviceTitle(d)}`);
     renderSwitchMap();
     changed();
   });
-  const colour = el('select', { id: `${id}-colour` });
-  options(colour, B.COLOURS.map((x, i) => [i, `${x.symbol} ${x.name}`]), m.colour);
-  colour.addEventListener('change', () => { m.colour = Number(colour.value); renderMusicians(); changed(); });
-  const channel = el('select', { id: `${id}-channel` });
-  options(channel, Array.from({ length: 16 }, (_, i) => [i, `${i + 1}${i === 9 ? ' (drums)' : ''}`]), m.channel);
-  channel.addEventListener('change', () => {
-    const was = m.channel;
-    m.channel = Number(channel.value);
-    // Wobbles and swells that changed this musician's sound follow them.
-    for (const x of form.musicians) for (const d of x.devices) if (d.target === was && x !== m) d.target = m.channel;
-    renderMusicians();
-    changed();
-  });
-  const remove = el('button', { type: 'button', id: `${id}-remove`, className: 'quiet remove-musician', textContent: 'Remove musician' });
-  remove.setAttribute('aria-label', `Remove ${m.name || 'this musician'}`);
-  remove.addEventListener('click', () => {
-    if (m.devices.length && !confirm(`Remove ${m.name || 'this musician'} and their devices?`)) return;
-    B.removeMusician(form, m);
-    renderMusicians();
-    changed();
-    say(`Removed ${m.name || 'the musician'}.`);
-    $('add-musician').focus();
-  });
-  const loud = el('input', { type: 'number', id: `${id}-velocity`, min: 1, max: 127, value: m.velocity });
-  loud.addEventListener('change', () => {
-    m.velocity = Math.min(127, Math.max(1, Math.round(Number(loud.value)) || 100));
-    loud.value = m.velocity;
-    changed();
-  });
-  const lockout = el('select', { id: `${id}-lockout` });
-  options(lockout, withValue(LOCKOUT_CHOICES, m.lockoutMs, `${m.lockoutMs} ms`), m.lockoutMs);
-  lockout.addEventListener('change', () => { m.lockoutMs = Number(lockout.value); renderBoardUse(); changed(); });
-  const hold = el('select', { id: `${id}-hold` });
-  options(hold, withValue(HOLD_CHOICES, m.holdMs, `${m.holdMs} ms`), m.holdMs);
-  hold.addEventListener('change', () => { m.holdMs = Number(hold.value); renderBoardUse(); changed(); });
-  card.append(el('div', { className: 'musician-settings' },
-    field('Name', name), field('Colour', colour), field('MIDI channel', channel),
-    field('Loudness (velocity)', loud), field('Ignore repeat presses within', lockout),
-    field('A press counts as held after', hold), remove));
+  name.addEventListener('keydown', (e) => { if (e.key === 'Enter') name.blur(); });
 
-  m.devices.forEach((d, di) => card.append(deviceCard(m, d, `${id}-d${di}`)));
+  const settings = soundSettings(d, id);
+  if (settings) body.append(settings);
+  body.append(el('p', { className: 'sum', id: `${id}-sum` }));
 
-  const adds = el('div', { className: 'add-device', role: 'group', 'aria-label': `Add a device for ${m.name || 'this musician'}` });
-  for (const kind of B.KINDS) {
-    const info = B.DEVICES[kind];
-    const room = B.canAdd(form, kind);
-    const b = el('button', { type: 'button', id: `${id}-add-${kind}`, className: 'quiet' },
-      el('span', {}, `+ ${info.name}`, info.sub ? ` (${info.sub})` : ''),
-      el('small', { textContent: room ? info.what : `The board is full: remove a ${info.uses === 'seq' ? 'sequencer or arpeggiator' : 'wobble or swell'} first.` }));
-    b.disabled = !room;
-    b.addEventListener('click', () => addDevice(m, kind));
-    adds.append(b);
+  // Its switches, each with its job (or note) and who uses it: notes in the
+  // order they were added, jobs in priority order.
+  const rows = el('div', { className: 'roles' });
+  const order = B.roles(form, d).map(([k]) => k);
+  const shown = d.kind === 'notes' ? d.switches : [...d.switches].sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
+  shown.forEach((s) => rows.append(switchRow(d, s, `${id}-sw${s.input}`)));
+  body.append(rows);
+  const more = moreHint(d);
+  if (more) body.append(el('p', { className: 'hint more', id: `${id}-more`, textContent: more }));
+  body.append(el('div', { className: 'add-here', id: `${id}-addsel` }));
+  if (d.kind === 'notes') {
+    const fill = el('button', { type: 'button', id: `${id}-fill`, className: 'quiet', textContent: 'Use every free switch' });
+    fill.disabled = !B.freeInputs(form).length;
+    fill.addEventListener('click', () => {
+      for (const input of B.freeInputs(form)) B.addSwitch(form, d, input);
+      renderDevices();
+      changed();
+    });
+    body.append(el('div', { className: 'row' }, fill));
   }
-  // Folded away once the musician has a device, so the page stays short.
-  const more = el('details', { className: 'add-more', id: `${id}-more`, open: !m.devices.length || addOpen === m },
-    el('summary', { textContent: m.devices.length ? 'Add another device' : 'Add a device' }), adds);
-  more.addEventListener('toggle', () => { if (more.open) addOpen = m; else if (addOpen === m) addOpen = null; });
-  card.append(more);
-  return card;
-}
+  const access = accessBox(d, id);
+  if (access) body.append(access);
+  const response = responseRow(d, id);
+  if (response) body.append(response);
+  body.append(el('p', { className: 'device-warn', id: `${id}-warn`, role: 'note', hidden: true }));
 
-function addDevice(m, kind) {
-  const d = B.addDevice(form, m, kind);
-  if (!d) return;
-  addOpen = null;
-  if (kind === 'notes') {
-    // Start with the musician's first free switch on the key note.
-    const free = B.freeInputs(form)[0];
-    d.keys.push({ input: free === undefined ? null : free, value: 0 });
-  }
-  renderMusicians();
-  changed();
-  const id = deviceIds.get(d);
-  const first = $(`${id}-r0-sw`);
-  if (first) first.focus();
-  say(`Added a ${deviceName(d)} for ${m.name || 'this musician'}. Now choose its switch.`);
-}
-
-function deviceCard(m, d, id) {
-  deviceIds.set(d, id);
-  const info = B.DEVICES[d.kind];
-  const head = el('div', { className: 'device-head' },
-    el('h4', { id: `${id}-h` }, info.name, info.sub ? el('small', { textContent: ` (${info.sub})` }) : null),
-    el('span', { className: 'sum', id: `${id}-sum` }));
-  const card = el('div', { className: 'device', role: 'group', 'aria-labelledby': `${id}-h` }, head);
-  const label = `${possessive(m.name)} ${info.name}`;
-
-  if (['seq', 'arp', 'lfo', 'env'].includes(d.kind)) {
+  if (['seq', 'arp', 'lfo', 'env', 'gen'].includes(d.kind)) {
     const open = openDevice === d;
     const edit = el('button', { type: 'button', id: `${id}-edit`, className: 'quiet keep-enabled',
-      textContent: open ? 'Done' : d.kind === 'seq' || d.kind === 'arp' ? 'Change notes' : 'Change shape' });
+      textContent: open ? 'Done' : d.kind === 'seq' || d.kind === 'arp' ? 'Change notes'
+        : d.kind === 'gen' ? 'Change how it plays' : 'Change shape' });
     edit.setAttribute('aria-expanded', String(open));
     edit.setAttribute('aria-controls', `${id}-settings`);
     edit.addEventListener('click', () => {
       openDevice = open ? null : d;
-      renderMusicians();
+      renderDevices();
     });
-    head.append(edit);
+    body.append(el('div', { className: 'row' }, edit));
+    const panel = el('div', { className: 'device-settings', id: `${id}-settings`, hidden: !open });
+    if (open) panel.append(d.kind === 'gen' ? genSettings(d, id)
+      : d.kind === 'seq' || d.kind === 'arp' ? $('seq-editor') : $('mod-editor'));
+    body.append(panel);
   }
-  const remove = el('button', { type: 'button', id: `${id}-remove`, className: 'quiet', textContent: 'Remove' });
-  remove.setAttribute('aria-label', `Remove ${label}`);
-  remove.addEventListener('click', () => {
-    const mi = form.musicians.indexOf(m);
-    B.removeDevice(form, m, d);
-    renderMusicians();
-    changed();
-    say(`Removed ${label}.`);
-    const next = $(`m${mi}-add-${d.kind}`);
-    if (next) next.focus();
-  });
-  head.append(remove);
-
-  if (d.kind === 'notes') card.append(...notesBody(m, d, id, label));
-  else {
-    const roles = el('div', { className: 'roles' });
-    B.roles(form, d).forEach(([role, text], ri) => roles.append(roleRow(d, { role }, text, `${id}-r${ri}`, `${label}: ${text}`)));
-    card.append(roles);
-  }
-  const response = responseRow(m, d, id);
-  if (response) card.append(response);
-  card.append(el('p', { className: 'device-warn', id: `${id}-warn`, role: 'note', hidden: true }));
-
-  const settings = el('div', { className: 'device-settings', id: `${id}-settings`, hidden: openDevice !== d });
-  if (openDevice === d) settings.append(d.kind === 'seq' || d.kind === 'arp' ? $('seq-editor') : $('mod-editor'));
-  card.append(settings);
   return card;
 }
 
-// One job: its name, the switch that does it, and a button to choose the
-// switch by pressing it.
-function roleRow(d, slot, text, rowId, fullLabel, extra = []) {
-  const input = slot.key !== undefined ? d.keys[slot.key].input : (d.roles[slot.role] ?? null);
-  const sel = el('select', { id: `${rowId}-sw`, 'aria-label': `${fullLabel}: switch` });
-  options(sel, switchChoices(d, slot), input);
-  sel.addEventListener('change', () => setSwitch(d, slot, sel.value === '' ? null : Number(sel.value)));
-  const waiting = listening && listening.id === rowId;
-  const listen = el('button', { type: 'button', id: `${rowId}-listen`, className: 'listen quiet',
-    textContent: waiting ? 'Waiting… (Esc stops)' : 'Press a switch', 'aria-pressed': String(!!waiting),
-    'aria-label': `${fullLabel}: choose the switch by pressing it`, title: 'Then press the switch on the board' });
-  listen.addEventListener('click', () => {
-    if (listening && listening.id === rowId) stopListening();
-    else startListening(d, slot, rowId, fullLabel);
-  });
-  const row = el('div', { className: `role${slot.key !== undefined ? ' key' : ''}` },
-    el('span', { className: 'role-name', textContent: text }), sel, ...extra, listen);
-  if (input !== null) row.dataset.input = input;
-  return row;
-}
-
-function setSwitch(d, slot, input) {
-  const was = B.assign(form, d, slot, input);
-  renderMusicians();
-  changed();
-  if (was) say(`${SWITCH_LABEL(input)} moved here from ${who(was)}.`);
-}
-
-function notesBody(m, d, id, label) {
-  const type = el('select', { id: `${id}-type` });
-  options(type, [['scale', 'Scale notes (follow the key)'], ['fixed', m.channel === 9 ? 'Drums and fixed notes' : 'Fixed notes']], d.noteType);
-  type.addEventListener('change', () => {
-    d.keys.forEach((k) => { k.value = convertNote(k.value, d.noteType, type.value); });
-    d.noteType = type.value;
-    renderMusicians();
-    changed();
-  });
-  const choices = d.noteType === 'scale' ? scaleNoteChoices() : fixedNoteChoices(true, m.channel === 9);
-  const keys = el('div', { className: 'roles' });
-  d.keys.forEach((k, ki) => {
-    const rowId = `${id}-r${ki}`;
-    const note = el('select', { id: `${rowId}-note`, 'aria-label': `${label}: note ${ki + 1} plays` });
-    options(note, withValue(choices, k.value, noteLabel(m, d, k.value)), k.value);
-    note.addEventListener('change', () => { k.value = Number(note.value); renderStatus(); changed(); });
-    const remove = el('button', { type: 'button', id: `${rowId}-remove`, className: 'quiet', textContent: '✕',
-      'aria-label': `Remove note ${ki + 1}` });
-    remove.addEventListener('click', () => {
-      d.keys.splice(ki, 1);
-      renderMusicians();
+// Channel and loudness for a sound device; what a wobble or swell changes;
+// whether notes follow the key.
+function soundSettings(d, id) {
+  const row = el('div', { className: 'devcard-settings' });
+  const channelSelect = () => {
+    const channel = el('select', { id: `${id}-channel` });
+    options(channel, Array.from({ length: 16 }, (_, i) => [i, `${i + 1}${i === 9 ? ' (drums)' : ''}`]), d.channel);
+    channel.addEventListener('change', () => {
+      d.channel = Number(channel.value);
+      renderDevices();
       changed();
-      ($(`${id}-r${Math.min(ki, d.keys.length - 1)}-remove`) || $(`${id}-addkey`)).focus();
     });
-    keys.append(roleRow(d, { key: ki }, `note ${ki + 1}`, rowId, `${label}, note ${ki + 1}`, [note, remove]));
-  });
-  const nextValue = () => {
-    const last = d.keys.length ? d.keys[d.keys.length - 1].value : null;
-    if (d.noteType === 'scale') return last === null ? 0 : Math.min(last + 1, 14);
-    return last === null ? (m.channel === 9 ? 36 : 60) : Math.min(last + (m.channel === 9 ? 1 : 2), 96);
+    return field('MIDI channel', channel);
   };
-  const add = el('button', { type: 'button', id: `${id}-addkey`, className: 'quiet', textContent: 'Add a note' });
-  add.disabled = d.keys.length >= S.NUM_INPUTS;
-  add.addEventListener('click', () => {
-    d.keys.push({ input: null, value: nextValue() });
-    renderMusicians();
-    changed();
-    $(`${id}-r${d.keys.length - 1}-sw`).focus();
-  });
-  const fill = el('button', { type: 'button', id: `${id}-fill`, className: 'quiet', textContent: 'Use every free switch' });
-  fill.disabled = !B.freeInputs(form).length;
-  fill.addEventListener('click', () => {
-    for (const input of B.freeInputs(form)) d.keys.push({ input, value: nextValue() });
-    renderMusicians();
-    changed();
-  });
-  return [el('div', { className: 'row' }, field('Notes are', type)), keys, el('div', { className: 'row' }, add, fill)];
-}
-
-// How the device responds to its switch (hold, latch, once), and whether it
-// waits for the beat.
-function responseRow(m, d, id) {
-  let choices = null;
-  if (d.kind === 'notes') choices = GATE_CHOICES;
-  else if (d.kind === 'arp' || (d.kind === 'seq' && form.sequences[d.seq].mode === 'clock')) choices = SEQ_GATE_CHOICES;
-  else if (d.kind === 'lfo' || d.kind === 'env') choices = MOD_GATE_CHOICES;
-  const row = el('div', { className: 'row' });
-  if (choices) {
-    const gate = el('select', { id: `${id}-gate` });
-    options(gate, choices, d.gate);
-    gate.addEventListener('change', () => { d.gate = gate.value; changed(); });
-    row.append(field('When its switch is pressed', gate));
-    if (d.kind !== 'notes') {
-      const beat = el('input', { type: 'checkbox', id: `${id}-beat`, checked: !!d.onBeat });
-      beat.addEventListener('change', () => { d.onBeat = beat.checked; changed(); });
-      row.append(el('label', { className: 'check' }, beat, 'Start on the beat'));
+  if (B.isSound(d)) {
+    const loud = el('input', { type: 'number', id: `${id}-velocity`, min: 1, max: 127, value: d.velocity });
+    loud.addEventListener('change', () => {
+      d.velocity = Math.min(127, Math.max(1, Math.round(Number(loud.value)) || 100));
+      loud.value = d.velocity;
+      changed();
+    });
+    row.append(channelSelect(), field('Loudness (velocity)', loud));
+    if (B.usesOctave(form, d)) {
+      // Higher or lower than the template's key, in whole octaves.
+      const oct = el('select', { id: `${id}-octave` });
+      options(oct, B.OCTAVES.map((o) => [o, o > 0 ? `+${o}` : o < 0 ? `−${-o}` : '0']), d.octave || 0);
+      oct.addEventListener('change', () => {
+        const v = Number(oct.value);
+        // Devices that share a sequence share its octave.
+        for (const x of form.devices) if (x === d || (d.seq !== undefined && x.seq === d.seq)) x.octave = v;
+        renderDevices();
+        changed();
+      });
+      row.append(field('Octave', oct));
     }
   }
-  if (d.kind === 'lfo' || d.kind === 'env') {
+  if (d.kind === 'notes') {
+    const type = el('select', { id: `${id}-type` });
+    options(type, [['scale', 'Scale notes (follow the key)'], ['fixed', d.channel === 9 ? 'Drums and fixed notes' : 'Fixed notes']], d.noteType);
+    type.addEventListener('change', () => {
+      const octave = form.octave + (d.octave || 0);
+      d.switches.forEach((s) => { s.value = convertNote(s.value, d.noteType, type.value, octave); });
+      d.noteType = type.value;
+      renderDevices();
+      changed();
+    });
+    row.append(field('Notes are', type));
+  }
+  if (B.isMod(d)) {
+    // It changes another device's sound, or a channel of its own.
     const target = el('select', { id: `${id}-target` });
-    const choices2 = [[null, `${possessive(m.name)} own sound (channel ${m.channel + 1})`]];
-    for (const x of form.musicians)
-      if (x !== m && x.channel !== m.channel && !choices2.some(([v]) => v === x.channel))
-        choices2.push([x.channel, `${possessive(x.name)} sound (channel ${x.channel + 1})`]);
-    const value = d.target === undefined || d.target === m.channel ? null : d.target;
-    options(target, withValue(choices2, value, `Channel ${(value ?? 0) + 1}`), value);
+    const choices = form.devices.filter(B.isSound).map((x) => [form.devices.indexOf(x), `${deviceTitle(x)} (channel ${x.channel + 1})`]);
+    choices.push(['own', 'A channel of its own']);
+    options(target, choices, d.target ? form.devices.indexOf(d.target) : 'own');
     target.addEventListener('change', () => {
-      d.target = target.value === '' ? null : Number(target.value);
-      renderStatus();
+      if (target.value === 'own') {
+        if (d.target) d.channel = d.target.channel;
+        d.target = null;
+      } else {
+        d.target = form.devices[Number(target.value)];
+      }
+      renderDevices();
       changed();
     });
     row.append(field('Changes', target));
+    if (!d.target) row.append(channelSelect());
   }
   return row.children.length ? row : null;
 }
 
-function convertNote(value, from, to) {
+// One switch in a device: its number, its job (or note), who uses it, and ✕.
+function switchRow(d, s, rowId) {
+  const label = SWITCH_LABEL(s.input);
+  let job;
+  if (d.kind === 'notes') {
+    const choices = d.noteType === 'scale' ? scaleNoteChoices(deviceOctave(d)) : fixedNoteChoices(true, d.channel === 9);
+    job = el('select', { id: `${rowId}-job`, 'aria-label': `${label} plays` });
+    options(job, withValue(choices, s.value, noteLabel(d, s.value)), s.value);
+    job.addEventListener('change', () => { s.value = Number(job.value); renderStatus(); changed(); });
+  } else {
+    job = el('select', { id: `${rowId}-job`, 'aria-label': `${label}’s job` });
+    options(job, B.roles(form, d), s.role);
+    job.addEventListener('change', () => {
+      const other = d.switches.find((x) => x.role === job.value);
+      B.setRole(form, d, s.input, job.value);
+      renderDevices();
+      changed();
+      say(other ? `${label} and ${SWITCH_LABEL(other.input)} swapped jobs.` : `${label} is now ${job.value}.`);
+    });
+  }
+  const access = form.access[s.input];
+  const person = el('input', { type: 'text', id: `${rowId}-label`, value: access.label, maxLength: B.MAX_LABEL,
+    autocomplete: 'off', placeholder: 'Who, or where', 'aria-label': `${label}: who uses it, or where it goes` });
+  person.addEventListener('input', () => {
+    access.label = person.value;
+    renderSwitchMap();
+    changed();
+  });
+  const remove = el('button', { type: 'button', id: `${rowId}-remove`, className: 'quiet', textContent: '✕',
+    'aria-label': `Take ${label} away from ${deviceTitle(d)}`, title: 'Take this switch away' });
+  remove.addEventListener('click', () => {
+    B.removeSwitch(form, d, s.input);
+    renderDevices();
+    changed();
+    say(`${label} is free.`);
+    const id = deviceIds.get(d);
+    ($(id)?.querySelector('.sw-row button') || $(`${id}-toggle`))?.focus();
+  });
+  const row = el('div', { className: 'role sw-row' },
+    el('span', { className: 'role-name', textContent: label }), job, person, remove);
+  row.dataset.input = s.input;
+  return row;
+}
+
+// Each switch's "ignore repeat presses" and "counts as held" times: they
+// belong to the switch (and the person using it), not the device.
+function accessBox(d, id) {
+  if (!d.switches.length) return null;
+  const box = el('details', { className: 'access', id: `${id}-access`, open: accessOpen.has(d) },
+    el('summary', { textContent: 'Access settings' }));
+  box.addEventListener('toggle', () => { if (box.open) accessOpen.add(d); else accessOpen.delete(d); });
+  const grid = el('div', { className: 'access-grid' },
+    el('span'), el('span', { className: 'access-col', textContent: 'Ignore repeat presses within' }),
+    el('span', { className: 'access-col', textContent: 'Counts as held after' }));
+  for (const s of d.switches) {
+    const a = form.access[s.input];
+    const label = SWITCH_LABEL(s.input);
+    const lockout = el('select', { id: `${id}-lock-${s.input}`, 'aria-label': `${label}: ignore repeat presses within` });
+    options(lockout, withValue(LOCKOUT_CHOICES, a.lockoutMs, `${a.lockoutMs / 1000} s`), a.lockoutMs);
+    lockout.addEventListener('change', () => { a.lockoutMs = Number(lockout.value); renderBoardUse(); changed(); });
+    const hold = el('select', { id: `${id}-hold-${s.input}`, 'aria-label': `${label}: counts as held after` });
+    options(hold, withValue(HOLD_CHOICES, a.holdMs, `${a.holdMs / 1000} s`), a.holdMs);
+    hold.addEventListener('change', () => { a.holdMs = Number(hold.value); renderBoardUse(); changed(); });
+    grid.append(el('span', { className: 'role-name', textContent: a.label ? `${label} (${a.label})` : label }), lockout, hold);
+  }
+  box.append(grid, el('p', { className: 'hint',
+    textContent: 'These stay with the switch if it moves to another device. “Ignore repeat presses” helps if a switch gets pressed twice by accident.' }));
+  return box;
+}
+
+// Devices whose switches are held down light up.
+const pressedInputs = new Set();
+function renderActivity() {
+  document.querySelectorAll('.devcard').forEach((card) => {
+    const d = form.devices[Number(card.dataset.device)];
+    card.classList.toggle('active', !!d && d.switches.some((s) => pressedInputs.has(s.input)));
+  });
+}
+
+// How the device responds to its switch (hold, latch, once), and whether it
+// waits for the beat.
+function responseRow(d, id) {
+  let choices = null;
+  if (d.kind === 'notes' || d.kind === 'gen') choices = GATE_CHOICES;
+  else if (d.kind === 'arp' || (d.kind === 'seq' && form.sequences[d.seq].mode === 'clock')) choices = SEQ_GATE_CHOICES;
+  else if (d.kind === 'lfo' || d.kind === 'env') choices = MOD_GATE_CHOICES;
+  if (!choices) return null;
+  const row = el('div', { className: 'row' });
+  const gate = el('select', { id: `${id}-gate` });
+  options(gate, choices, d.gate);
+  gate.addEventListener('change', () => { d.gate = gate.value; changed(); });
+  row.append(field('When its switch is pressed', gate));
+  if (d.kind !== 'notes') {
+    const beat = el('input', { type: 'checkbox', id: `${id}-beat`, checked: !!d.onBeat });
+    beat.addEventListener('change', () => { d.onBeat = beat.checked; changed(); });
+    row.append(el('label', { className: 'check' }, beat, 'Start on the beat'));
+  }
+  return row;
+}
+
+// --- Generator settings (spec B.6.3), in the words of the prototype ---
+
+const PHRASE_CHOICES = [[0, 'never'], [4, '4 notes'], [6, '6 notes'], [8, '8 notes'], [12, '12 notes'], [16, '16 notes']];
+
+// Home is the key's root: degree 0, or the octave of it nearest the range.
+function genHome(low, high) {
+  const oct = SwitchcraftGenerator.scaleSemis(form.mask).length;
+  let deg = 0;
+  while (deg < low) deg += oct;
+  while (deg > high) deg -= oct;
+  return deg >= low ? deg : low;
+}
+
+function genSettings(d, id) {
+  const g = B.generatorsOf(form)[d.gen];
+  const save = () => { renderStatus(); changed(); };
+  const slider = (key, label, min, max, value, left, right, apply) => {
+    const input = el('input', { type: 'range', id: `${id}-${key}`, min, max, value });
+    input.addEventListener('input', () => { apply(Number(input.value)); renderStatus(); });
+    input.addEventListener('change', save);
+    return el('label', { className: 'field gen-slider' }, label, input,
+      el('span', { className: 'ends' }, el('span', { textContent: left }), el('span', { textContent: right })));
+  };
+  const moves = slider('moves', 'Moves', 0, 100, Math.round(Math.min(100, Math.max(0, (70 - g.wStep) / 40 * 100))),
+    'mostly steps', 'lots of leaps', (v) => Object.assign(g, SwitchcraftGenerator.movesToWeights(v)));
+  const change = slider('change', 'Changes', 0, 100, g.change, 'never', 'always', (v) => { g.change = v; });
+  const boost = slider('boost', 'Lands on strong notes', 10, 100, g.stableBoost, 'a little', 'a lot', (v) => { g.stableBoost = v; });
+  change.querySelector('input').disabled = !g.loopLen;
+
+  const phrase = el('select', { id: `${id}-phrase` });
+  options(phrase, PHRASE_CHOICES, g.phraseLen);
+  const remember = el('input', { type: 'checkbox', id: `${id}-remember`, checked: !!g.loopLen });
+  const tune = () => {
+    g.phraseLen = Number(phrase.value);
+    // The tune is as long as a phrase, so each time round it comes home.
+    g.loopLen = remember.checked ? (g.phraseLen || 8) : 0;
+    change.querySelector('input').disabled = !g.loopLen;
+    save();
+  };
+  phrase.addEventListener('change', tune);
+  remember.addEventListener('change', tune);
+  const gap = el('input', { type: 'checkbox', id: `${id}-gap`, checked: g.gapFill });
+  gap.addEventListener('change', () => { g.gapFill = gap.checked; save(); });
+
+  const notes = [];
+  for (let deg = -7; deg <= 14; deg++) {
+    const n = S.degreeToNote(deg, form.root, deviceOctave(d), form.mask);
+    if (n >= 0 && n <= 127) notes.push([deg, S.noteName(n)]);
+  }
+  const low = el('select', { id: `${id}-low` });
+  const high = el('select', { id: `${id}-high` });
+  options(low, notes, g.low);
+  options(high, notes, g.high);
+  const range = () => {
+    let lo = Number(low.value), hi = Number(high.value);
+    if (lo > hi) [lo, hi] = [hi, lo];
+    Object.assign(g, { low: lo, high: hi, home: genHome(lo, hi) });
+    options(low, notes, lo);
+    options(high, notes, hi);
+    save();
+  };
+  low.addEventListener('change', range);
+  high.addEventListener('change', range);
+
+  return el('div', { className: 'gen-settings' },
+    el('div', { className: 'row' }, moves, change, boost),
+    el('div', { className: 'row' }, field('Comes home every', phrase),
+      el('label', { className: 'check' }, remember, 'Remembers its tune'),
+      el('label', { className: 'check' }, gap, 'Steps back after a jump')),
+    el('div', { className: 'row' }, field('Lowest note', low), field('Highest note', high)));
+}
+
+function convertNote(value, from, to, octave = form.octave) {
   if (from === to) return value;
-  const toFixed = (deg) => S.degreeToNote(deg, form.root, form.octave, form.mask);
+  const toFixed = (deg) => S.degreeToNote(deg, form.root, octave, form.mask);
   if (to === 'fixed') return Math.min(127, Math.max(0, toFixed(value)));
   let best = 0;
   for (let deg = -21; deg <= 28; deg++)
@@ -1016,57 +1387,147 @@ function convertNote(value, from, to) {
   return best;
 }
 
-// --- Choosing a switch by pressing it ---
+// --- Choosing switches ---
+// Switches are chosen on the box drawing (or by pressing them, with Learn),
+// then given to a new device or to one that has room.
 
-function startListening(d, slot, id, label) {
-  if (!board) return;
-  listening = { device: d, slot, id, label };
-  renderMusicians();
-  say(`Press the switch for ${label}. Escape stops waiting.`);
+let selected = [];      // chosen switches, in the order chosen
+let learning = false;   // a press on the board chooses the switch
+
+function toggleSelected(i) {
+  if (!editable || i < 0 || i >= B.NUM_SWITCHES) return;
+  const at = selected.indexOf(i);
+  if (at >= 0) selected.splice(at, 1);
+  else selected.push(i);
+  const s = B.owner(form, i);
+  if (at >= 0) say(`${SWITCH_LABEL(i)} not chosen. ${selected.length ? `Chosen: ${listInputs(selected)}.` : 'Nothing chosen.'}`);
+  else say(`Chosen: ${listInputs(selected)}.${s ? ` ${SWITCH_LABEL(i)} is ${who(s)} now, and moves if you give it a new device.` : ''}`);
+  renderSelection();
+  if (at < 0 && s) showSwitch(i, false, false);  // highlight it, but keep the box in view
 }
 
-function stopListening() {
-  listening = null;
-  renderMusicians();
-  say('Stopped waiting for a switch.');
+function clearSelection() {
+  selected = [];
+  renderSelection();
 }
 
-function updateListenButtons() {
-  document.querySelectorAll('.listen').forEach((b) => { b.disabled = !editable || !board; });
+function setLearning(on) {
+  learning = on && !!board;
+  renderSelection();
+}
+
+// The jobs a new device of this kind gives its switches, in order.
+function kindJobs(kind) {
+  if (kind === 'notes') return '';
+  const probe = { sequences: [{ mode: 'press' }] };
+  return B.roles(probe, { kind, seq: 0 }).map(([, label]) => label).join(', ');
+}
+
+function renderSelection() {
+  const n = selected.length;
+  const them = n === 1 ? 'it' : 'them';
+  $('sel-text').textContent = n
+    ? `Chosen: ${listInputs(selected)}. Choose a device for ${them}${form.devices.length ? `, or add ${them} to a device` : ''}.`
+    : `Choose switches: click them on the box${board ? ', or turn on Learn and press them' : ''}.`;
+  $('sel-clear').hidden = !n;
+  const learn = $('learn');
+  learn.disabled = !editable || !board;
+  learn.title = board ? 'Then press switches on the board to choose them' : 'Connect the board to use Learn';
+  learn.setAttribute('aria-pressed', String(learning));
+  learn.textContent = learning ? 'Learn: on (Esc stops)' : 'Learn';
+  const chooser = $('new-device');
+  chooser.hidden = !n;
+  if (n) {
+    chooser.replaceChildren(...B.KINDS.map((kind) => {
+      const info = B.DEVICES[kind];
+      const room = B.canAdd(form, kind);
+      const jobs = kindJobs(kind);
+      const b = el('button', { type: 'button', id: `new-${kind}`, className: 'quiet' },
+        el('span', {}, capital(info.name), info.sub ? ` (${info.sub})` : ''),
+        el('small', { textContent: room ? `${info.what}${jobs ? ` Jobs, in order: ${jobs}.` : ''}`
+          : `The board is full: remove a ${info.uses === 'seq' ? 'sequencer or arpeggiator' : info.uses === 'gen' ? 'melody generator' : 'wobble or swell'} first.` }));
+      b.disabled = !room || !editable;
+      b.addEventListener('click', () => createDevice(kind));
+      return b;
+    }));
+  }
+  // Devices with room offer to take the chosen switches.
+  for (const d of form.devices) {
+    const holder = $(`${deviceIds.get(d)}-addsel`);
+    if (!holder) continue;
+    const mine = selected.filter((i) => !d.switches.some((s) => s.input === i));
+    holder.replaceChildren();
+    if (!mine.length || !B.hasRoom(form, d)) continue;
+    const b = el('button', { type: 'button', className: 'quiet', textContent: `Add ${listInputs(mine)} here`,
+      'aria-label': `Add ${listInputs(mine)} to ${deviceTitle(d)}` });
+    b.disabled = !editable;
+    b.addEventListener('click', () => addSelectedTo(d));
+    holder.append(b);
+  }
+  renderSwitchMap();
+}
+
+function createDevice(kind) {
+  const inputs = [...selected];
+  const moved = inputs.map((i) => B.owner(form, i)).filter(Boolean);
+  const r = B.newDevice(form, kind, inputs);
+  if (!r) return;
+  selected = r.left;
+  const d = r.device;
+  renderDevices();
+  changed();
+  const taken = inputs.filter((i) => !r.left.includes(i));
+  say(`Added ${deviceTitle(d)} on ${listInputs(taken)}.` +
+    (moved.length ? ` Moved from ${[...new Set(moved.map((s) => deviceTitle(s.device)))].join(' and ')}.` : '') +
+    (r.left.length ? ` It has no job for ${listInputs(r.left)}, so ${r.left.length === 1 ? 'that one is' : 'those are'} still chosen.` : ''));
+  const id = deviceIds.get(d);
+  $(id)?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  $(`${id}-name`)?.focus({ preventScroll: true });
+}
+
+function addSelectedTo(d) {
+  const added = [];
+  const moved = [];
+  for (const i of [...selected]) {
+    const r = B.addSwitch(form, d, i);
+    if (!r) continue;
+    added.push(i);
+    if (r.was) moved.push(r.was);
+    selected = selected.filter((x) => x !== i);
+  }
+  renderDevices();
+  changed();
+  say(`Added ${listInputs(added)} to ${deviceTitle(d)}.` +
+    (moved.length ? ` Moved from ${[...new Set(moved.map((s) => deviceTitle(s.device)))].join(' and ')}.` : '') +
+    (selected.length ? ` No job left for ${listInputs(selected)}.` : ''));
+  if (added.length) $(`${deviceIds.get(d)}-sw${added[added.length - 1]}-job`)?.focus();
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && listening) stopListening();
+  if (e.key === 'Escape' && learning) {
+    setLearning(false);
+    say('Learn is off.');
+  }
 });
 
-// --- Switch map ---
+// --- Interface (the box drawing) ---
 
 function renderSwitchMap() {
-  for (let i = 0; i < S.NUM_INPUTS; i++) {
-    const tile = $(`sw-${i}`);
-    const whoBox = $(`swo-${i}`);
+  // Each button cap in its device's colour; chosen switches are ringed.
+  BoardView.update(Array.from({ length: S.NUM_INPUTS }, (_, i) => {
     const s = B.owner(form, i);
-    tile.classList.toggle('used', !!s);
-    if (!s) {
-      whoBox.className = 'tile-who free';
-      whoBox.replaceChildren('Free');
-      continue;
-    }
-    const c = B.COLOURS[s.musician.colour];
-    tile.style.setProperty('--mcolour', c.hex);
-    whoBox.className = 'tile-who';
-    const what = s.key !== undefined
-      ? `${deviceName(s.device)}: ${noteLabel(s.musician, s.device, s.device.keys[s.key].value)}`
-      : `${deviceName(s.device)}: ${slotLabel(s.device, s)}`;
-    whoBox.replaceChildren(el('span', { className: 'badge small', textContent: c.symbol, 'aria-hidden': 'true' }),
-      el('span', {}, el('strong', { textContent: s.musician.name || 'Unnamed' }), ` · ${what}`));
-  }
+    const label = form.access[i] && form.access[i].label;
+    const name = label ? `${SWITCH_LABEL(i)} (${label})` : SWITCH_LABEL(i);
+    if (!s) return { title: `${name}: free` };
+    const c = B.COLOURS[s.device.colour];
+    return { hex: c.hex, symbol: c.symbol, title: `${name}: ${deviceTitle(s.device)} · ${slotLabel(s)}` };
+  }), new Set(selected), (i) => i < B.NUM_SWITCHES && editable);
 }
 
 // --- Sequence editor ---
 
 function stepChoices(q) {
-  const notes = q.noteType === 'scale' ? scaleNoteChoices() : fixedNoteChoices(false);
+  const notes = q.noteType === 'scale' ? scaleNoteChoices(seqOctave()) : fixedNoteChoices(false);
   return [...notes, ['rest', 'Rest']];
 }
 
@@ -1182,7 +1643,7 @@ function renderNotesView() {
   if (notesView !== 'roll') return;
   roll = roll || SwitchcraftPianoRoll.mount($('roll'), {
     get: () => form.sequences[currentSeq],
-    settings: () => ({ root: form.root, octave: form.octave, mask: form.mask }),
+    settings: () => ({ root: form.root, octave: seqOctave(), mask: form.mask }),
     editable: () => editable,
     changed: seqChanged,
     message: (text) => setSave(text, true),
@@ -1217,7 +1678,8 @@ function seqChanged() {
 
 // Converts a sequence's notes when switching between scale and fixed notes.
 function convertNotes(q, toType) {
-  q.notes = q.notes.map((n) => (n === null ? null : convertNote(n, q.noteType, toType)));
+  const octave = form.octave + (openDevice && openDevice.seq === currentSeq ? openDevice.octave || 0 : 0);
+  q.notes = q.notes.map((n) => (n === null ? null : convertNote(n, q.noteType, toType, octave)));
   q.noteType = toType;
 }
 
@@ -1449,9 +1911,9 @@ function renderMod() {
   $('mod-release').value = m.release;
   // A swell can start on every note of a sequencer or arpeggiator instead.
   const follow = [['none', 'Each press of its switch']];
-  for (const x of form.musicians) for (const d of x.devices)
+  for (const d of form.devices)
     if ((d.kind === 'seq' || d.kind === 'arp') && !follow.some(([v]) => v === d.seq))
-      follow.push([d.seq, `Each note of ${possessive(x.name)} ${deviceName(d)}`]);
+      follow.push([d.seq, `Each note of ${deviceTitle(d)}`]);
   options($('mod-follow'), withValue(follow, m.follow === null ? 'none' : m.follow, 'Each note of a sequence'),
     m.follow === null ? 'none' : m.follow);
   document.querySelectorAll('.mod-on').forEach((e) => { e.hidden = m.kind === 'off'; });
@@ -1476,23 +1938,18 @@ function modChanged() {
 
 function renderAll() {
   $('name').value = form.name;
-  $('root').value = String(form.root);
-  const known = S.SCALES.some((sc) => sc.mask === form.mask);
-  options($('scale'),
-    [...S.SCALES.map((sc) => [sc.mask, sc.name]), ...(known ? [] : [[form.mask, 'Custom scale']])],
-    form.mask);
   $('channel').value = String(form.channel);
   $('tempo').value = Math.round(form.tempo / 10);
+  options($('key'), S.NOTE_NAMES.map((n, i) => [i, n]), form.root);
+  options($('scale'), withValue(S.SCALES.map((x) => [x.mask, x.name]), form.mask, 'Custom scale'), form.mask);
   synth.setTempo(form.tempo / 10);  // echo follows the preset's tempo
   $('follow-clock').checked = !form.ignoreClock;
+  syncTempoField();
   form.analog.forEach((a, i) => {
     options($(`cc-${i}`), withValue(CC_CHOICES, a.cc, `CC ${a.cc}`), a.cc);
-    $(`rev-${i}`).checked = !!a.reversed;
     renderCalibration(i);
   });
-  renderMusicians();
-  // "Reversed" means nothing for an input that's off.
-  form.analog.forEach((a, i) => { if (a.cc === null) $(`rev-${i}`).disabled = true; });
+  renderDevices();
 }
 
 function setEditable(on) {
@@ -1503,110 +1960,163 @@ function setEditable(on) {
       // analog range aren't part of the template's own settings.
       if (!c.classList.contains('keep-enabled') && !c.closest('.analog-cal')) c.disabled = !on;
     });
-  updateListenButtons();
-  // Devices the board has no room for stay off.
-  for (const kind of B.KINDS)
-    document.querySelectorAll(`[id$="-add-${kind}"]`).forEach((b) => { if (!B.canAdd(form, kind)) b.disabled = true; });
-  if (form.musicians.length >= B.MAX_MUSICIANS) $('add-musician').disabled = true;
+  syncTempoField();
 }
 
-// The board's templates as buttons 1-8: the one playing is pressed. Their
-// names (or "empty") are in the label and tooltip.
+// With an external MIDI clock the DAW sets the tempo, so the field is greyed
+// out (the board only falls back to it if the clock stops).
+function syncTempoField() {
+  const external = $('follow-clock').checked;
+  $('tempo').disabled = !editable || external;
+  $('tempo').title = external ? 'The tempo comes from the external MIDI clock' : '';
+}
+
+// The board's 8 templates: the number in the title is a button that opens
+// a menu of them, each with its number and name (or "empty"). The one
+// playing is ticked; choosing another loads it.
+let slotMenu = null;
+
+function slotName(i) {
+  return slotNames[i] === undefined ? 'empty' : slotNames[i] || 'Untitled';
+}
+
 function renderSlots() {
-  const focused = document.activeElement && document.activeElement.closest('#slots') ? document.activeElement.id : null;
-  $('slots').replaceChildren(...Array.from({ length: S.NUM_SLOTS }, (_, i) => {
-    const empty = slotNames[i] === undefined;
-    const name = empty ? 'empty' : slotNames[i] || 'Untitled';
-    const b = el('button', {
-      type: 'button', id: `slot-${i}`, textContent: String(i + 1),
-      className: 'keep-enabled quiet',
-      'aria-pressed': String(!!board && i === activeSlot),
-      'aria-label': board ? `Template ${i + 1}: ${name}` : `Template ${i + 1}`,
-      title: board ? `${i + 1}: ${name}` : 'Connect the board to choose a template',
+  const b = $('slot-button');
+  $('slot-number').textContent = String(activeSlot + 1);
+  b.disabled = !board;
+  b.title = board ? 'Choose another template' : 'Connect the board to choose a template';
+  b.setAttribute('aria-label', board ? `Template ${activeSlot + 1} of ${S.NUM_SLOTS}. Choose another` : `Template ${activeSlot + 1}`);
+  if (slotMenu) openSlotMenu(true);
+}
+
+function closeSlotMenu(refocus = false) {
+  if (!slotMenu) return;
+  slotMenu.remove();
+  slotMenu = null;
+  $('slot-button').setAttribute('aria-expanded', 'false');
+  if (refocus) $('slot-button').focus();
+}
+
+function openSlotMenu(refresh = false) {
+  const inside = !!(slotMenu && slotMenu.contains(document.activeElement));
+  const was = inside ? [...slotMenu.children].indexOf(document.activeElement) : activeSlot;
+  closeSlotMenu();
+  if (!board) return;
+  const menu = el('div', { id: 'slot-menu', className: 'slot-menu', role: 'menu', 'aria-label': 'Templates on the board' });
+  const items = Array.from({ length: S.NUM_SLOTS }, (_, i) => {
+    const item = el('button', { type: 'button', role: 'menuitemradio', tabIndex: -1, className: 'keep-enabled',
+      'aria-checked': String(i === activeSlot) },
+    el('span', { textContent: String(i + 1) }),
+    el('span', { textContent: slotName(i), className: slotNames[i] === undefined ? 'empty' : '' }),
+    el('span', { textContent: i === activeSlot ? '✓' : '', 'aria-hidden': 'true' }));
+    item.addEventListener('click', () => {
+      closeSlotMenu(true);
+      if (i !== activeSlot) switchSlot(i);
     });
-    b.disabled = !board;
-    b.addEventListener('click', () => { if (i !== activeSlot) switchSlot(i); });
-    return b;
-  }));
-  if (focused && $(focused)) $(focused).focus();
+    return item;
+  });
+  menu.append(...items);
+  menu.addEventListener('keydown', (e) => {
+    const at = items.indexOf(document.activeElement);
+    const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (e.key === 'Escape' || e.key === 'Tab') {
+      if (e.key === 'Escape') e.preventDefault();
+      closeSlotMenu(e.key === 'Escape');
+      return;
+    }
+    if (to === undefined) return;
+    e.preventDefault();
+    items[(to + items.length) % items.length].focus();
+  });
+  $('slot-button').after(menu);
+  $('slot-button').setAttribute('aria-expanded', 'true');
+  slotMenu = menu;
+  if (!refresh || inside) items[Math.max(0, was)].focus();
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (slotMenu && !slotMenu.contains(e.target) && !$('slot-button').contains(e.target)) closeSlotMenu();
+});
+
+// --- Variable input knobs ---
+// A small dial showing the input's value (0-127): a 270° track, the value as
+// an arc and a pointer, and the number in the middle.
+
+const KNOB = { r: 17, c: 22, sweep: 270, start: 135 };
+
+function knob(i, label) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svgEl = (tag, attrs) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+  const { r, c, sweep, start } = KNOB;
+  const len = 2 * Math.PI * r;
+  const arc = (cls) => svgEl('circle', { class: cls, cx: c, cy: c, r, fill: 'none',
+    'stroke-dasharray': `${(len * sweep) / 360} ${len}`, transform: `rotate(${start} ${c} ${c})` });
+  const svg = svgEl('svg', { viewBox: '0 0 44 44', width: 52, height: 52, 'aria-hidden': 'true', focusable: 'false' });
+  svg.append(arc('knob-track'), arc('knob-value'),
+    svgEl('line', { class: 'knob-pointer', x1: c + r - 6, y1: c, x2: c + r + 1, y2: c }),
+    svgEl('text', { class: 'knob-text', x: c, y: c + 4.5, 'text-anchor': 'middle' }));
+  const box = el('div', { className: 'knob', id: `meter-${i}`, role: 'meter', 'aria-label': `${label} level`,
+    'aria-valuemin': '0', 'aria-valuemax': '127', 'aria-valuenow': '0' }, svg);
+  setTimeout(() => setKnob(i, 0));
+  return box;
+}
+
+function setKnob(i, value) {
+  const box = $(`meter-${i}`);
+  if (!box) return;
+  const { r, c, sweep, start } = KNOB;
+  const len = 2 * Math.PI * r;
+  const v = Math.max(0, Math.min(127, value)) / 127;
+  box.querySelector('.knob-value').setAttribute('stroke-dasharray', `${(len * sweep * v) / 360} ${len}`);
+  box.querySelector('.knob-pointer').setAttribute('transform', `rotate(${start + sweep * v} ${c} ${c})`);
+  box.querySelector('.knob-text').textContent = String(value);
+  box.setAttribute('aria-valuenow', String(value));
 }
 
 // --- Building the page ---
 
 function buildStatic() {
-  options($('root'), S.NOTE_NAMES.map((n, i) => [i, n]), 0);
-  options($('channel'), Array.from({ length: 16 }, (_, i) => [i, `${i + 1}${i === 9 ? ' (drums)' : ''}`]), 0);
+  $('slot-button').addEventListener('click', () => { if (slotMenu) closeSlotMenu(true); else openSlotMenu(); });
+  $('slot-button').addEventListener('keydown', (e) => {
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !slotMenu) { e.preventDefault(); openSlotMenu(); }
+  });
+  options($('channel'), Array.from({ length: 16 }, (_, i) => [i, String(i + 1)]), 0);
 
-  // Switch map tiles
-  for (const [col, inputs] of Object.entries(COLUMNS)) {
-    for (const i of inputs) {
-      $(col).append(el('div', { className: 'tile', id: `sw-${i}` },
-        el('div', { className: 'tile-head' },
-          el('strong', { textContent: SWITCH_LABEL(i) }),
-          el('span', { className: 'tile-event', id: `ev-${i}` })),
-        el('div', { className: 'tile-who free', id: `swo-${i}` })));
-    }
-  }
+  // The box drawing: clicking a switch chooses it.
+  BoardView.build($('board-view'), toggleSelected, 'enclosure');
+  $('sel-clear').addEventListener('click', () => { clearSelection(); say('Nothing chosen.'); });
+  $('learn').addEventListener('click', () => {
+    setLearning(!learning);
+    say(learning ? 'Learn is on: press switches on the board to choose them. Escape stops.' : 'Learn is off.');
+  });
 
   ANALOG_LABEL.forEach((label, i) => {
     const sel = el('select', { id: `cc-${i}` });
     sel.setAttribute('aria-label', `${label} controller`);
     sel.addEventListener('change', () => {
       const cc = sel.value === '' ? null : Number(sel.value);
-      form.analog[i] = cc !== null && form.analog[i].reversed ? { cc, reversed: true } : { cc };
+      form.analog[i] = { cc };
       renderAll();
       changed();
     });
-    // Per preset: pressing further sends lower values (calibration stays board-wide).
-    const rev = el('input', { type: 'checkbox', id: `rev-${i}` });
-    rev.setAttribute('aria-label', `${label}: reversed in this template`);
-    rev.addEventListener('change', () => {
-      form.analog[i] = rev.checked ? { cc: form.analog[i].cc, reversed: true } : { cc: form.analog[i].cc };
-      changed();
-    });
-    const mapping = el('div', { className: 'analog-map' },
-      el('div', { className: 'map-controls' }, sel, el('label', { className: 'check' }, rev, 'Reversed')));
-    const meter = el('div', { className: 'meter', id: `meter-${i}` }, el('div'));
-    meter.setAttribute('role', 'meter');
-    meter.setAttribute('aria-label', `${label} level`);
-    meter.setAttribute('aria-valuemin', '0');
-    meter.setAttribute('aria-valuemax', '127');
-    meter.setAttribute('aria-valuenow', '0');
-    $('analog').append(el('div', { className: 'analog-row' },
-      el('span', { textContent: label }), mapping, meter,
-      el('span', { className: 'value', id: `val-${i}`, textContent: '0' })));
-
-    // Calibration line
+    // One line: the label, its CC, Set range (Done and Cancel while it's
+    // being set), and the value knob. Set range's instructions go underneath.
     const setRange = el('button', { type: 'button', id: `cal-${i}`, textContent: 'Set range', className: 'quiet' });
     setRange.setAttribute('aria-label', `${label}: set range`);
-    const invertBox = el('input', { type: 'checkbox', id: `inv-${i}` });
-    const full = el('button', { type: 'button', id: `full-${i}`, textContent: 'Full range', className: 'quiet' });
-    full.setAttribute('aria-label', `${label}: use the full range`);
     const done = el('button', { type: 'button', id: `done-${i}`, textContent: 'Done', className: 'primary', hidden: true });
     const cancel = el('button', { type: 'button', id: `cancel-${i}`, textContent: 'Cancel', hidden: true, className: 'quiet' });
-    $('analog').append(el('div', { className: 'analog-cal' },
-      setRange, el('label', { className: 'check' }, invertBox, 'Invert'), full, done, cancel,
+    $('analog').append(el('div', { className: 'analog-row' },
+      el('span', { className: 'analog-name', textContent: label }), sel,
+      el('div', { className: 'analog-cal' }, setRange, done, cancel), knob(i, label),
       el('span', { className: 'cal-text', id: `caltext-${i}`, role: 'status' })));
 
     setRange.addEventListener('click', () => startCalibration(i));
     done.addEventListener('click', () => finishCalibration(i, true));
     cancel.addEventListener('click', () => finishCalibration(i, false));
-    invertBox.addEventListener('change', () => {
-      const lo = calibration.min[i], hi = calibration.max[i];
-      if ((lo > hi) !== invertBox.checked) {
-        calibration.min[i] = hi;
-        calibration.max[i] = lo;
-      }
-      renderCalibration(i);
-      sendCalibration(true);
-    });
-    full.addEventListener('click', () => {
-      const inv = calibration.min[i] > calibration.max[i];
-      calibration.min[i] = inv ? 4095 : 0;
-      calibration.max[i] = inv ? 0 : 4095;
-      renderCalibration(i);
-      sendCalibration(true);
-    });
   });
 
   $('name').addEventListener('input', () => {
@@ -1616,10 +2126,11 @@ function buildStatic() {
     form.name = clean;
     changed();
   });
-  $('root').addEventListener('change', () => { form.root = Number($('root').value); renderAll(); changed(); });
-  $('scale').addEventListener('change', () => { form.mask = Number($('scale').value); renderAll(); changed(); });
   $('channel').addEventListener('change', () => { form.channel = Number($('channel').value); changed(); });
-  $('follow-clock').addEventListener('change', () => { form.ignoreClock = !$('follow-clock').checked; changed(); });
+  // The key and scale belong to the whole template: every device plays in them.
+  $('key').addEventListener('change', () => { form.root = Number($('key').value); renderAll(); changed(); });
+  $('scale').addEventListener('change', () => { form.mask = Number($('scale').value); renderAll(); changed(); });
+  $('follow-clock').addEventListener('change', () => { form.ignoreClock = !$('follow-clock').checked; syncTempoField(); changed(); });
   $('tempo').addEventListener('change', () => {
     const bpm = Math.min(240, Math.max(40, Math.round(Number($('tempo').value)) || 120));
     $('tempo').value = bpm;
@@ -1628,29 +2139,18 @@ function buildStatic() {
     changed();
   });
 
-  $('add-musician').addEventListener('click', () => {
-    const m = B.addMusician(form);
-    if (!m) return;
-    renderMusicians();
-    changed();
-    const mi = form.musicians.indexOf(m);
-    $(`m${mi}-name`).focus();
-    $(`m${mi}-name`).select();
-    say(`Added ${m.name} on MIDI channel ${m.channel + 1}. Type their name, then add a device.`);
-  });
-
   // Sequence editor
   const seq = () => form.sequences[currentSeq];
   $('seq-mode').addEventListener('change', () => {
     const q = seq();
     B.setSequenceMode(form, currentSeq, $('seq-mode').value);  // the play and next-note switches swap
     if (q.mode === 'clock' && q.gate === 0) q.gate = 80;  // "until the next note" is press-only
-    renderMusicians();
+    renderDevices();
     changed();
   });
   $('seq-type').addEventListener('change', () => {
     convertNotes(seq(), $('seq-type').value);
-    renderSeq();
+    renderDevices();   // the device's Octave menu only applies to scale notes
     seqChanged();
   });
   $('seq-order').addEventListener('change', () => { seq().order = $('seq-order').value; seqChanged(); });
@@ -1798,6 +2298,12 @@ function buildStatic() {
   });
   $('replace').addEventListener('click', () => replaceWith(B.TEMPLATES[0].band()));
   $('save-file').addEventListener('click', saveFile);
+  $('clear-template').addEventListener('click', () => {
+    const name = form.name || 'Untitled';
+    if (!confirm(`Clear “${name}”? It will have no devices, every switch will be free, ` +
+      'and the variable inputs will send CC 20 and 21.')) return;
+    replaceWith(B.blankBand());
+  });
   // MIDI file import
   $('import-midi').addEventListener('click', () => $('midi-input').click());
   $('midi-input').addEventListener('change', async () => {
@@ -1959,14 +2465,14 @@ function detach(reason) {
   synth.allNotesOff();  // their note-offs will never arrive
   if (board) board.close();
   board = null;
-  listening = null;
+  learning = false;
   clearTimeout(writeTimer);
   clearTimeout(saveTimer);
   setConn('off', reason);
   calibrating = null;
   renderSlots();
   renderAllCalibration();
-  renderMusicians();
+  renderDevices();
   setSave(unsaved ? 'Not connected: some changes weren’t saved' : '');
 }
 
@@ -2010,7 +2516,15 @@ let foreignTable = null;  // a table this page can't show (made with Blocks, say
 
 // The table to send to the board.
 function currentTable() {
-  return foreignTable || B.tableFromBand(form, { perInput: perInputLockout() });
+  return foreignTable || B.tableFromBand(form, { perInput: perInputLockout(), generators: generatorsOnBoard() });
+}
+
+// Firmware 0.8.0 and later run note generators (spec B.6.3). Older boards
+// would reject the table, so the page leaves them out and plays them itself.
+function generatorsOnBoard() {
+  if (!board) return true;
+  const [major, minor] = board.info.firmware.split('.').map(Number);
+  return major > 0 || minor >= 8;
 }
 
 // Firmware 0.7.0 and later take each switch's own "ignore repeat presses"
@@ -2023,17 +2537,23 @@ function perInputLockout() {
 
 function showTable(table) {
   synth.setTempo(table.globals.tempo / 10);
+  resetGenerators();
   const result = B.bandFromTable(table);
   openDevice = null;
-  listening = null;
+  selected = [];
+  let unreversed = false;
   if (result.band) {
     form = result.band;
+    // "Reversed" isn't shown any more, so a template that had it is set back
+    // to normal rather than playing backwards without saying so.
+    unreversed = form.analog.some((a) => a.reversed);
+    form.analog = form.analog.map((a) => ({ cc: a.cc }));
     foreignTable = null;
     $('foreign').hidden = true;
     editable = true;
   } else {
     const base = S.formFromTable({ ...table, rules: [], sequences: [], modulators: [], extra: [] }).form;
-    form = { ...B.bandFromForm(base), musicians: [] };
+    form = { ...B.bandFromForm(base), devices: [] };
     foreignTable = table;
     $('foreign-text').textContent =
       `“${table.globals.name || 'Untitled'}” was made with the Blocks editor or another tool, and uses things ` +
@@ -2042,14 +2562,16 @@ function showTable(table) {
     editable = false;
   }
   renderAll();
+  if (unreversed) changed();
 }
 
 // Templates and "replace": a fresh band.
 function replaceWith(band) {
+  resetGenerators();
   foreignTable = null;
   form = band;
   openDevice = null;
-  listening = null;
+  selected = [];
   currentSeq = 0;
   currentMod = 0;
   $('foreign').hidden = true;
@@ -2104,9 +2626,9 @@ async function openMidiFile(file) {
     midiParts[a].drums - midiParts[b].drums || midiParts[b].notes.length - midiParts[a].notes.length);
   options($('midi-part'), order.map((i) => [i, `${midiParts[i].name} (${midiParts[i].notes.length} notes)`]), order[0]);
   const into = [];
-  for (const m of form.musicians) for (const d of m.devices)
+  for (const d of form.devices)
     if ((d.kind === 'seq' || d.kind === 'arp') && !into.some(([v]) => v === d.seq))
-      into.push([d.seq, `${possessive(m.name)} ${deviceName(d)}${form.sequences[d.seq].notes.length ? ' (replaces its notes)' : ''}`]);
+      into.push([d.seq, `${deviceTitle(d)}${form.sequences[d.seq].notes.length ? ' (replaces its notes)' : ''}`]);
   options($('midi-seq'), into, currentSeq);
   options($('midi-grid'), [[3, 'Thirty-second notes'], [6, 'Sixteenth notes'], [12, 'Eighth notes'], [24, 'Beats']], 6);
   options($('midi-mode'), MODE_CHOICES, form.sequences[currentSeq].mode);
@@ -2131,7 +2653,7 @@ function importMidi() {
   if (q.lengths === undefined) delete q.lengths;
   form.sequences[id] = q;
   // A tune to step through is a sequencer, not an arpeggiator.
-  for (const m of form.musicians) for (const d of m.devices) if (d.kind === 'arp' && d.seq === id && o.mode === 'press') d.kind = 'seq';
+  for (const d of form.devices) if (d.kind === 'arp' && d.seq === id && o.mode === 'press') d.kind = 'seq';
   B.setSequenceMode(form, id, o.mode);
   const bpm = $('midi-tempo').checked && midiFile.bpm ? Math.min(240, Math.max(40, midiFile.bpm)) : null;
   if (bpm) form.tempo = Math.round(bpm * 10);
@@ -2200,27 +2722,71 @@ async function switchSlot(slot) {
 
 // --- Live feedback from the board ---
 
-const eventTimers = [];
+// --- Generators played by this page (boards before firmware 0.8.0) ---
+// The same engine as generator.html (generator.js, spec B.6.3), driven by
+// the board's switch reports and heard through the browser synth.
+
+const genEngines = new Map();  // generator id -> {gen, sounding: {ch, note, input} | null, timer}
+function genEngine(id) {
+  const g = B.generatorsOf(form)[id];
+  let e = genEngines.get(id);
+  if (!e) {
+    e = { gen: new SwitchcraftGenerator.Generator({ ...g }, form.mask), sounding: null, timer: null };
+    genEngines.set(id, e);
+  } else {
+    e.gen.set({ ...g });
+    e.gen.setScale(form.mask);
+  }
+  return e;
+}
+function genStop(e) {
+  clearTimeout(e.timer);
+  if (e.sounding) synth.noteOff(e.sounding.ch, e.sounding.note);
+  e.sounding = null;
+}
+function playGenerators(input, down) {
+  if (generatorsOnBoard() || foreignTable) return;
+  for (const d of form.devices) {
+    if (d.kind !== 'gen') continue;
+    const slot = d.switches.find((s) => s.input === input);
+    if (!slot) continue;
+    const role = slot.role;
+    const e = genEngine(d.gen);
+    if (!down) {
+      // "Sounds while held": the note ends with the switch.
+      if (d.gate === 'hold' && e.sounding && e.sounding.input === input) genStop(e);
+      continue;
+    }
+    if (role === 'new') { genStop(e); e.gen.reset(); continue; }
+    const r = role === 'home' ? e.gen.home() : role === 'again' ? e.gen.again() : e.gen.newNote();
+    const note = Math.min(127, Math.max(0, S.degreeToNote(r.degree, form.root, deviceOctave(d), form.mask)));
+    genStop(e);  // one note per generator at a time
+    if (synth.running) synth.noteOn(d.channel, note, d.velocity);
+    e.sounding = { ch: d.channel, note, input };
+    if (d.gate === 'oneshot') e.timer = setTimeout(() => genStop(e), 250);
+    $('last-note').textContent = `Last note: ${S.noteName(note)}, channel ${d.channel + 1} (melody generator, in this browser)`;
+  }
+}
+function resetGenerators() {
+  for (const e of genEngines.values()) genStop(e);
+  genEngines.clear();
+}
+
 function showInput(i, ev) {
-  if (ev === 'press' && listening) {
-    const { device, slot } = listening;
-    listening = null;
-    setSwitch(device, slot, i);
-    const s = B.owner(form, i);
-    if (s) say(`${SWITCH_LABEL(i)} is now ${who(s)}.`);
-  }
-  // The switch's tile, and the job it does in the musicians, light up.
-  const tile = $(`sw-${i}`);
-  if (!tile) return;
+  // With Learn on, a press chooses the switch (or un-chooses it).
+  if (ev === 'press' && learning) toggleSelected(i);
+  // The switch's button and light on the box, and its row in its device,
+  // light up.
+  if (i < 0 || i >= S.NUM_INPUTS) return;
   const down = ev === 'press' ? true : ev === 'release' ? false : null;
+  if (down !== null) playGenerators(i, down);
   if (down !== null) {
-    tile.classList.toggle('down', down);
+    BoardView.setDown(i, down);
     document.querySelectorAll(`.role[data-input="${i}"]`).forEach((r) => r.classList.toggle('down', down));
+    if (down) pressedInputs.add(i);
+    else pressedInputs.delete(i);
+    renderActivity();
   }
-  const label = $(`ev-${i}`);
-  label.textContent = ev === 'press' ? 'pressed' : ev === 'hold' ? 'held' : ev === 'tap' ? 'tapped' : 'released';
-  clearTimeout(eventTimers[i]);
-  eventTimers[i] = setTimeout(() => { label.textContent = ''; }, 1500);
 }
 
 // --- Analog calibration (board-wide, spec B.10) ---
@@ -2230,25 +2796,22 @@ function showInput(i, ev) {
 // records the lowest and highest readings, and Done saves the result.
 
 let calibration = structuredClone(S.DEFAULT_CALIBRATION);
-let calibrating = null;  // {i, lo, hi, saved: {min, max}}
+// Set range also works out which way round the sensor is: it starts let go
+// (its "off" end), so the end the first and last readings are nearest is
+// "off" (0) and the other end is "on" (127). A sensor that reads high when
+// let go is saved inverted (min > max).
+let calibrating = null;  // {i, lo, hi, first, last, saved: {min, max}}
 
 function renderCalibration(i) {
-  const lo = calibration.min[i], hi = calibration.max[i];
   const active = calibrating && calibrating.i === i;
-  $(`inv-${i}`).checked = lo > hi;
-  for (const id of [`cal-${i}`, `inv-${i}`, `full-${i}`]) $(id).disabled = !board;
+  $(`cal-${i}`).disabled = !board;
   $(`cal-${i}`).hidden = active;
-  $(`inv-${i}`).parentElement.hidden = active;
   $(`done-${i}`).hidden = !active;
   $(`cancel-${i}`).hidden = !active;
-  const a = Math.min(lo, hi), b = Math.max(lo, hi);
-  $(`full-${i}`).hidden = active || (a === 0 && b === 4095);
   $(`caltext-${i}`).textContent = !board ? 'Connect the board to set a range'
     : active
-      ? (calibrating.lo > calibrating.hi
-        ? 'Move it all the way one way, then all the way the other, then press Done.'
-        : `Seen ${calibrating.lo}–${calibrating.hi} of 4095. Keep moving, then press Done.`)
-      : (a === 0 && b === 4095 ? 'Full range' : `Range ${a}–${b} of 4095`);
+      ? 'Move the control all the way, then let go. Then press Done.'
+      : '';
 }
 
 function renderAllCalibration() {
@@ -2267,7 +2830,7 @@ async function sendCalibration(save) {
 function startCalibration(i) {
   if (!board) return;
   if (calibrating) finishCalibration(calibrating.i, false);
-  calibrating = { i, lo: Infinity, hi: -Infinity, saved: structuredClone(calibration) };
+  calibrating = { i, lo: Infinity, hi: -Infinity, first: null, last: null, saved: structuredClone(calibration) };
   calibration.min[i] = 0;
   calibration.max[i] = 4095;
   renderCalibration(i);
@@ -2277,7 +2840,9 @@ function startCalibration(i) {
 function finishCalibration(i, keep) {
   const c = calibrating;
   calibrating = null;
-  const inverted = c.saved.min[i] > c.saved.max[i];
+  // "Off" is the end it started and finished at (see above).
+  const rest = c.first === null ? c.lo : (c.first + c.last) / 2;
+  const inverted = rest > (c.lo + c.hi) / 2;
   calibration = structuredClone(c.saved);
   if (keep && c.hi - c.lo >= 100) {
     // Pull in a little so both ends reliably reach 0 and 127.
@@ -2296,13 +2861,11 @@ function showAnalog(i, raw, value) {
   if (calibrating && calibrating.i === i) {
     calibrating.lo = Math.min(calibrating.lo, raw);
     calibrating.hi = Math.max(calibrating.hi, raw);
+    if (calibrating.first === null) calibrating.first = raw;
+    calibrating.last = raw;
     renderCalibration(i);
   }
-  const meter = $(`meter-${i}`);
-  if (!meter) return;
-  meter.firstChild.style.width = `${(value / 127) * 100}%`;
-  meter.setAttribute('aria-valuenow', String(value));
-  $(`val-${i}`).textContent = value;
+  setKnob(i, value);
 }
 
 // The board follows a DAW's MIDI clock (spec B.11): show it, and let the
@@ -2320,6 +2883,9 @@ function showMidi(d) {
 }
 
 buildStatic();
+SwitchcraftLogo.build($('header-logo'), { text: false, label: '' });
+SwitchcraftLogo.build($('offline-logo'), { animate: true, label: 'Switchcraft: connect the board to start',
+  active: () => document.body.classList.contains('offline') });
 renderAll();
 renderSlots();
 setSave('');

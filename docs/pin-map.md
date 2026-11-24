@@ -13,7 +13,9 @@ a netlist and BOM exported from an unrelated bare-RP2040 reference design
 
 Inputs are numbered in **panel order** (PCB placement): left column top to
 bottom, then right column top to bottom. The firmware and the SysEx/rule-table
-spec use these 0-based indices; the page shows them 1-based.
+spec use these 0-based indices; the page shows them 1-based. The sixth row
+holds the two **variable (continuous) inputs**, labelled **V1** (left) and
+**V2** (right) on the box and in the editor.
 
 The right-hand column is **not** in GPIO order (GP5, GP6, GP9, GP8, GP7), so
 the firmware needs a lookup table, not `gpio = index`.
@@ -32,15 +34,15 @@ the firmware needs a lookup table, not `gpio = index`.
 | 7 | Right 3 | GP9 | 12 | `discrete_input9` | CN13 | SW13 | D9 | Q13 |
 | 8 | Right 4 | GP8 | 11 | `discrete_input8` | CN12 | SW12 | D10 | Q12 |
 | 9 | Right 5 | GP7 | 10 | `discrete_input7` | CN11 | SW11 | D11 | Q11 |
-| 10 | Left 6 (analog channel button) | GP21 | 27 | `new_continuous1` | — | SW2 | — | — |
-| 11 | Right 6 (analog channel button) | GP22 | 29 | `new_continuous` | — | SW3 | — | — |
+| 10 | Left 6: V1 button (variable input mapping) | GP21 | 27 | `new_continuous1` | — | SW2 | — | — |
+| 11 | Right 6: V2 button (variable input mapping) | GP22 | 29 | `new_continuous` | — | SW3 | — | — |
 
-### Analog inputs
+### Variable inputs (analog)
 
 | Analog | Panel | GPIO / ADC | Pico pin | Sheet | Jack | Pull-down | Status LED (firmware) |
 |---|---|---|---|---|---|---|---|
-| 0 | Left 6 | GP26 / ADC0 | 31 | `new_continuous1` | CN2 | R2 10 kΩ to AGND | GP19 (pin 25) → D2, R5 62 Ω |
-| 1 | Right 6 | GP27 / ADC1 | 32 | `new_continuous` | CN3 | R3 10 kΩ to AGND | GP20 (pin 26) → D19, R6 62 Ω |
+| 0 | Left 6: V1 | GP26 / ADC0 | 31 | `new_continuous1` | CN2 | R2 10 kΩ to AGND | GP19 (pin 25) → D2, R5 62 Ω |
+| 1 | Right 6: V2 | GP27 / ADC1 | 32 | `new_continuous` | CN3 | R3 10 kΩ to AGND | GP20 (pin 26) → D19, R6 62 Ω |
 
 ## Circuit behaviour the firmware must match
 
@@ -54,11 +56,15 @@ state; firmware can't control them. Firmware must:
 - treat high as pressed;
 - debounce in software (no RC filter on the board).
 
-**Analog channel buttons (10, 11): active high, no external pull-down.**
+**V1 and V2 buttons (10, 11): active high, no external pull-down.**
 SW2/SW3 connect GP21/GP22 to +3V3. Same handling as above. There's no
-hardware LED on these.
+hardware LED on these. They're for MIDI-mapping the analog CCs: while one is
+held, the firmware lights its analog LED (GP19/GP20) fully, and a press
+resends the analog's current value through its `ANALOG` rules (firmware
+0.7.1). From 0.7.2 that's all they do: table rules with input 10 or 11 as
+the trigger are ignored (the press and release are still reported).
 
-**Analog inputs (A0, A1): voltage divider.**
+**Variable inputs V1 and V2 (A0, A1): voltage divider.**
 Jack pad 2 carries +3V3 out; pads 4 and 5 both go to the ADC pin, which has
 a 10 kΩ pull-down to AGND. A resistive sensor or expression pedal forms the
 top half of the divider. With nothing plugged in the ADC reads about 0. The

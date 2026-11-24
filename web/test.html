@@ -18,6 +18,7 @@
 <script src="blocks.js"></script>
 <script src="pianoroll.js"></script>
 <script src="band.js"></script>
+<script src="generator.js"></script>
 <script>
 'use strict';
 const S = Switchcraft;
@@ -733,133 +734,233 @@ function fakeBoard() {
     assertEq(JSON.stringify(full), before);
   });
 
-  // --- Musician view (band.js) ---
+  // --- Devices view (band.js) ---
   const BD = SwitchcraftBand;
+  const reopen = (b, opts) => BD.bandFromTable(S.parseTable(S.buildTable(BD.tableFromBand(b, opts)))).band;
+  // A band with a bit of everything: notes, a generator, a sequencer, a wobble on the notes, controls.
+  function mixedBand() {
+    const b = BD.defaultBand();
+    BD.newDevice(b, 'notes', [0, 1, 2]);
+    BD.newDevice(b, 'gen', [3, 4]);
+    BD.newDevice(b, 'seq', [5]);
+    const lfo = BD.newDevice(b, 'lfo', [6]).device;
+    lfo.target = b.devices[0];
+    BD.newDevice(b, 'controls', [7, 8]);
+    b.devices[1].name = 'Sam’s tune';
+    b.access[3] = { label: 'Sam, head switch', lockoutMs: 1000, holdMs: 750 };
+    return b;
+  }
 
-  await test('band templates: valid tables that reopen with the same musicians', () => {
+  await test('band templates: valid tables that reopen with the same devices', () => {
     for (const t of BD.TEMPLATES) {
       const band = t.band();
       const blob = S.buildTable(BD.tableFromBand(band));
       assert(blob.length <= 4080, `${t.id}: ${blob.length} bytes`);
       assert(band.name.length <= 16, `${t.id}: name too long`);
-      const inputs = BD.slots(band).map((x) => x.input);
-      assertEq(inputs.length, new Set(inputs).size);
       const back = BD.bandFromTable(S.parseTable(blob));
       assert(back.band, `${t.id}: ${back.reason}`);
       assertEq(BD.editorJson(back.band), BD.editorJson(band));
-      assertEq(S.tableFromForm(BD.toForm(back.band)).rules, S.tableFromForm(BD.toForm(band)).rules);
     }
   });
 
-  await test('band: each musician plays on their own channel; modulators can target another', () => {
-    const b = BD.TEMPLATES.find((t) => t.id === 'mod').band();
-    const table = BD.tableFromBand(b);
-    const keys = b.musicians.find((m) => m.name === 'Keys');
-    const noteRules = table.rules.filter((r) => r.act === S.ACT.NOTE);
-    assert(noteRules.length === 6 && noteRules.every((r) => r.p0 === keys.channel));
-    // The effects musician (channel 1) changes Keys' sound (channel 0).
-    assertEq(table.modulators.filter((m) => m.id < 3).map((m) => m.channel), [0, 0, 0]);
-    const arp = b.musicians.find((m) => m.name === 'Arp');
-    assertEq(table.sequences.map((q) => q.channel), [arp.channel]);
-    assertEq(table.modulators[3].channel, arp.channel);
-    assertEq(table.modulators[3].follow, 0);
+  await test('band: devices, names, colours, wobble targets and switch labels survive the board', () => {
+    const b = mixedBand();
+    const back = reopen(b);
+    assertEq(BD.editorJson(back), BD.editorJson(b));
+    assertEq(S.tableFromForm(BD.toForm(back)).rules, S.tableFromForm(BD.toForm(b)).rules);
+    assert(back.devices[3].target === back.devices[0], 'the wobble still changes the notes');
+    assertEq(back.access[3].label, 'Sam, head switch');
   });
 
-  await test('band: a switch has one job; assigning it elsewhere moves it', () => {
+  await test('band: one switch always does the job that makes a sound', () => {
+    const first = { notes: 'scale', gen: 'gen-note', seq: 'seq-step', arp: 'seq-play', lfo: 'mod-run', env: 'mod-run', controls: 'transpose' };
+    for (const kind of BD.KINDS) {
+      const b = BD.defaultBand();
+      const { device, left } = BD.newDevice(b, kind, [4]);
+      assertEq(left, []);
+      assertEq(device.switches.length, 1);
+      assertEq(BD.toForm(b).switches[4].action, first[kind]);
+    }
+  });
+
+  await test('band: more switches take the next jobs in priority order; spares are left over', () => {
     const b = BD.defaultBand();
-    const m1 = BD.addMusician(b, 'Sam');
-    const m2 = BD.addMusician(b, 'Ríona');
-    assert(m1.channel !== m2.channel && m1.colour !== m2.colour);
-    const seq = BD.addDevice(b, m1, 'seq');
-    const notes = BD.addDevice(b, m2, 'notes');
-    notes.keys.push({ input: null, value: 0 });
-    assert(BD.assign(b, seq, { role: 'step' }, 3) === null);
-    const was = BD.assign(b, notes, { key: 0 }, 3);
-    assert(was && was.device === seq && was.role === 'step');
-    assertEq([seq.roles.step, notes.keys[0].input], [null, 3]);
-    assertEq(BD.owner(b, 3).device, notes);
-    assert(!BD.freeInputs(b).includes(3));
+    const { device, left } = BD.newDevice(b, 'gen', [2, 0, 5, 1, 9]);
+    assertEq(device.switches.map((s) => [s.input, s.role]), [[2, 'note'], [0, 'home'], [5, 'again'], [1, 'new']]);
+    assertEq(left, [9]);
+    assert(!BD.hasRoom(b, device));
+    // Giving a switch another job swaps it with the switch that had it.
+    BD.setRole(b, device, 1, 'note');
+    assertEq(device.switches.map((s) => [s.input, s.role]), [[2, 'new'], [0, 'home'], [5, 'again'], [1, 'note']]);
+    // Taking a switch away frees its job for the next one.
+    BD.removeSwitch(b, device, 0);
+    assertEq(BD.freeRoles(b, device).map(([k]) => k), ['home']);
+    assertEq(BD.addSwitch(b, device, 9), { was: null });
+    assertEq(device.switches.find((s) => s.input === 9).role, 'home');
+    // Notes: each switch plays the next note up the scale.
+    const notes = BD.newDevice(b, 'notes', [3, 4, 6]).device;
+    assertEq(notes.switches.map((s) => s.value), [0, 1, 2]);
+  });
+
+  await test('band: a switch has one device; giving it to another moves it', () => {
+    const b = BD.defaultBand();
+    const a = BD.newDevice(b, 'notes', [0, 1]).device;
+    const g = BD.newDevice(b, 'gen', []).device;
+    assert(a.channel !== g.channel && a.colour !== g.colour);
+    const r = BD.addSwitch(b, g, 1);
+    assert(r.was && r.was.device === a);
+    assertEq(a.switches.map((s) => s.input), [0]);
+    assertEq(BD.owner(b, 1).device, g);
+    assert(!BD.freeInputs(b).includes(1));
+    // New devices take chosen switches from where they were too.
+    BD.newDevice(b, 'seq', [0]);
+    assertEq(a.switches, []);
+  });
+
+  await test('band: only switches 1–10 are offered (the L/R buttons map the analog inputs)', () => {
+    assertEq(BD.freeInputs(BD.defaultBand()), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   await test('band: the board has room for four sequences and four modulators', () => {
     const b = BD.defaultBand();
-    const m = BD.addMusician(b);
-    for (let i = 0; i < 4; i++) assert(BD.addDevice(b, m, i % 2 ? 'arp' : 'seq'));
-    assert(!BD.canAdd(b, 'arp') && BD.addDevice(b, m, 'seq') === null);
-    for (let i = 0; i < 4; i++) assert(BD.addDevice(b, m, i % 2 ? 'env' : 'lfo'));
+    for (let i = 0; i < 4; i++) assert(BD.newDevice(b, i % 2 ? 'arp' : 'seq'));
+    assert(!BD.canAdd(b, 'arp') && BD.newDevice(b, 'seq') === null);
+    for (let i = 0; i < 4; i++) assert(BD.newDevice(b, i % 2 ? 'env' : 'lfo'));
     assert(!BD.canAdd(b, 'lfo'));
-    BD.removeDevice(b, m, m.devices[1]);
+    BD.removeDevice(b, b.devices[1]);
     assert(BD.canAdd(b, 'seq'));
     assertEq(b.sequences[1].notes, []);
   });
 
   await test('band: a sequencer’s next-note switch becomes its play switch', () => {
     const b = BD.defaultBand();
-    const m = BD.addMusician(b);
-    const d = BD.addDevice(b, m, 'seq');
-    BD.assign(b, d, { role: 'step' }, 0);
+    const d = BD.newDevice(b, 'seq', [0]).device;
     BD.setSequenceMode(b, d.seq, 'clock');
-    assertEq(d.roles, { play: 0 });
+    assertEq(d.switches, [{ input: 0, role: 'play' }]);
     assertEq(BD.toForm(b).switches[0].action, 'seq-play');
     BD.setSequenceMode(b, d.seq, 'press');
-    assertEq(d.roles, { step: 0 });
+    assertEq(d.switches, [{ input: 0, role: 'step' }]);
   });
 
-  await test('band: older presets (no musicians stored) open as musicians', () => {
+  await test('band: a wobble changes the device it targets, and keeps its channel if that goes', () => {
+    const b = BD.defaultBand();
+    const keys = BD.newDevice(b, 'notes', [0]).device;
+    const tune = BD.newDevice(b, 'gen', [1]).device;
+    const wob = BD.newDevice(b, 'lfo', [2]).device;
+    assert(wob.target === tune, 'a new wobble changes the newest sound device');
+    wob.target = keys;
+    keys.channel = 5;
+    assertEq(BD.tableFromBand(b).modulators[0].channel, 5);
+    BD.removeDevice(b, keys);
+    assertEq([wob.target, wob.channel], [null, 5]);
+    assertEq(BD.tableFromBand(b).modulators[0].channel, 5);
+  });
+
+  await test('band: older presets (no devices stored) open as devices', () => {
     const strip = (s) => { const c = { ...s }; delete c.channel; delete c.velocity; return c; };
     for (const t of S.TEMPLATES) {
       const f = t.form();
       const band = BD.bandFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).band;
-      assert(band && band.musicians.length >= 1, t.id);
+      assert(band && band.devices.length >= 1, t.id);
       assertEq(BD.toForm(band).switches.map(strip), f.switches.map(strip));
-      for (const m of band.musicians) assertEq(m.channel, f.channel);
+      for (const d of band.devices) if (d.channel !== undefined) assertEq(d.channel, f.channel);
     }
   });
 
-  await test('band: stored musicians are ignored if the rules were changed elsewhere', () => {
+  await test('band: stored devices are ignored if the rules were changed elsewhere', () => {
     const b = BD.TEMPLATES[0].band();
+    b.devices[0].name = 'Mine';
     const table = BD.tableFromBand(b);
     table.rules = table.rules.filter((r) => r.src !== 0);
     const back = BD.bandFromTable(S.parseTable(S.buildTable(table)));
     assert(back.band);
     assertEq(BD.owner(back.band, 0), null);
-    assertEq(back.band.musicians[0].name, 'Musician 1');
+    assertEq(back.band.devices[0].name, '');
   });
 
-  await test('band: each musician has their own loudness', () => {
-    const b = BD.TEMPLATES.find((t) => t.id === 'four').band();
-    b.musicians[0].velocity = 40;   // Melody: notes
-    b.musicians[2].velocity = 120;  // Tune: a sequencer
+  await test('band: musicians saved by the older editor open from the rules', () => {
+    const b = mixedBand();
+    const table = BD.tableFromBand(b);
+    const body = Array.from(new TextEncoder().encode(JSON.stringify({ v: 1, m: [{ n: 'Old', c: 0, ch: 0, d: [] }] })));
+    table.extra = [[BD.EDITOR_ID, 0, body.length & 0xff, body.length >> 8, ...body]];
+    const back = BD.bandFromTable(S.parseTable(S.buildTable(table))).band;
+    assertEq(S.tableFromForm(BD.toForm(back)).rules, S.tableFromForm(BD.toForm(b)).rules);
+  });
+
+  await test('band: each device has its own loudness', () => {
+    const b = mixedBand();
+    b.devices[0].velocity = 40;   // notes
+    b.devices[2].velocity = 120;  // sequencer
     const table = S.parseTable(S.buildTable(BD.tableFromBand(b)));
-    assertEq(table.rules.filter((r) => r.act === S.ACT.NOTE && r.src < 4).map((r) => r.p1), [40, 40, 40, 40]);
-    assertEq(table.sequences.find((q) => q.id === b.musicians[2].devices[0].seq).velocity, 120);
-    const back = BD.bandFromTable(table).band;
-    assertEq(back.musicians.map((m) => m.velocity), [40, 100, 120, 100]);
+    assertEq(table.rules.filter((r) => r.act === S.ACT.NOTE).map((r) => r.p1), [40, 40, 40]);
+    assertEq(table.sequences.find((q) => q.id === b.devices[2].seq).velocity, 120);
+    assertEq(BD.bandFromTable(table).band.devices.map((d) => d.velocity), [40, 100, 120, undefined, undefined]);
   });
 
-  await test('band: lockout and hold time per musician (INPUTS section only when they differ)', () => {
-    const b = BD.TEMPLATES.find((t) => t.id === 'four').band();
-    for (const m of b.musicians) Object.assign(m, { lockoutMs: 250, holdMs: 750 });
+  await test('band: lockout and hold time per switch (INPUTS section only when they differ)', () => {
+    const b = mixedBand();
+    b.access.forEach((a) => Object.assign(a, { lockoutMs: 250, holdMs: 750 }));
     let table = BD.tableFromBand(b);
     assertEq([table.inputs, table.globals.lockoutMs, table.globals.holdMs], [undefined, 250, 750]);
-    b.musicians[0].lockoutMs = 1000;  // Melody, switches 1-4
-    b.musicians[2].holdMs = 2000;     // Tune, switches 7-8
+    b.access[0].lockoutMs = 1000;
+    b.access[5].holdMs = 2000;
     table = BD.tableFromBand(b);
-    assertEq(table.inputs, {
-      lockout: [1000, 1000, 1000, 1000, 250, 250, 250, 250, 250, 250, 0, 250],
-      hold: [750, 750, 750, 750, 750, 750, 2000, 2000, 750, 750, 500, 750],
-    });
+    assertEq(table.inputs.lockout.slice(0, 3), [1000, 250, 250]);
+    assertEq(table.inputs.hold.slice(4, 7), [750, 2000, 750]);
     const parsed = S.parseTable(S.buildTable(table));
     assertEq(parsed.inputs, table.inputs);
-    assertEq(BD.bandFromTable(parsed).band.musicians.map((m) => [m.lockoutMs, m.holdMs]),
-      [[1000, 750], [250, 750], [250, 2000], [250, 750]]);
-    // Older firmware: no INPUTS section, everyone gets the longest.
+    assertEq(BD.bandFromTable(parsed).band.access.map((a) => [a.lockoutMs, a.holdMs]), b.access.map((a) => [a.lockoutMs, a.holdMs]));
+    // Older firmware: no INPUTS section, every switch gets the longest...
     table = BD.tableFromBand(b, { perInput: false });
     assertEq([table.inputs, table.globals.lockoutMs, table.globals.holdMs], [undefined, 1000, 2000]);
-    // Without stored musicians, the settings come back from the section.
+    // ...but the page still remembers each switch's own (EDITOR section).
+    assertEq(reopen(b, { perInput: false }).access[0].lockoutMs, 1000);
+    // Without stored devices, the settings come back from the INPUTS section.
     parsed.extra = [];
-    const back = BD.bandFromTable(parsed).band;
-    assertEq(back.musicians.map((m) => `${m.lockoutMs}/${m.holdMs}`).sort(), ['1000/750', '250/2000', '250/750', '250/750']);
+    assertEq(BD.bandFromTable(parsed).band.access[5].holdMs, 2000);
+  });
+
+  await test('band: folded devices stay folded', () => {
+    const b = mixedBand();
+    b.devices[1].collapsed = true;
+    assertEq(reopen(b).devices.map((d) => d.collapsed), [false, true, false, false, false]);
+  });
+
+  await test('band: a device an octave up or down plays its notes there, and reopens as it was', () => {
+    const b = BD.defaultBand();
+    b.mask = 0x0295;  // major pentatonic: 5 steps an octave
+    const notes = BD.newDevice(b, 'notes', [0, 1]).device;
+    const seq = BD.newDevice(b, 'seq', [2]).device;
+    const gen = BD.newDevice(b, 'gen', [3]).device;
+    const drums = BD.newDevice(b, 'notes', [4]).device;
+    drums.noteType = 'fixed';
+    drums.switches[0].value = 36;
+    Object.assign(notes, { octave: -1 });
+    Object.assign(seq, { octave: 1 });
+    Object.assign(gen, { octave: 2 });
+    drums.octave = 1;   // fixed notes ignore it
+    const seqNotes = [...b.sequences[seq.seq].notes];
+    const g = { ...BD.generatorsOf(b)[gen.gen] };
+    const f = BD.toForm(b);
+    assertEq([f.switches[0].degree, f.switches[1].degree, f.switches[4].note], [-5, -4, 36]);
+    assertEq(f.sequences[seq.seq].notes, seqNotes.map((n) => n + 5));
+    assertEq([f.generators[gen.gen].low, f.generators[gen.gen].high], [g.low + 10, g.high + 10]);
+    const back = reopen(b);
+    assertEq(BD.editorJson(back), BD.editorJson(b));
+    assertEq(back.sequences[seq.seq].notes, seqNotes);
+    assertEq([back.generators[gen.gen].low, back.generators[gen.gen].high, back.generators[gen.gen].home], [g.low, g.high, g.home]);
+    // Older firmware: the generator isn't in the table, its settings come back from the EDITOR section.
+    const old = reopen(b, { generators: false });
+    assertEq([old.generators[gen.gen].low, old.generators[gen.gen].high], [g.low, g.high]);
+  });
+
+  await test('band: clear leaves no devices and spare CCs', () => {
+    const b = BD.blankBand();
+    assertEq(b.devices, []);
+    const f = BD.toForm(b);
+    assertEq(f.switches.map((s) => s.action), Array(12).fill('none'));
+    assertEq(f.analog.map((a) => a.cc), [20, 21]);
+    assertEq(reopen(b).devices, []);
   });
 
   await test('form: per-switch channels and next preset survive the table', () => {
@@ -868,6 +969,75 @@ function fakeBoard() {
     f.switches[11] = { action: 'preset-next' };
     const back = S.formFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).form;
     assertEq([back.switches[0], back.switches[11]], [f.switches[0], f.switches[11]]);
+  });
+
+  // --- Note generator (spec B.6.3), with a seeded random source ---
+  const seeded = (seed) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const GEN = SwitchcraftGenerator;
+  const PENT = 0x0295;
+
+  await test('generator stays in range and fills gaps', () => {
+    const g = new GEN.Generator({ loopLen: 0, phraseLen: 0, low: -3, high: 9, maxLeap: 6, wLeap: 40 }, PENT, seeded(1));
+    let prev = null, prevMove = 0;
+    for (let i = 0; i < 2000; i++) {
+      const { degree } = g.newNote();
+      assert(degree >= -3 && degree <= 9, `out of range: ${degree}`);
+      if (prev !== null && Math.abs(prevMove) >= 2 && prev - Math.sign(prevMove) >= -3 && prev - Math.sign(prevMove) <= 9)
+        assertEq(degree, prev - Math.sign(prevMove));
+      prevMove = prev === null ? 0 : degree - prev;
+      prev = degree;
+    }
+  });
+
+  await test('generator ends every phrase on home', () => {
+    const g = new GEN.Generator({ loopLen: 0, phraseLen: 8, low: -2, high: 7 }, PENT, seeded(2));
+    for (let i = 1; i <= 80; i++) {
+      const r = g.newNote();
+      if (i % 8 === 0) { assert(r.degree % 5 === 0, `press ${i}: ${r.degree}`); assertEq(r.why, 'cadence'); }
+    }
+  });
+
+  await test('generator remembers its tune: change 0 repeats, change 100 never does', () => {
+    const still = new GEN.Generator({ loopLen: 8, phraseLen: 8, change: 0 }, PENT, seeded(3));
+    const first = Array.from({ length: 8 }, () => still.newNote().degree);
+    const again = Array.from({ length: 8 }, () => still.newNote());
+    assertEq(again.map((r) => r.degree), first);
+    assert(again.every((r) => r.why === 'remembered'), 'all remembered');
+    const always = new GEN.Generator({ loopLen: 8, phraseLen: 8, change: 100 }, PENT, seeded(4));
+    for (let i = 0; i < 8; i++) always.newNote();
+    for (let i = 0; i < 16; i++) assert(always.newNote().why !== 'remembered', 'change 100 always makes a new note');
+  });
+
+  await test('generator home, again and new tune', () => {
+    const g = new GEN.Generator({ low: -2, high: 7, loopLen: 8, phraseLen: 8 }, PENT, seeded(5));
+    for (let i = 0; i < 3; i++) g.newNote();
+    const last = g.last;
+    assertEq(g.again().degree, last);
+    assertEq(g.last, last);
+    const h = g.home();
+    assert(h.degree === 0 || h.degree === 5, `home ${h.degree}`);
+    assertEq([g.phrasePos, g.loopPos], [0, 0]);
+    g.reset();
+    assert(g.loop.every((d) => d === null) && g.last === null, 'new tune forgets');
+    // From degree 7 home is C5 (5), not C4 (0).
+    const hi = new GEN.Generator({ low: -2, high: 9 }, PENT, seeded(6));
+    assertEq(hi.cadenceFrom(7), 5);
+  });
+
+  await test('generator accents favour stable notes', () => {
+    const share = (boost) => {
+      const g = new GEN.Generator({ loopLen: 0, phraseLen: 0, accentEvery: 1, stableBoost: boost, gapFill: false }, PENT, seeded(7));
+      let stable = 0;
+      for (let i = 0; i < 3000; i++) if (g.isStable(g.newNote().degree)) stable++;
+      return stable / 3000;
+    };
+    const plain = share(10), strong = share(100);
+    assert(strong > plain + 0.2, `stable share ${plain.toFixed(2)} -> ${strong.toFixed(2)}`);
   });
 
   // Tables for tools/check_page_tables.py to send to a real board.
@@ -880,12 +1050,11 @@ function fakeBoard() {
     .map(([name, f]) => `${name} ${toHex(S.buildTable(S.tableFromForm(f)))}`)
     .concat(SwitchcraftBand.TEMPLATES.map((t) => `band ${t.id} ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(t.band())))}`))
     .concat((() => {
-      // Musicians with different "ignore repeat presses" times and loudness: an INPUTS section (firmware 0.7.0).
-      const b = SwitchcraftBand.TEMPLATES.find((t) => t.id === 'four').band();
-      b.musicians[0].lockoutMs = 1000;
-      b.musicians[1].velocity = 60;
-      b.musicians[2].holdMs = 2000;
-      return [`band per-musician ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(b)))}`];
+      // Switches with different "ignore repeat presses" times: an INPUTS section (firmware 0.7.0).
+      const b = SwitchcraftBand.TEMPLATES[0].band();
+      b.access[0].lockoutMs = 1000;
+      b.access[2].holdMs = 2000;
+      return [`band per-switch ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(b)))}`];
     })())
     .join('\n');
   document.body.append(blobs);
