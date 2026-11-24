@@ -15,6 +15,7 @@
 #define TICKS_PER_BEAT 24
 #define MAX_ORDER (2 * MAX_STEPS * 4)  // up-down over 4 octaves
 #define HOLD_SCAN_US 1000
+#define MAX_POOL 12  // notes held in one arpeggio
 
 // --- State ---
 
@@ -87,6 +88,11 @@ typedef struct {
     uint64_t off_us;
     uint8_t step_owner;  // press mode, gate 0: input whose release ends the note
     uint8_t slot;        // position in the Euclidean rhythm
+    // An arpeggio from held notes (ARP_NOTE rules target it): it plays the
+    // pool instead of its steps, and runs while the pool has notes.
+    bool arp;
+    uint8_t pool_n;
+    struct { uint8_t rule, owner, note, vel; } pool[MAX_POOL];
 } seq_rt_t;
 static seq_rt_t seqs[MAX_SEQS];
 
@@ -179,11 +185,24 @@ static int step_pitch(const seq_def_t *d, uint16_t entry) {
     return note + 12 * (entry >> 8);
 }
 
+// An order entry's pitch: a held note (arpeggio) or a step.
+static int entry_pitch(int i, uint16_t entry) {
+    const seq_rt_t *s = &seqs[i];
+    if (s->arp)
+        return s->pool[entry & 0xFF].note + 12 * (entry >> 8);
+    return step_pitch(&tab->seqs[i], entry);
+}
+
 static void seq_build_order(int i) {
     const seq_def_t *d = &tab->seqs[i];
     seq_rt_t *s = &seqs[i];
     uint16_t n = 0;
-    for (int oct = 0; oct < d->octaves; oct++)
+    if (s->arp) {
+        // The held notes, in the order they were pressed (sorted below).
+        for (int oct = 0; oct < d->octaves; oct++)
+            for (int k = 0; k < s->pool_n; k++)
+                s->order[n++] = (uint16_t)((oct << 8) | k);
+    } else for (int oct = 0; oct < d->octaves; oct++)
         for (int st = 0; st < d->step_count; st++) {
             // Rests only make sense in written order.
             if (d->order != ORDER_WRITTEN && (d->steps[st * STEP_LEN + 2] & STEP_REST))
@@ -193,8 +212,8 @@ static void seq_build_order(int i) {
     if (d->order == ORDER_UP || d->order == ORDER_DOWN || d->order == ORDER_UPDOWN) {
         for (int a = 1; a < n; a++) {  // insertion sort by pitch
             uint16_t e = s->order[a];
-            int p = step_pitch(d, e), b = a - 1;
-            while (b >= 0 && step_pitch(d, s->order[b]) > p) {
+            int p = entry_pitch(i, e), b = a - 1;
+            while (b >= 0 && entry_pitch(i, s->order[b]) > p) {
                 s->order[b + 1] = s->order[b];
                 b--;
             }
@@ -246,6 +265,23 @@ static void seq_play_step(int i, uint8_t owner) {
             s->finish = true;
     }
 
+    if (s->arp) {
+        // One held note per division, sounding for the sequence's gate.
+        uint32_t step_ticks = d->division;
+        s->next_tick = tick + step_ticks;
+        s->snd_ch = resolve_ch(d->channel);
+        s->snd_note = clamp_note(entry_pitch(i, entry) + transpose);
+        uint8_t v = s->pool[entry & 0xFF].vel;
+        note_on(s->snd_ch, s->snd_note, v ? v : resolve_vel(d->velocity));
+        s->sounding = true;
+        mods_seq_note(i, true);
+        s->off_us = 0;
+        s->step_owner = NO_OWNER;
+        uint32_t gate_ticks = step_ticks * d->gate / 100;
+        s->off_by_tick = true;
+        s->off_tick = tick + (gate_ticks ? gate_ticks : 1);
+        return;
+    }
     const uint8_t *st = d->steps + (entry & 0xFF) * STEP_LEN;
     uint32_t len = st[2] & STEP_LENGTH_MASK;
     if (!len)
@@ -353,6 +389,70 @@ static void act_note(uint8_t ri, const rule_t *r, uint8_t owner) {
     }
 }
 
+// The pool changed: start the arpeggio (its first note now: the rule was
+// quantized, so this is on the beat), carry on with the new notes, or stop.
+static void arp_changed(int i) {
+    seq_rt_t *s = &seqs[i];
+    if (!s->pool_n) {
+        seq_stop(i);
+        return;
+    }
+    if (!s->running) {
+        seq_note_off(s);
+        seq_build_order(i);
+        s->running = true;
+        s->finish = false;
+        s->gate_mode = GATE_HOLD;
+        s->owner = NO_OWNER;  // the pool says when it stops, not a switch
+        s->slot = 0;
+        seq_clock_step(i, NO_OWNER);
+        return;
+    }
+    uint16_t pos = s->pos;
+    seq_build_order(i);
+    s->pos = s->order_len ? pos % s->order_len : 0;
+}
+
+static void arp_remove(int i, uint8_t rule, uint8_t owner) {
+    seq_rt_t *s = &seqs[i];
+    int k = 0;
+    for (int j = 0; j < s->pool_n; j++)
+        if (!(s->pool[j].rule == rule && s->pool[j].owner == owner))
+            s->pool[k++] = s->pool[j];
+    if (k != s->pool_n) {
+        s->pool_n = (uint8_t)k;
+        arp_changed(i);
+    }
+}
+
+static void act_arp_note(uint8_t ri, const rule_t *r, uint8_t owner) {
+    int i = seq_target(r->p0);
+    if (i < 0 || !seqs[i].arp)
+        return;
+    seq_rt_t *s = &seqs[i];
+    uint8_t gate = r->flags & GATE_MASK;
+    if (gate == GATE_LATCH) {
+        if (latched[ri]) {  // pressed again: the note leaves
+            latched[ri] = false;
+            arp_remove(i, ri, NO_OWNER);
+            return;
+        }
+        latched[ri] = true;
+        owner = NO_OWNER;
+    } else if (owner == NO_OWNER) {
+        return;  // a held note needs a switch to let it go
+    }
+    if (s->pool_n >= MAX_POOL)
+        return;
+    int note = (r->flags & FLAG_DEGREE) ? degree_to_note((int16_t)r->p2) : r->p2;
+    s->pool[s->pool_n].rule = ri;
+    s->pool[s->pool_n].owner = owner;
+    s->pool[s->pool_n].note = clamp_note(note);
+    s->pool[s->pool_n].vel = r->p1;
+    s->pool_n++;
+    arp_changed(i);
+}
+
 static void act_seq_run(const rule_t *r, uint8_t owner) {
     int i = seq_target(r->p0);
     if (i < 0 || tab->seqs[i].advance != ADVANCE_CLOCK)
@@ -375,7 +475,8 @@ static void do_action(uint8_t ri, uint8_t value, uint8_t owner, bool from_queue)
     // A held note or sequence whose switch was released before the beat.
     if (from_queue && owner != NO_OWNER && !pressed[owner] &&
         (r->flags & GATE_MASK) == GATE_HOLD &&
-        (r->act_type == ACT_NOTE || r->act_type == ACT_SEQ_RUN || r->act_type == ACT_MOD_RUN))
+        (r->act_type == ACT_NOTE || r->act_type == ACT_SEQ_RUN || r->act_type == ACT_MOD_RUN ||
+         r->act_type == ACT_ARP_NOTE))
         return;
 
     int i;
@@ -409,6 +510,9 @@ static void do_action(uint8_t ri, uint8_t value, uint8_t owner, bool from_queue)
         break;
     case ACT_SEQ_SELECT:
         selected_seq = r->p0;
+        break;
+    case ACT_ARP_NOTE:
+        act_arp_note(ri, r, owner);
         break;
     case ACT_TRANSPOSE: {
         int t = (r->p0 == 0 ? 0 : transpose) + (int16_t)r->p2;
@@ -470,6 +574,12 @@ static void release_owned(uint8_t input) {
             seq_stop(i);
         else if (s->sounding && s->step_owner == input)
             seq_note_off(s);
+        if (s->arp)
+            for (int j = 0; j < s->pool_n; j++)
+                if (s->pool[j].owner == input) {
+                    arp_remove(i, s->pool[j].rule, input);
+                    break;
+                }
     }
     mods_release_owned(input);
 }
@@ -699,8 +809,10 @@ static void silence(void) {
     for (int i = 0; i < MAX_VOICES; i++)
         if (voices[i].used)
             voice_off(&voices[i]);
-    for (int i = 0; i < MAX_SEQS; i++)
+    for (int i = 0; i < MAX_SEQS; i++) {
         seq_stop(i);
+        seqs[i].pool_n = 0;
+    }
     memset(note_refs, 0, sizeof(note_refs));  // all released above; reset anyway
     memset(latched, 0, sizeof(latched));
     queue_len = 0;
@@ -749,13 +861,16 @@ void engine_load(const table_t *t, bool live) {
     selected_seq = 0;
     for (int i = MAX_SEQS - 1; i >= 0; i--) {
         memset(&seqs[i], 0, sizeof(seqs[i]));
+        for (uint8_t r = 0; r < t->rule_count; r++)
+            if (t->rules[r].act_type == ACT_ARP_NOTE && t->rules[r].p0 == i)
+                seqs[i].arp = true;
         if (t->seqs[i].defined) {
             selected_seq = (uint8_t)i;
             seq_build_order(i);
         }
         seq_rt_t *s = &seqs[i];
         const seq_def_t *d = &t->seqs[i];
-        if (keep[i].running && d->defined && d->advance == ADVANCE_CLOCK && s->order_len) {
+        if (keep[i].running && d->defined && d->advance == ADVANCE_CLOCK && s->order_len && !s->arp) {
             s->running = true;
             s->finish = keep[i].finish;
             s->gate_mode = keep[i].gate_mode;

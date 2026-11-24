@@ -190,6 +190,21 @@ static bool check_rule(const table_t *t, const rule_t *r, uint16_t off, table_er
         if (!seq_ref_ok(t, r->p0, false))
             FAIL(off + 6, INVALID_SEQ_REF);
         break;
+    case ACT_ARP_NOTE:
+        // p0 a sequence (not "selected"), p1 velocity (0 = the sequence's),
+        // p2 a note, or a scale degree with FLAG_DEGREE. Held or latched.
+        if (r->p0 == SEQ_SELECTED || !seq_ref_ok(t, r->p0, false))
+            FAIL(off + 6, INVALID_SEQ_REF);
+        if (r->p1 > 127 || (r->flags & GATE_MASK) == GATE_ONESHOT)
+            FAIL(off + 6, INVALID_PARAM);
+        if (r->flags & FLAG_DEGREE) {
+            int16_t deg = (int16_t)r->p2;
+            if (deg < -127 || deg > 127)
+                FAIL(off + 8, INVALID_PARAM);
+        } else if (r->p2 > 127) {
+            FAIL(off + 8, INVALID_PARAM);
+        }
+        break;
     case ACT_TRANSPOSE: {
         int16_t semis = (int16_t)r->p2;
         if (r->p0 > 1 || semis < -48 || semis > 48)

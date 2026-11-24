@@ -49,6 +49,7 @@ enum {
     ACT_SEQ_STOP = 0x12,
     ACT_SEQ_RESET = 0x13,
     ACT_SEQ_SELECT = 0x14,
+    ACT_ARP_NOTE = 0x15,   // a note joins a sequence's arpeggio while held or latched (0.7.3)
     ACT_TRANSPOSE = 0x20,
     ACT_SET_SCALE = 0x21,
     ACT_PRESET = 0x30,

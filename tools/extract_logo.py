@@ -102,8 +102,11 @@ def silhouette(polys, scale=24):
                 rects.append(rect)
                 nxt[run] = rect
         open_runs = nxt
-    mm = lambda v: round(v / scale, 2)
-    return "".join(f"M{mm(x - pad) + x0:.2f} {mm(y - pad) + y0:.2f}h{mm(rw):g}v{mm(rh):g}h{-mm(rw):g}z"
+    # Each strip's edges are worked out from pixel positions (not rounded
+    # widths added up), and each reaches a little into the strip below, so no
+    # hairline gap shows between them at any scale.
+    at = lambda v, origin: f"{(v - pad) / scale + origin:.3f}"
+    return "".join(f"M{at(x, x0)} {at(y, y0)}H{at(x + rw, x0)}V{at(y + rh + 0.6, y0)}H{at(x, x0)}Z"
                    for x, y, rw, rh in rects)
 
 

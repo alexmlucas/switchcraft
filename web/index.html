@@ -100,20 +100,25 @@
   .devcard-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
   .devcard-body { display: grid; gap: 14px; }
   /* The chevron: its own 44px square, the same size as the ✕. */
-  .devcard h3 button.devcard-toggle {
+  .devcard button.devcard-toggle {
     flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; margin-right: 6px;
     display: grid; place-items: center; font-size: 24px;
     border: none; background: transparent;
   }
-  .devcard h3 button.devcard-toggle:hover { background: transparent; }
-  /* Cards that fold away: a chevron before the heading, as on devices. */
+  .devcard button.devcard-toggle:hover { background: transparent; }
+  /* The fold arrow sits in the top right-hand corner, folded or open. */
+  .devcard-head { position: relative; padding-right: 48px; }
+  .devcard-head .devcard-toggle { position: absolute; top: 0; right: 0; margin: 0; }
+  /* Cards that fold away: a chevron at the right-hand end of the heading,
+     after its dotted rule, as on devices. */
   section.foldable h2 { align-items: center; }
   section.foldable h2 button.card-toggle {
-    flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; margin: -6px -8px -6px -6px;
+    flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; margin: -6px -8px -6px 4px; order: 2;
     display: grid; place-items: center; font-size: 20px; border: none; background: transparent; color: var(--text);
   }
   section.foldable h2 button.card-toggle:hover { background: transparent; color: var(--text); }
   section.foldable.folded > h2 { margin-bottom: 0; }
+  section.foldable h2::after { order: 1; }
   /* Browser sound sits outside the template: it isn't numbered. */
   #sound-card { counter-increment: none; }
   #sound-card h2::before { content: none; }
@@ -151,7 +156,9 @@
   .badge.small { width: 26px; height: 26px; font-size: 14px; }
   .devcard-settings { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
   /* The ✕ that removes a device, at the right-hand end of its heading (top right). */
-  .devcard-head .remove-devcard { margin-left: auto; flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; font-size: 18px; }
+  .devcard-foot { display: flex; justify-content: flex-end; padding-right: 8px; }  /* in line with the erase buttons */
+  .sw-row button.erase { width: 44px; height: 44px; min-height: 0; padding: 0; display: grid; place-items: center; }
+  .devcard-foot .remove-devcard { flex: none; width: 44px; height: 44px; min-height: 0; padding: 0; display: grid; place-items: center; }
   .roles { display: grid; gap: 6px; }
   .role {
     display: grid; grid-template-columns: minmax(9ch, 13ch) minmax(0, 15rem) auto; gap: 8px;
@@ -183,10 +190,13 @@
   .board-use { font-size: 15px; margin: 12px 0 0; }
   .devcard .kind { color: var(--muted); font-size: 15px; }
   .devcard .sum { color: var(--muted); font-size: 15px; margin: 0; }
-  .devcard .more { margin: 0; }
   .devcard-settings { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
   /* A switch in a device: its number, its job (or note), ✕. */
-  .role.sw-row { grid-template-columns: minmax(8ch, 9ch) auto minmax(9ch, auto) auto; justify-content: start; }
+  /* A switch's controls on the left, its erase button at the card's right;
+     every other row has a soft fill, so each row reads across as one. */
+  .role.sw-row { grid-template-columns: minmax(8ch, 9ch) auto minmax(9ch, auto) 1fr; }
+  .role.sw-row .erase { justify-self: end; }
+  .roles .sw-row:nth-child(odd):not(.down) { background: var(--bg); }
   /* Each menu is as wide as its choices (the same for every switch in a device). */
   .role.sw-row select { width: auto; max-width: 100%; }
   .sw-toggle { min-height: 0; }
@@ -210,6 +220,18 @@
   .tune .tune-slot { stroke: var(--line); stroke-width: 0.5; }
   .tune .tune-slot.beat { stroke: var(--muted); stroke-opacity: 0.5; }
   .tune .tune-next { fill: var(--wash); fill-opacity: 0.45; }
+  /* The note editor, expanded in the preview's place: framed like it, with
+     the collapse button in its top right-hand corner. */
+  .seq-full { position: relative; }
+  .seq-full .roll-box { margin-top: 0; }
+  .seq-full #seq-editor > .row:first-child { display: none; }   /* only the hidden Plays menu */
+  .mod-full { border: 2px solid var(--ink); padding: 10px 48px 12px 12px; }
+  .seq-full .expand { position: absolute; top: 6px; right: 6px; background: var(--card); width: 32px; height: 32px; min-height: 0; padding: 0;
+    display: grid; place-items: center; }
+  /* A sequence preview, with its expand button in the corner. */
+  .seq-preview { position: relative; }
+  .seq-preview .expand { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; min-height: 0; padding: 0;
+    display: grid; place-items: center; }
   .tune .tune-now { fill: none; stroke: var(--ink); stroke-width: 2; animation: tune-now 0.4s ease-out; }
   .tune .tune-now.again { animation-name: tune-now-again; }
   @keyframes tune-now { from { stroke-width: 5; } }
@@ -393,6 +415,11 @@
   svg.roll .row { fill: var(--card); }
   svg.roll .row.black { fill: color-mix(in srgb, var(--text) 7%, var(--card)); }
   svg.roll .row.inkey { fill: var(--inkey); }
+  /* The piano down the left of a sequence's rows. */
+  svg.roll .key.white { fill: #fff; stroke: none; }
+  svg.roll .key.black { fill: #1d1d1b; }
+  svg.roll .keyline { stroke: #000; stroke-width: 1; }
+  svg.roll .keyframe { fill: none; stroke: #000; stroke-width: 1.5; }
   svg.roll .row.black.inkey { fill: color-mix(in srgb, var(--text) 7%, var(--inkey)); }
   svg.roll .col { stroke: var(--line); stroke-width: 1; }
   svg.roll .col.beat { stroke: var(--muted); stroke-opacity: 0.45; }
@@ -590,27 +617,16 @@
   <div id="seq-editor">
     <div class="row">
       <label class="field" id="seq-mode-field">Plays <select id="seq-mode"></select></label>
-      <label class="field">Notes are <select id="seq-type"></select></label>
     </div>
-    <div class="notes-view" role="group" aria-label="Show the notes as">
-      <span>Notes as</span>
-      <button type="button" id="notes-list" class="keep-enabled quiet" aria-pressed="true">List</button>
-      <button type="button" id="notes-roll" class="keep-enabled quiet" aria-pressed="false">Piano roll</button>
-    </div>
-    <div id="steps" class="steps" aria-label="Notes in this sequence"></div>
+    <div id="steps" class="steps" aria-label="Notes in this sequence" hidden></div>
     <div id="roll" class="roll-box" hidden></div>
-    <p class="hint" id="roll-hint" hidden>Click a cell to add a note; click a note to remove it; drag it up or down to change it, or drag its right edge to make it longer (when it plays in time). With a keyboard: Tab to a note, then the arrow keys (Shift with left and right for its length) and Delete. The dashed line is the end of the sequence.</p>
     <div class="row">
-      <button id="add-note" class="list-only quiet">Add note</button>
-      <button id="add-rest" class="list-only quiet">Add rest</button>
-      <button id="clear-steps" class="quiet">Clear</button>
+      <button id="add-note" class="list-only quiet" hidden>Add note</button>
+      <button id="add-rest" class="list-only quiet" hidden>Add rest</button>
       <button id="import-midi" class="quiet">Import a MIDI file…</button>
     </div>
     <div class="row" style="margin-top: 16px;">
-      <label class="field">Order <select id="seq-order"></select></label>
-      <label class="field">Octaves <select id="seq-octaves"></select></label>
       <label class="field" id="seq-speed-field">Speed <select id="seq-speed"></select></label>
-      <label class="field">Note length <select id="seq-length"></select></label>
     </div>
     <div class="row rhythm-row" id="seq-rhythm-row">
       <label class="field">Rhythm <select id="seq-rhythm"></select></label>
@@ -619,12 +635,11 @@
       <label class="field euclid-field">Rotate <input type="number" id="seq-rotate" min="0" max="31"></label>
       <svg id="rhythm-circle" class="euclid-field" width="112" height="112" viewBox="-56 -56 112 112" role="img"></svg>
     </div>
-    <p class="hint euclid-field" id="rhythm-hint">A euclidean rhythm spreads the hits as evenly as possible around the steps. Each hit plays the sequence’s next note; the other steps are rests. Changes are heard while it plays.</p>
   </div>
 
   <div id="mod-editor">
     <div class="row">
-      <label class="field mod-on">Moves <select id="mod-output"></select></label>
+      <label class="field mod-on">Sends <select id="mod-output"></select></label>
       <label class="field mod-on mod-cc">Controller <select id="mod-cc"></select></label>
       <label class="field mod-on">From <input type="number" id="mod-from" min="0" max="127"></label>
       <label class="field mod-on">To <input type="number" id="mod-to" min="0" max="127"></label>
@@ -662,7 +677,6 @@
       <label class="field">Snap to <select id="midi-grid"></select></label>
     </div>
     <div class="row" style="margin-top: 12px;">
-      <label class="field">Plays <select id="midi-mode"></select></label>
       <label class="check" id="midi-tempo-label"><input type="checkbox" id="midi-tempo"> <span></span></label>
     </div>
     <div id="midi-preview" aria-live="polite"></div>
@@ -716,15 +730,15 @@ const DRUMS = {
 };
 
 const MODE_CHOICES = [['press', 'One note per press'], ['clock', 'By itself, in time']];
-const NOTE_TYPE_CHOICES = [['scale', 'Scale notes'], ['fixed', 'Fixed notes']];
 const ORDER_CHOICES = [['written', 'As written'], ['up', 'Up'], ['down', 'Down'], ['updown', 'Up and down'], ['random', 'Random']];
+// An arpeggiator's rate, on its card: note values (ticks of 24 a beat).
+// The order it plays its held notes in.
+const DIRECTION_CHOICES = [['up', 'Up'], ['down', 'Down'], ['updown', 'Up and down'], ['random', 'Random']];
+const RATE_CHOICES = [[24, '1/4'], [12, '1/8'], [8, '1/8T'], [6, '1/16'], [4, '1/16T'], [3, '1/32']];
 const SPEED_CHOICES = [
   [48, 'Half notes'], [24, 'Quarter notes'], [12, 'Eighth notes'], [8, 'Eighth-note triplets'],
   [6, 'Sixteenth notes'], [4, 'Sixteenth-note triplets'], [3, 'Thirty-second notes'],
 ];
-// Clock mode: % of each step. Press mode: % of a beat, or 0 = until the next note.
-const LENGTH_CLOCK = [[25, 'Very short'], [50, 'Short'], [80, 'Normal'], [100, 'Full (smooth)']];
-const LENGTH_PRESS = [[0, 'Until the next note'], [25, 'Very short'], [50, 'Short'], [80, 'Normal'], [100, 'One beat']];
 let currentSeq = 0;
 let currentMod = 0;
 
@@ -912,8 +926,13 @@ function deviceSummary(d) {
   }
   if (d.kind === 'seq' || d.kind === 'arp') {
     const q = form.sequences[d.seq];
-    if (d.kind === 'arp') return `${countLabel(q.notes.length)} · ${ORDER_CHOICES.find(([v]) => v === q.order)[1].toLowerCase()}`;
-    return `${countLabel(q.notes.length)} · ${q.mode === 'press' ? 'one note per press' : 'plays by itself, in time'}`;
+    if (d.kind === 'arp') {
+      const dir = (DIRECTION_CHOICES.find(([v]) => v === q.order) || [null, 'as pressed'])[1].toLowerCase();
+      const rate = (RATE_CHOICES.find(([v]) => v === q.division) || [null, `${q.division} ticks`])[1];
+      const notes = d.switches.map((s) => noteLabel(d, s.value)).join(' · ');
+      return `${notes || 'no notes yet'} · ${dir} · ${rate}`;
+    }
+    return '';
   }
   if (d.kind === 'mod') {
     const mod = form.modulators[d.mod];
@@ -934,18 +953,11 @@ function deviceLine(d) {
 }
 
 function deviceWarning(d) {
-  if ((d.kind === 'seq' || d.kind === 'arp') && !form.sequences[d.seq].notes.length)
-    return 'No notes yet: use “change notes” to add some.';
+  if (d.kind === 'seq' && !form.sequences[d.seq].notes.length)
+    return 'No notes yet: open the piano roll and add some.';
   const follows = d.kind === 'mod' && form.modulators[d.mod].kind === 'env' && form.modulators[d.mod].follow !== null;
   if (!d.switches.length && !follows) return 'No switch yet: choose a switch on the box, then “add it here”.';
   return '';
-}
-
-// The jobs still free, as a hint for the next switch.
-function moreHint(d) {
-  const free = B.freeRoles(form, d).map(([, label]) => label);
-  if (!free.length || !d.switches.length) return '';
-  return `Another switch would do: ${free.join(', ')}${free.length > 1 ? ' (in that order)' : ''}.`;
 }
 
 // Updates the summaries, warnings and box drawing without rebuilding the
@@ -967,7 +979,11 @@ function renderStatus() {
 function renderBoardUse() {
   // Only the firmware warning: the room left shows on the device menu.
   const gens = B.genIdsInUse(form).size;
+  const arps = form.devices.some((d) => d.kind === 'arp');
   $('board-use').textContent =
+    (arps && !arpsOnBoard()
+      ? 'This board’s firmware is older than 0.7.3, so its arpeggiators are silent. Update the firmware to play them. '
+      : '') +
     (gens && !generatorsOnBoard()
       ? 'This board’s firmware is older than 0.8.0, so melody generators play in this browser only: turn Sound on to hear them. Update the firmware to play them from the board.'
       : '');
@@ -1094,6 +1110,17 @@ function showSwitch(i, focus = false, scroll = true) {
   if (focus) (row && row.querySelector('select'))?.focus({ preventScroll: true });
 }
 
+// A minus in a circle (takes a switch off its device, so it's free again),
+// in the same line style as the bin.
+const UNLINK_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="12" cy="12" r="9"/><path d="M7.5 12h9"/></svg>';
+
+// A bin, drawn in the page's ink (the device's remove button).
+const TRASH_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+
 function deviceCard(d, di) {
   const id = `d${di}`;
   deviceIds.set(d, id);
@@ -1114,8 +1141,9 @@ function deviceCard(d, di) {
     textContent: c.symbol, 'aria-haspopup': 'true', 'aria-expanded': 'false',
     'aria-label': `Colour: ${c.symbol} ${c.name}`, title: 'Choose a colour' });
   badge.addEventListener('click', () => openPalette(d, badge));
-  const remove = el('button', { type: 'button', id: `${id}-remove`, className: 'quiet remove-devcard', textContent: '✕',
+  const remove = el('button', { type: 'button', id: `${id}-remove`, className: 'quiet remove-devcard',
     'aria-label': `Remove ${deviceTitle(d)}`, title: 'Remove this device' });
+  remove.innerHTML = TRASH_ICON;
   remove.addEventListener('click', () => {
     const title = deviceTitle(d);
     if (!confirm(`Remove ${title}? Its switches will be free again.`)) return;
@@ -1130,9 +1158,9 @@ function deviceCard(d, di) {
   const body = el('div', { className: 'devcard-body', id: `${id}-body`, hidden: collapsed });
   const card = el('article', { className: `devcard${collapsed ? ' collapsed' : ''}`, id, 'aria-label': deviceTitle(d), 'data-device': di },
     el('div', { className: 'devcard-head' },
-      el('h3', { id: `${id}-h` }, toggle, badge, name,
+      el('h3', { id: `${id}-h` }, badge, name,
         el('label', { htmlFor: `${id}-name`, className: 'edit-hint', textContent: '✎', title: 'Name this device', 'aria-hidden': 'true' })),
-      kind, line, remove),
+      kind, line, toggle),
     body);
   card.style.setProperty('--mcolour', c.hex);
   // Folded, a click anywhere on the line opens it.
@@ -1154,9 +1182,22 @@ function deviceCard(d, di) {
 
   // A picture (the keyboard, or the tune a melody generator has played)
   // with the device's menus to its right.
-  const graphic = d.kind === 'notes' ? keyboard(d) : d.kind === 'gen' ? tuneGraph(d, id) : null;
+  const isSeq = d.kind === 'seq';
+  const expanded = (isSeq || d.kind === 'mod') && openDevice === d;
+  const graphic = d.kind === 'notes' || d.kind === 'arp' ? keyboard(d) : d.kind === 'gen' ? tuneGraph(d, id)
+    : expanded ? null : isSeq ? seqPreview(d, id) : d.kind === 'mod' ? modPreview(d, id) : null;
   const settings = soundSettings(d, id);
-  if (graphic) body.append(el('div', { className: 'devcard-top' }, graphic, settings));
+  if (expanded) {
+    // The preview, expanded: the whole note (or shape) editor in its place.
+    const what = isSeq ? 'notes' : 'shape';
+    const collapse = el('button', { type: 'button', id: `${id}-edit`, className: 'quiet keep-enabled expand',
+      'aria-expanded': 'true', 'aria-controls': `${id}-full`, 'aria-label': `Close the ${what}`, title: `Close the ${what}` });
+    collapse.innerHTML = COLLAPSE_ICON;
+    // The menus stay at the top, with the editor under them.
+    if (settings) body.append(settings);
+    body.append(el('div', { className: `seq-full${isSeq ? '' : ' mod-full'}`, id: `${id}-full` },
+      isSeq ? $('seq-editor') : $('mod-editor'), collapse));
+  } else if (graphic) body.append(el('div', { className: 'devcard-top' }, graphic, settings));
   else if (settings) body.append(settings);
   body.append(el('p', { className: 'sum', id: `${id}-sum` }));
 
@@ -1167,8 +1208,6 @@ function deviceCard(d, di) {
   const shown = d.kind === 'notes' ? d.switches : [...d.switches].sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
   shown.forEach((s) => rows.append(switchRow(d, s, `${id}-sw${s.input}`)));
   body.append(rows);
-  const more = moreHint(d);
-  if (more) body.append(el('p', { className: 'hint more', id: `${id}-more`, textContent: more }));
   body.append(el('div', { className: 'add-here', id: `${id}-addsel` }));
   if (B.hasRoom(form, d)) {
     // A menu of the switches, to add one without going to the box first.
@@ -1184,33 +1223,143 @@ function deviceCard(d, di) {
   if (d.kind === 'gen') {
     body.append(el('h4', { className: 'devcard-section', textContent: 'settings' }), genSettings(d, id));
   }
-  if (['seq', 'arp', 'mod'].includes(d.kind)) {
+  if (['seq', 'mod'].includes(d.kind)) {
     const open = openDevice === d;
-    // "Change notes" opens the editor; the same button (and one at the
-    // bottom of the editor) closes it again.
-    const what = d.kind === 'seq' || d.kind === 'arp' ? 'notes' : 'shape';
-    const opener = `Change ${what}`;
+    // The expand button on the preview opens the editor in its place; the
+    // collapse button in the editor's corner closes it.
+    const what = d.kind === 'seq' ? 'notes' : 'shape';
     const toggleEditor = () => {
       openDevice = open ? null : d;
+      // Expanding a sequence shows its piano roll.
+      if (!open && what === 'notes') notesView = 'roll';
       renderDevices();
       $(`${id}-edit`)?.focus();
     };
-    const edit = el('button', { type: 'button', id: `${id}-edit`, className: 'quiet keep-enabled',
-      textContent: open ? `Close ${what} ▴` : `${opener} ▾` });
-    edit.setAttribute('aria-expanded', String(open));
-    edit.setAttribute('aria-controls', `${id}-settings`);
-    edit.addEventListener('click', toggleEditor);
-    body.append(el('div', { className: 'row' }, edit));
-    const panel = el('div', { className: 'device-settings', id: `${id}-settings`, hidden: !open });
-    if (open) {
-      panel.append(d.kind === 'seq' || d.kind === 'arp' ? $('seq-editor') : $('mod-editor'));
-      const close = el('button', { type: 'button', id: `${id}-close`, className: 'quiet keep-enabled', textContent: `Close ${what} ▴` });
-      close.addEventListener('click', toggleEditor);
-      panel.append(el('div', { className: 'row close-row' }, close));
-    }
-    body.append(panel);
+    body.querySelector('.seq-preview .expand, .seq-full .expand')?.addEventListener('click', toggleEditor);
   }
+  body.append(el('div', { className: 'devcard-foot' }, remove));
   return card;
+}
+
+// --- Sequence preview: the notes, small, like the keyboard and the tune ---
+// One column per step, low to high, in the device's colour; dashed lines at
+// home (the key's root) and its octaves. The button in its corner expands
+// the full piano roll below.
+
+const EXPAND_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M14 4h6v6"/><path d="M20 4l-7 7"/><path d="M10 20H4v-6"/><path d="M4 20l7-7"/></svg>';
+const COLLAPSE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M4 14h6v6"/><path d="M10 14l-7 7"/></svg>';
+
+function seqPreview(d, id) {
+  const q = form.sequences[d.seq];
+  const pitch = (n) => (q.noteType === 'scale' ? S.degreeToNote(n, form.root, deviceOctave(d), form.mask) : n);
+  const steps = [];
+  q.notes.forEach((n, k) => steps.push({ n: n === null ? null : pitch(n), len: (q.lengths && q.lengths[k]) || 1 }));
+  const total = Math.max(8, steps.reduce((a, x) => a + x.len, 0));
+  const heard = steps.filter((x) => x.n !== null).map((x) => x.n);
+  const lo = (heard.length ? Math.min(...heard) : 60) - 2;
+  const hi = (heard.length ? Math.max(...heard) : 72) + 2;
+  const piano = q.noteType !== 'scale';   // fixed notes: a little piano, one key per semitone
+  const H = 100, Wd = 340, left = piano ? 22 : 34, right = 40;   // the right strip is the expand button's
+  const y = (n) => H - 8 - ((n - lo) / Math.max(1, hi - lo)) * (H - 16);
+  const keyH = (H - 16) / Math.max(1, hi - lo);
+  const step = (Wd - left - right) / total;
+  const parts = [];
+  for (let k = 0; k <= total; k++)
+    parts.push(`<line x1="${left + k * step}" x2="${left + k * step}" y1="2" y2="${H - 2}" class="tune-slot${k % 4 === 0 ? ' beat' : ''}"/>`);
+  for (let n = lo; n <= hi; n++) {
+    if (!isHomeNote(n)) continue;
+    parts.push(`<line x1="${left - 4}" x2="${Wd - right}" y1="${y(n)}" y2="${y(n)}" class="tune-home"/>`);
+    if (!piano) parts.push(`<text x="2" y="${y(n) + 4}" class="tune-label">${S.noteName(n)}</text>`);
+  }
+  if (piano) {
+    // White keys, then black ones over their left part, then the frame.
+    const pw = 16, x0 = 2;
+    parts.push(`<rect x="${x0}" y="${y(hi) - keyH / 2}" width="${pw}" height="${(hi - lo + 1) * keyH}" fill="#fff"/>`);
+    for (let n = lo; n <= hi; n++) {
+      const pc = ((n % 12) + 12) % 12;
+      if (BLACK.has(pc)) parts.push(`<rect x="${x0}" y="${y(n) - keyH / 2 + 0.5}" width="${pw * 0.6}" height="${keyH - 1}" fill="#1d1d1b"/>`);
+      else if (pc === 0 || pc === 5) parts.push(`<line x1="${x0}" x2="${x0 + pw}" y1="${y(n) + keyH / 2}" y2="${y(n) + keyH / 2}" stroke="#000" stroke-width="0.6"/>`);
+    }
+    parts.push(`<rect x="${x0}" y="${y(hi) - keyH / 2}" width="${pw}" height="${(hi - lo + 1) * keyH}" fill="none" stroke="#000" stroke-width="1"/>`);
+  }
+  const colour = B.COLOURS[d.colour].hex;
+  let at = 0;
+  steps.forEach((x, k) => {
+    if (x.n !== null)
+      parts.push(`<rect x="${left + at * step + 1}" y="${y(x.n) - 4}" width="${Math.max(2, x.len * step - 2)}" height="8" rx="1.5" ` +
+        `fill="${colour}" stroke="#000" stroke-width="${isHomeNote(x.n) ? 2 : 1}"><title>Step ${k + 1}: ${S.noteName(x.n)}</title></rect>`);
+    at += x.len;
+  });
+  const open = openDevice === d;
+  const box = el('div', { className: 'tune-box seq-preview', id: `${id}-preview` });
+  box.innerHTML = `<svg viewBox="0 0 ${Wd} ${H}" class="tune" role="img" aria-label="Its notes: ${heard.length} of ${steps.length} steps">${parts.join('')}</svg>`;
+  const expand = el('button', { type: 'button', id: `${id}-edit`, className: 'quiet keep-enabled expand',
+    'aria-expanded': String(open), 'aria-controls': `${id}-settings`,
+    'aria-label': open ? 'Close the notes' : 'Edit the notes (piano roll)', title: open ? 'Close the notes' : 'Edit the notes' });
+  expand.innerHTML = open ? COLLAPSE_ICON : EXPAND_ICON;
+  box.append(expand);
+  return box;
+}
+
+// --- Shape preview for Wobbles & Swells, like the sequence preview ---
+// A wobble: two cycles of its wave. A swell: its rise, fall, hold and
+// release. Upside down if it goes from high to low. Filled in the device's
+// colour; the button in its corner expands the shape editor.
+
+function modShape(m, t) {
+  // A value 0-1 at time t (0-1 across the picture).
+  if (m.kind === 'lfo') {
+    const c = (t * 2) % 1;   // two cycles
+    switch (m.wave) {
+      case 'sine': return 0.5 - 0.5 * Math.cos(2 * Math.PI * c);
+      case 'square': return c < 0.5 ? 1 : 0;
+      case 'saw': return c;
+      case 'random': return [0.3, 0.9, 0.5, 0.1, 0.7, 0.2, 1, 0.4][Math.floor(t * 8) % 8];
+      default: return 1 - Math.abs(2 * c - 1);   // triangle
+    }
+  }
+  // Swell: attack, decay, a held stretch, release, scaled to the picture.
+  const a = Math.max(1, m.attack), dd = Math.max(1, m.decay), r = Math.max(1, m.release);
+  const hold = (a + dd + r) * 0.5;
+  const total = a + dd + hold + r;
+  const ms = t * total, sus = m.sustain / 100;
+  if (ms < a) return ms / a;
+  if (ms < a + dd) return 1 - (1 - sus) * ((ms - a) / dd);
+  if (ms < a + dd + hold) return sus;
+  return sus * (1 - (ms - a - dd - hold) / r);
+}
+
+function modPreview(d, id) {
+  const m = form.modulators[d.mod];
+  const H = 100, Wd = 340, left = 8, right = 40, top = 10, bottom = 90;
+  const flip = m.from > m.to;
+  const pts = [];
+  for (let k = 0; k <= 120; k++) {
+    const t = k / 120;
+    const v = flip ? 1 - modShape(m, t) : modShape(m, t);
+    pts.push([left + t * (Wd - left - right), bottom - v * (bottom - top)]);
+  }
+  const line = pts.map(([x, y], k) => `${k ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join('');
+  const area = `${line}L${Wd - right} ${bottom}L${left} ${bottom}Z`;
+  const colour = B.COLOURS[d.colour].hex;
+  const parts = [
+    `<line x1="${left}" x2="${Wd - right}" y1="${bottom}" y2="${bottom}" class="tune-home"/>`,
+    `<path d="${area}" fill="${colour}" fill-opacity="0.6"/>`,
+    `<path d="${line}" fill="none" stroke="#000" stroke-width="2" stroke-linejoin="round"/>`,
+  ];
+  const what = m.kind === 'lfo' ? `wobble, ${m.wave} wave` : 'swell';
+  const open = openDevice === d;
+  const box = el('div', { className: 'tune-box seq-preview', id: `${id}-preview` });
+  box.innerHTML = `<svg viewBox="0 0 ${Wd} ${H}" class="tune" role="img" aria-label="Its shape: ${what}">${parts.join('')}</svg>`;
+  const expand = el('button', { type: 'button', id: `${id}-edit`, className: 'quiet keep-enabled expand',
+    'aria-expanded': String(open), 'aria-label': 'Edit the shape', title: 'Edit the shape' });
+  expand.innerHTML = EXPAND_ICON;
+  box.append(expand);
+  return box;
 }
 
 // --- Keyboard: the template's scale, and the notes the switches play ---
@@ -1252,7 +1401,7 @@ function keyboard(d) {
   for (let n = lo; n <= hi; n++) if (!BLACK.has(n % 12)) whites.push(n);
   const W = whites.length * KB.w;
   const played = [...byPitch.keys()].sort((a, b) => a - b).map(S.noteName).join(', ');
-  const svg = mk('svg', { viewBox: `0 0 ${W} ${KB.h}`, class: 'kb', role: 'img',
+  const svg = mk('svg', { viewBox: `0.5 0.5 ${W - 1} ${KB.h - 1}`, class: 'kb', role: 'img',
     'aria-label': `Keyboard showing the ${S.NOTE_NAMES[form.root]} scale${played ? `; the switches play ${played}` : ''}` });
   svg.style.maxWidth = `${W * 1.7}px`;
   const colour = B.COLOURS[d.colour].hex;
@@ -1405,6 +1554,19 @@ function soundSettings(d, id) {
       changed();
     });
     row.append(channelSelect(), field('Loudness', loud));
+  }
+  if (d.kind === 'arp') {
+    const q = form.sequences[d.seq];
+    const rate = el('select', { id: `${id}-rate` });
+    options(rate, withValue(RATE_CHOICES, q.division, `${q.division} ticks`), q.division);
+    rate.addEventListener('change', () => { q.division = Number(rate.value); changed(); });
+    const dir = el('select', { id: `${id}-direction` });
+    options(dir, withValue(DIRECTION_CHOICES, q.order, 'As pressed'), q.order);
+    dir.addEventListener('change', () => { q.order = dir.value; renderStatus(); changed(); });
+    row.append(field('Rate', rate), field('Direction', dir));
+  }
+  let octave = null;   // goes last, after Notes
+  if (B.isSound(d)) {
     if (B.usesOctave(form, d)) {
       // Higher or lower than the template's key, in whole octaves.
       const oct = el('select', { id: `${id}-octave` });
@@ -1416,13 +1578,13 @@ function soundSettings(d, id) {
         renderDevices();
         changed();
       });
-      row.append(field('Octave', oct));
+      octave = field('Octave', oct);
     }
   }
-  if (d.kind === 'notes') {
+  if (d.kind === 'notes' || d.kind === 'arp') {
     const type = el('select', { id: `${id}-type` });
     options(type, [['scale', 'Scale notes'], ['fixed', d.channel === 9 ? 'Drums and fixed notes' : 'Fixed notes'],
-      ['rack', 'Ableton Drum Rack']], d.noteType);
+      ...(d.kind === 'notes' ? [['rack', 'Ableton Drum Rack']] : [])], d.noteType);
     type.addEventListener('change', () => {
       const octave = form.octave + (d.octave || 0);
       if (type.value === 'rack') {
@@ -1438,6 +1600,7 @@ function soundSettings(d, id) {
     });
     row.append(field('Notes', type));
   }
+  if (octave) row.append(octave);
   if (B.isMod(d)) {
     // It changes another device's sound, or a channel of its own.
     const target = el('select', { id: `${id}-target` });
@@ -1472,7 +1635,7 @@ function soundSettings(d, id) {
 function switchRow(d, s, rowId) {
   const label = SWITCH_LABEL(s.input);
   let job;
-  if (d.kind === 'notes') {
+  if (d.kind === 'notes' || d.kind === 'arp') {
     const choices = d.noteType === 'scale' ? scaleNoteChoices(deviceOctave(d))
       : d.noteType === 'rack' ? rackChoices() : fixedNoteChoices(true, d.channel === 9);
     job = el('select', { id: `${rowId}-job`, 'aria-label': `${label} plays` });
@@ -1489,13 +1652,14 @@ function switchRow(d, s, rowId) {
       say(other ? `${label} and ${SWITCH_LABEL(other.input)} swapped jobs.` : `${label} is now ${job.value}.`);
     });
   }
-  const remove = el('button', { type: 'button', id: `${rowId}-remove`, className: 'quiet', textContent: '✕',
-    'aria-label': `Take ${label} away from ${deviceTitle(d)}`, title: 'Take this switch away' });
+  const remove = el('button', { type: 'button', id: `${rowId}-remove`, className: 'quiet erase',
+    'aria-label': `Take ${label} off ${deviceTitle(d)}`, title: 'Take this switch off the device: it is free again' });
+  remove.innerHTML = UNLINK_ICON;
   remove.addEventListener('click', () => {
     B.removeSwitch(form, d, s.input);
     renderDevices();
     changed();
-    say(`${label} is free.`);
+    say(`${label} is off ${deviceTitle(d)} and free.`);
     const id = deviceIds.get(d);
     ($(id)?.querySelector('.sw-row button') || $(`${id}-toggle`))?.focus();
   });
@@ -1591,7 +1755,8 @@ function renderActivity() {
 function responseRow(d, id) {
   // Notes and melody generators always sustain (held or toggled per switch).
   let choices = null;
-  if (d.kind === 'arp' || (d.kind === 'seq' && form.sequences[d.seq].mode === 'clock')) choices = SEQ_GATE_CHOICES;
+  if (d.kind === 'arp') return null;
+  if (d.kind === 'seq' && form.sequences[d.seq].mode === 'clock') choices = SEQ_GATE_CHOICES;
   else if (d.kind === 'mod') choices = MOD_GATE_CHOICES;
   if (!choices) return null;
   const row = el('div', { className: 'row' });
@@ -1601,9 +1766,12 @@ function responseRow(d, id) {
     gate.addEventListener('change', () => { d.gate = gate.value; renderDevices(); changed(); });
     row.append(field('Sound', gate));
   }
-  const beat = el('input', { type: 'checkbox', id: `${id}-beat`, checked: !!d.onBeat });
-  beat.addEventListener('change', () => { d.onBeat = beat.checked; changed(); });
-  row.append(el('label', { className: 'check', title: 'Waits for the next beat of the clock before it starts' }, beat, 'Quantise'));
+  // An arpeggiator always starts on the beat; the others choose.
+  if (d.kind !== 'arp') {
+    const beat = el('input', { type: 'checkbox', id: `${id}-beat`, checked: !!d.onBeat });
+    beat.addEventListener('change', () => { d.onBeat = beat.checked; changed(); });
+    row.append(el('label', { className: 'check', title: 'Waits for the next beat of the clock before it starts' }, beat, 'Quantise'));
+  }
   return row;
 }
 
@@ -1741,6 +1909,33 @@ function kindIcon(kind) {
       ys.forEach((y, k) => parts.push(`<rect x="${3.5 + k * 7.3}" y="${y - 2.5}" width="5" height="5" rx="1" fill="#f273ff" stroke="#000" stroke-width="${y === 17 ? 1.4 : 0.6}"/>`));
       return parts.join('');
     },
+    // A sequencer: a little piano and the steps of a tune, then the empty
+    // column for the next note.
+    seq: () => {
+      const parts = ['<rect x="0.5" y="0.5" width="55" height="23" fill="#fff" stroke="#000"/>',
+        '<rect x="0.5" y="0.5" width="7" height="23" fill="#fff" stroke="#000"/>'];
+      for (const y of [3, 9, 15]) parts.push(`<rect x="0.5" y="${y}" width="4" height="3" fill="#000"/>`);
+      for (let k = 0; k < 6; k++) parts.push(`<line x1="${10 + k * 7.5}" x2="${10 + k * 7.5}" y1="1" y2="23" stroke="#d0d0d0"/>`);
+      [17, 12, 14, 8, 11].forEach((y, k) => parts.push(`<rect x="${10.8 + k * 7.5}" y="${y}" width="6" height="4" rx="1" fill="#73f2ff" stroke="#000" stroke-width="0.6"/>`));
+      return parts.join('');
+    },
+    // An arpeggiator: a chord's notes climbing, over and over, in time.
+    arp: () => {
+      const parts = ['<rect x="0.5" y="0.5" width="55" height="23" fill="#fff" stroke="#000"/>'];
+      [18, 13, 8, 18, 13, 8].forEach((y, k) => parts.push(`<rect x="${3 + k * 8.7}" y="${y}" width="7" height="4" rx="1" fill="#fff273" stroke="#000" stroke-width="0.6"/>`));
+      return parts.join('');
+    },
+    // Wobbles & Swells: a wave, filled.
+    mod: () => {
+      let line = '';
+      for (let k = 0; k <= 40; k++) {
+        const x = 2 + k * 1.3, y = 12 - 7 * Math.sin((k / 40) * Math.PI * 4);
+        line += `${k ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
+      }
+      return ['<rect x="0.5" y="0.5" width="55" height="23" fill="#fff" stroke="#000"/>',
+        `<path d="${line}L54 21L2 21Z" fill="#a9b1ff" fill-opacity="0.7"/>`,
+        `<path d="${line}" fill="none" stroke="#000" stroke-width="1.2"/>`].join('');
+    },
   }[kind];
   if (!draw) return null;
   const box = el('span', { className: 'kind-icon', 'aria-hidden': 'true' });
@@ -1867,7 +2062,6 @@ function updateStepButtons() {
   const full = q.notes.length >= S.MAX_FORM_STEPS;
   $('add-note').disabled = !editable || full;
   $('add-rest').disabled = !editable || full;
-  $('clear-steps').disabled = !editable || !q.notes.length;
 }
 
 function renderSteps(focusIndex = null) {
@@ -1958,18 +2152,14 @@ function renderRhythm() {
     : `Rhythm: no hits in ${steps} steps`);
 }
 
-// Notes as a list or a piano roll (remembered in this browser).
-let notesView = 'list';
-try {
-  if (localStorage.getItem('switchcraft.notesView') === 'roll') notesView = 'roll';
-} catch (e) { /* not important */ }
+// Notes are always shown as a piano roll (the list view is gone): click a
+// cell to add a note, click a note to remove it, drag a note to move it.
+let notesView = 'roll';
 let roll = null;
 
 function renderNotesView() {
-  $('notes-list').setAttribute('aria-pressed', String(notesView === 'list'));
-  $('notes-roll').setAttribute('aria-pressed', String(notesView === 'roll'));
   $('steps').hidden = notesView !== 'list';
-  $('roll').hidden = $('roll-hint').hidden = notesView !== 'roll';
+  $('roll').hidden = notesView !== 'roll';
   document.querySelectorAll('.list-only').forEach((e) => { e.hidden = notesView !== 'list'; });
   if (notesView !== 'roll') return;
   roll = roll || SwitchcraftPianoRoll.mount($('roll'), {
@@ -1985,15 +2175,11 @@ function renderNotesView() {
 function renderSeq() {
   const q = form.sequences[currentSeq];
   // An arpeggiator always plays by itself, in time.
-  $('seq-mode-field').hidden = !!openDevice && openDevice.kind === 'arp';
+  // A sequencer always plays one note per press; an arpeggiator by itself.
+  $('seq-mode-field').hidden = true;
   options($('seq-mode'), MODE_CHOICES, q.mode);
-  options($('seq-type'), NOTE_TYPE_CHOICES, q.noteType);
-  options($('seq-order'), ORDER_CHOICES, q.order);
-  options($('seq-octaves'), [[1, '1'], [2, '2'], [3, '3'], [4, '4']], q.octaves);
   options($('seq-speed'), withValue(SPEED_CHOICES, q.division, `${q.division} ticks`), q.division);
-  $('seq-speed-field').hidden = q.mode !== 'clock';
-  const lengths = q.mode === 'clock' ? LENGTH_CLOCK : LENGTH_PRESS;
-  options($('seq-length'), withValue(lengths, q.gate, `${q.gate}%`), q.gate);
+  $('seq-speed-field').hidden = q.mode !== 'clock' || (!!openDevice && openDevice.kind === 'arp');
   updateStepButtons();
   renderSteps();
   renderNotesView();
@@ -2004,16 +2190,25 @@ function renderSeq() {
 function seqChanged() {
   updateStepButtons();
   renderStatus();
+  redrawSeqPreviews();
   changed();
 }
 
-// Converts a sequence's notes when switching between scale and fixed notes.
-function convertNotes(q, toType) {
-  const octave = form.octave + (openDevice && openDevice.seq === currentSeq ? openDevice.octave || 0 : 0);
-  q.notes = q.notes.map((n) => (n === null ? null : convertNote(n, q.noteType, toType, octave)));
-  q.noteType = toType;
+// Redraws the sequence previews in place, keeping each expand button's job.
+function redrawSeqPreviews() {
+  for (const d of form.devices) {
+    if (d.kind !== 'seq' && d.kind !== 'arp' && d.kind !== 'mod') continue;
+    const id = deviceIds.get(d);
+    const old = id && $(`${id}-preview`);
+    if (!old) continue;
+    const button = $(`${id}-edit`);
+    const fresh = d.kind === 'mod' ? modPreview(d, id) : seqPreview(d, id);
+    fresh.querySelector('.expand').replaceWith(button);
+    old.replaceWith(fresh);
+  }
 }
 
+// Converts a sequence's notes when switching between scale and fixed notes.
 // --- Modulation editor ---
 
 const LFO_SPEEDS = [
@@ -2024,7 +2219,7 @@ const MOD_CC_CHOICES = CC_CHOICES.filter(([v]) => v !== null);
 
 // The graph: an envelope with handles to drag (or move with the arrow
 // keys), or a preview of an LFO's wave. Drawn in a 680 x 190 box.
-const G = { w: 680, h: 190, left: 58, right: 16, top: 18, bottom: 150, hold: 110 };
+const G = { w: 680, h: 190, left: 72, right: 16, top: 18, bottom: 150, hold: 110 };
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function svgEl(tag, attrs = {}, text) {
@@ -2264,6 +2459,7 @@ function renderMod() {
 function modChanged() {
   renderMod();
   renderStatus();
+  redrawSeqPreviews();
   changed();
 }
 
@@ -2432,7 +2628,7 @@ function makeFoldable(section) {
     }
   };
   toggle.addEventListener('click', () => set(!body.hidden, true));
-  h2.prepend(toggle);
+  h2.append(toggle);
   let saved = false;
   try { saved = localStorage.getItem(key) === '1'; } catch (e) { /* not important */ }
   set(saved, false);
@@ -2510,15 +2706,7 @@ function buildStatic() {
     renderDevices();
     changed();
   });
-  $('seq-type').addEventListener('change', () => {
-    convertNotes(seq(), $('seq-type').value);
-    renderDevices();   // the device's Octave menu only applies to scale notes
-    seqChanged();
-  });
-  $('seq-order').addEventListener('change', () => { seq().order = $('seq-order').value; seqChanged(); });
-  $('seq-octaves').addEventListener('change', () => { seq().octaves = Number($('seq-octaves').value); changed(); });
   $('seq-speed').addEventListener('change', () => { seq().division = Number($('seq-speed').value); changed(); });
-  $('seq-length').addEventListener('change', () => { seq().gate = Number($('seq-length').value); changed(); });
   const addStep = (note) => {
     const q = seq();
     if (q.notes.length >= S.MAX_FORM_STEPS) return;
@@ -2535,15 +2723,6 @@ function buildStatic() {
     else addStep(last === undefined ? 60 : Math.min(last + 2, 96));
   });
   $('add-rest').addEventListener('click', () => addStep(null));
-  for (const [id, v] of [['notes-list', 'list'], ['notes-roll', 'roll']])
-    $(id).addEventListener('click', () => {
-      notesView = v;
-      try {
-        localStorage.setItem('switchcraft.notesView', v);
-      } catch (e) { /* not important */ }
-      renderSteps();
-      renderNotesView();
-    });
   // Modulation editor
   const mod = () => form.modulators[currentMod];
   const clampInput = (id, lo, hi, fallback) => {
@@ -2600,13 +2779,7 @@ function buildStatic() {
     changed();
   };
   for (const id of ['seq-hits', 'seq-esteps', 'seq-rotate']) $(id).addEventListener('change', rhythmInput);
-  $('clear-steps').addEventListener('click', () => {
-    seq().notes = [];
-    delete seq().lengths;
-    renderSteps();
-    seqChanged();
-    $('add-note').focus();
-  });
+
 
   // Browser synth
   const prefs = loadPrefs();
@@ -2673,7 +2846,7 @@ function buildStatic() {
     $('midi-input').value = '';
     if (file) await openMidiFile(file);
   });
-  for (const id of ['midi-part', 'midi-from', 'midi-count', 'midi-grid', 'midi-mode'])
+  for (const id of ['midi-part', 'midi-from', 'midi-count', 'midi-grid'])
     $(id).addEventListener('input', midiPreview);
   $('midi-dialog').addEventListener('close', () => {
     if ($('midi-dialog').returnValue === 'import') importMidi();
@@ -2878,7 +3051,15 @@ let foreignTable = null;  // a table this page can't show (made with Blocks, say
 
 // The table to send to the board.
 function currentTable() {
-  return foreignTable || B.tableFromBand(form, { generators: generatorsOnBoard() });
+  return foreignTable || B.tableFromBand(form, { generators: generatorsOnBoard(), arps: arpsOnBoard() });
+}
+
+// Firmware 0.7.3 and later build arpeggios from held switches (ARP_NOTE).
+// Older boards would reject the table, so the arpeggio notes are left out.
+function arpsOnBoard() {
+  if (!board) return true;
+  const [major, minor, patch] = board.info.firmware.split('.').map(Number);
+  return major > 0 || minor > 7 || (minor === 7 && patch >= 3);
 }
 
 // Firmware 0.8.0 and later run note generators (spec B.6.3). Older boards
@@ -2904,6 +3085,18 @@ function showTable(table) {
     unreversed = form.analog.some((a) => a.reversed);
     form.analog = form.analog.map((a) => ({ cc: a.cc }));
     // Notes and melody generators no longer have a "short" length: they sustain.
+    // Sequencers' notes are fixed notes (not scale steps): same pitches.
+    for (const d of form.devices) {
+      const q = d.kind === 'seq' && form.sequences[d.seq];
+      if (!q || q.noteType !== 'scale') continue;
+      const octave = form.octave + (d.octave || 0);
+      q.notes = q.notes.map((n) => (n === null ? null : convertNote(n, 'scale', 'fixed', octave)));
+      q.noteType = 'fixed';
+      d.octave = 0;
+      unreversed = true;
+    }
+    // Arpeggiators always start on the beat.
+    for (const d of form.devices) if (d.kind === 'arp' && !d.onBeat) { d.onBeat = true; unreversed = true; }
     // Melody generators always remember their tune and step back after a jump.
     for (const d of form.devices) if (d.kind === 'gen' && fixGenerator(B.generatorsOf(form)[d.gen])) unreversed = true;
     for (const d of form.devices) {
@@ -2954,7 +3147,7 @@ function midiOptions() {
   const part = midiParts[Number($('midi-part').value)];
   const from = Math.max(1, Math.round(Number($('midi-from').value) || 1)) - 1;
   const count = Math.max(1, Math.min(S.MAX_FORM_STEPS, Math.round(Number($('midi-count').value) || 32)));
-  const mode = $('midi-mode').value;
+  const mode = 'press';   // imports are always a sequencer: one note per press
   // A rest in a press-mode sequence would be a press that plays nothing.
   return { part, from, count, division: Number($('midi-grid').value), mode, rests: mode === 'clock' };
 }
@@ -2991,11 +3184,10 @@ async function openMidiFile(file) {
   options($('midi-part'), order.map((i) => [i, `${midiParts[i].name} (${midiParts[i].notes.length} notes)`]), order[0]);
   const into = [];
   for (const d of form.devices)
-    if ((d.kind === 'seq' || d.kind === 'arp') && !into.some(([v]) => v === d.seq))
+    if (d.kind === 'seq' && !into.some(([v]) => v === d.seq))
       into.push([d.seq, `${deviceTitle(d)}${form.sequences[d.seq].notes.length ? ' (replaces its notes)' : ''}`]);
   options($('midi-seq'), into, currentSeq);
   options($('midi-grid'), [[3, 'Thirty-second notes'], [6, 'Sixteenth notes'], [12, 'Eighth notes'], [24, 'Beats']], 6);
-  options($('midi-mode'), MODE_CHOICES, form.sequences[currentSeq].mode);
   $('midi-from').value = 1;
   $('midi-count').value = 32;
   $('midi-tempo-label').hidden = !midiFile.bpm;
@@ -3016,8 +3208,8 @@ function importMidi() {
   };
   if (q.lengths === undefined) delete q.lengths;
   form.sequences[id] = q;
-  // A tune to step through is a sequencer, not an arpeggiator.
-  for (const d of form.devices) if (d.kind === 'arp' && d.seq === id && o.mode === 'press') d.kind = 'seq';
+  // A tune to step through is a sequencer; one that plays by itself, an
+  // arpeggiator (setSequenceMode changes the device).
   B.setSequenceMode(form, id, o.mode);
   const bpm = $('midi-tempo').checked && midiFile.bpm ? Math.min(240, Math.max(40, midiFile.bpm)) : null;
   if (bpm) form.tempo = Math.round(bpm * 10);

@@ -94,6 +94,14 @@
 
   function removeNote(q, index) {
     const { events } = timeline(q);
+    // One note per press: the step goes, and the notes after it move up, so
+    // no press is left playing nothing.
+    if (q.mode === 'press') {
+      const start = events[index].start;
+      events.splice(index, 1);
+      for (const e of events) if (e.start > start) e.start -= 1;
+      return apply(q, events);
+    }
     events.splice(index, 1);
     return apply(q, events);
   }
@@ -120,7 +128,10 @@
 
   // --- Drawing and input ---
 
-  const COL = 28, ROW = 18, LABEL = 52, TOP = 18;
+  const COL = 28, ROW = 18, TOP = 18;
+  const NAMES = 52;   // the note names on the left
+  const PIANO = 34;   // the piano beside them (fixed notes only: one row per semitone)
+  let LABEL = NAMES;  // where the grid starts (set each time it's drawn)
   const NS = 'http://www.w3.org/2000/svg';
   const BLACK = new Set([1, 3, 6, 8, 10]);
 
@@ -141,7 +152,11 @@
       const s = opts.settings();
       const { events, end } = timeline(q);
       const rowValues = rows(q, s);
-      const cols = Math.max(16, end + 8);
+      const piano = q.noteType !== 'scale';
+      LABEL = NAMES + (piano ? PIANO : 0);
+      // One note per press: the notes, then one empty column for the next
+      // note, so there are no gaps. Playing in time: room to spare.
+      const cols = q.mode === 'press' ? end + 1 : Math.max(16, end + 8);
       const width = LABEL + cols * COL + 1;
       const height = TOP + rowValues.length * ROW + 1;
       const root = svg('svg', { width, height, class: 'roll', role: 'group',
@@ -155,8 +170,19 @@
         const cls = BLACK.has(pc) ? 'row black' : 'row';
         root.append(svg('rect', { class: `${cls}${inKey ? ' inkey' : ''}`, x: LABEL, y: TOP + r * ROW, width: cols * COL, height: ROW }));
         if (pc === s.root) root.append(svg('line', { class: 'rootline', x1: LABEL, x2: LABEL + cols * COL, y1: TOP + (r + 1) * ROW, y2: TOP + (r + 1) * ROW }));
-        root.append(svg('text', { class: 'label', x: LABEL - 6, y: TOP + r * ROW + 13, 'text-anchor': 'end' }, S.noteName(midi)));
+        root.append(svg('text', { class: 'label', x: NAMES - 6, y: TOP + r * ROW + 13, 'text-anchor': 'end' }, S.noteName(midi)));
+        if (piano) {
+          // White keys fill the strip; a black key covers its left part.
+          const x0 = NAMES, y0 = TOP + r * ROW;
+          root.append(svg('rect', { class: 'key white', x: x0, y: y0, width: PIANO, height: ROW }));
+          if (BLACK.has(pc)) root.append(svg('rect', { class: 'key black', x: x0, y: y0 + 2, width: PIANO * 0.6, height: ROW - 4, rx: 1.5 }));
+          // A line between two white keys (E/F and B/C), as on a piano.
+          const below = rowValues[r + 1] === undefined ? null : ((rowMidi(q, rowValues[r + 1], s) % 12) + 12) % 12;
+          if (!BLACK.has(pc) && below !== null && !BLACK.has(below))
+            root.append(svg('line', { class: 'keyline', x1: x0, x2: x0 + PIANO, y1: y0 + ROW, y2: y0 + ROW }));
+        }
       });
+      if (piano) root.append(svg('rect', { class: 'keyframe', x: NAMES, y: TOP, width: PIANO, height: rowValues.length * ROW }));
       // Columns: a line per step, stronger every 4, numbers on top.
       for (let c = 0; c <= cols; c++) {
         root.append(svg('line', { class: c % 4 === 0 ? 'col beat' : 'col', x1: LABEL + c * COL, x2: LABEL + c * COL, y1: TOP, y2: height }));
@@ -199,10 +225,16 @@
         const start = cellAt(ev);
         if (start.col < 0 || start.row < 0 || start.row >= rowValues.length || start.col >= cols) return;
         const hitNote = ev.target.closest('.note');
+        // A click in an empty cell adds a note (or moves the note in that
+        // column to it). One note per press: only up to the empty column at the
+        // end, so a note can't go in after a gap.
         if (!hitNote) {
+          if (q.mode === 'press' && start.col > end) return;
           commit(clickCell(q, start.col, rowValues[start.row]), null);
           return;
         }
+        // A click on a note removes it; a drag moves it (up and down; by its
+        // right edge, longer).
         ev.preventDefault();
         const i = notes.indexOf(hitNote);
         const e = events[i];

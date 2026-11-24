@@ -86,7 +86,10 @@
   const TRIG = { PRESS: 1, RELEASE: 2, HOLD: 3, CLOCK: 4, LOAD: 5, ANALOG: 6, TAP: 7 };
   const ACT = {
     NONE: 0x00, NOTE: 0x01, CC: 0x02, SEQ_STEP: 0x10, SEQ_RUN: 0x11, SEQ_STOP: 0x12,
-    SEQ_RESET: 0x13, SEQ_SELECT: 0x14, TRANSPOSE: 0x20, SET_SCALE: 0x21, PRESET: 0x30,
+    SEQ_RESET: 0x13, SEQ_SELECT: 0x14,
+    // A note joins a sequence's arpeggio while held or latched (firmware 0.7.3).
+    ARP_NOTE: 0x15,
+    TRANSPOSE: 0x20, SET_SCALE: 0x21, PRESET: 0x30,
     MOD_RUN: 0x40, MOD_STOP: 0x41,
     // Note generator (spec B.6.3, firmware 0.8.0).
     GEN_NOTE: 0x50, GEN_HOME: 0x51, GEN_AGAIN: 0x52, GEN_NEW: 0x53,
@@ -372,6 +375,13 @@
       } else if (s.action in MOD_ACTIONS && f.modulators && f.modulators[s.mod].kind !== 'off') {
         const flags = s.action === 'mod-run' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
         rules.push({ trig: TRIG.PRESS, src: i, act: MOD_ACTIONS[s.action], flags, p0: s.mod });
+      } else if (s.action === 'arp-note' && sequenceInUse(f, s.seq)) {
+        const degree = s.degree !== undefined;
+        rules.push({
+          trig: TRIG.PRESS, src: i, act: ACT.ARP_NOTE,
+          flags: GATE[s.gate] | (degree ? FLAG.DEGREE : 0) | (s.onBeat ? FLAG.QUANTIZE : 0),
+          p0: s.seq, p1: s.velocity ?? 0, p2: degree ? s.degree : s.note,
+        });
       } else if (s.action in SEQ_ACTIONS && sequenceInUse(f, s.seq)) {
         const flags = s.action === 'seq-play' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
         rules.push({ trig: TRIG.PRESS, src: i, act: SEQ_ACTIONS[s.action], flags, p0: s.seq });
@@ -497,6 +507,11 @@
         } else if (r.act === ACT.SEQ_RUN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 && gate &&
                    r.p0 < 4) {
           s = { action: 'seq-play', seq: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
+        } else if (r.act === ACT.ARP_NOTE && (r.flags & ~(3 | FLAG.DEGREE | FLAG.QUANTIZE)) === 0 &&
+                   (gate === 'hold' || gate === 'latch') && r.p0 < 4 && r.p3 === 0) {
+          s = { action: 'arp-note', seq: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
+          if (r.flags & FLAG.DEGREE) s.degree = r.p2; else s.note = r.p2;
+          if (r.p1) s.velocity = r.p1;
         } else if (r.act === ACT.MOD_RUN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 && gate && r.p0 < 4) {
           s = { action: 'mod-run', mod: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
         } else if (r.act === ACT.MOD_STOP && r.flags === 0 && r.p0 < 4) {

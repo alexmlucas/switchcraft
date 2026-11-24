@@ -772,7 +772,7 @@ function fakeBoard() {
   });
 
   await test('band: one switch always does the job that makes a sound', () => {
-    const first = { notes: 'scale', gen: 'gen-note', seq: 'seq-step', arp: 'seq-play', mod: 'mod-run' };
+    const first = { notes: 'scale', gen: 'gen-note', seq: 'seq-step', arp: 'arp-note', mod: 'mod-run' };
     for (const kind of BD.KINDS) {
       const b = BD.defaultBand();
       const { device, left } = BD.newDevice(b, kind, [4]);
@@ -831,14 +831,14 @@ function fakeBoard() {
     assertEq(b.sequences[1].notes, []);
   });
 
-  await test('band: a sequencer’s next-note switch becomes its play switch', () => {
+  await test('band: a sequencer’s next-note switch becomes play, and back', () => {
     const b = BD.defaultBand();
     const d = BD.newDevice(b, 'seq', [0]).device;
     BD.setSequenceMode(b, d.seq, 'clock');
-    assertEq(d.switches, [{ input: 0, role: 'play' }]);
+    assertEq([d.kind, d.switches], ['seq', [{ input: 0, role: 'play' }]]);
     assertEq(BD.toForm(b).switches[0].action, 'seq-play');
     BD.setSequenceMode(b, d.seq, 'press');
-    assertEq(d.switches, [{ input: 0, role: 'step' }]);
+    assertEq([d.kind, d.switches], ['seq', [{ input: 0, role: 'step' }]]);
   });
 
   await test('band: a wobble changes the device it targets, and keeps its channel if that goes', () => {
@@ -862,7 +862,9 @@ function fakeBoard() {
       const band = BD.bandFromTable(S.parseTable(S.buildTable(S.tableFromForm(f)))).band;
       assert(band && band.devices.length >= 1, t.id);
       // Transpose and next-template switches aren't devices any more: they open free.
-      const free = (x) => (x.action === 'transpose' || x.action === 'preset-next' ? { action: 'none' } : x);
+      const free = (x) => (x.action === 'transpose' || x.action === 'preset-next' ? { action: 'none' }
+        // A sequence that played by itself is stepped through now.
+        : x.action === 'seq-play' ? { action: 'seq-step', seq: x.seq } : x);
       assertEq(BD.toForm(band).switches.map(strip), f.switches.map(free).map(strip));
       for (const d of band.devices) if (d.channel !== undefined) assertEq(d.channel, f.channel);
     }
@@ -914,7 +916,10 @@ function fakeBoard() {
     b.mask = 0x0295;  // major pentatonic: 5 steps an octave
     const notes = BD.newDevice(b, 'notes', [0, 1]).device;
     const seq = BD.newDevice(b, 'seq', [2]).device;
+    Object.assign(b.sequences[seq.seq], { noteType: 'scale', notes: [0, 1, 2] });   // scale notes, as before
     const gen = BD.newDevice(b, 'gen', [3]).device;
+    const arp = BD.newDevice(b, 'arp', [5, 6]).device;
+    arp.octave = 1;
     const drums = BD.newDevice(b, 'notes', [4]).device;
     drums.noteType = 'fixed';
     drums.switches[0].value = 36;
@@ -928,6 +933,7 @@ function fakeBoard() {
     assertEq([f.switches[0].degree, f.switches[1].degree, f.switches[4].note], [-5, -4, 36]);
     assertEq(f.sequences[seq.seq].notes, seqNotes.map((n) => n + 5));
     assertEq([f.generators[gen.gen].low, f.generators[gen.gen].high], [g.low + 10, g.high + 10]);
+    assertEq([f.switches[5].degree, f.switches[6].degree], [5, 7]);
     const back = reopen(b);
     assertEq(BD.editorJson(back), BD.editorJson(b));
     assertEq(back.sequences[seq.seq].notes, seqNotes);
@@ -972,6 +978,30 @@ function fakeBoard() {
     const f = BD.toForm(b);
     assertEq(f.switches.slice(0, 3).map((s) => [s.action, s.note]), [['note', 36], ['note', 37], ['note', 38]]);
     assertEq(reopen(b).devices[0].noteType, 'rack');
+  });
+
+  await test('band: an arpeggiator plays the notes its switches hold (ARP_NOTE, on the beat)', () => {
+    const b = BD.defaultBand();
+    const d = BD.newDevice(b, 'arp', [0, 1, 2]).device;
+    // Its switches play a chord: up the scale in thirds.
+    assertEq(d.switches.map((s) => s.value), [0, 2, 4]);
+    d.switches[2].toggle = true;
+    b.sequences[d.seq].order = 'down';
+    const t = S.parseTable(S.buildTable(BD.tableFromBand(b)));
+    const rules = t.rules.filter((r) => r.act === S.ACT.ARP_NOTE);
+    assertEq(rules.map((r) => [r.src, r.p0, r.p2, r.flags & 3, !!(r.flags & 0x04), !!(r.flags & 0x10)]),
+      [[0, d.seq, 0, 0, true, true], [1, d.seq, 2, 0, true, true], [2, d.seq, 4, 1, true, true]]);
+    const q = t.sequences.find((x) => x.id === d.seq);
+    assert(q && q.advance === 1, 'its sequence plays in time');
+    const back = reopen(b);
+    assertEq(BD.editorJson(back), BD.editorJson(b));
+    // Without stored devices it still comes back as an arpeggiator.
+    const plain = BD.tableFromBand(b);
+    plain.extra = [];
+    const b2 = BD.bandFromTable(S.parseTable(S.buildTable(plain))).band;
+    assertEq(b2.devices.map((x) => [x.kind, x.switches.map((s) => s.value)]), [['arp', [0, 2, 4]]]);
+    // Older boards (before 0.7.3) don't get its notes.
+    assertEq(BD.tableFromBand(b, { arps: false }).rules.filter((r) => r.act === S.ACT.ARP_NOTE).length, 0);
   });
 
   await test('band: Wobbles & Swells move over and over (wobble) or once (swell)', () => {
@@ -1085,6 +1115,13 @@ function fakeBoard() {
   blobs.textContent = Object.entries(samples)
     .map(([name, f]) => `${name} ${toHex(S.buildTable(S.tableFromForm(f)))}`)
     .concat(SwitchcraftBand.TEMPLATES.map((t) => `band ${t.id} ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(t.band())))}`))
+    .concat((() => {
+      // An arpeggiator: three held notes and one latched (ARP_NOTE, firmware 0.7.3).
+      const b = SwitchcraftBand.defaultBand();
+      const d = SwitchcraftBand.newDevice(b, 'arp', [0, 1, 2, 3]).device;
+      d.switches[3].toggle = true;
+      return [`band arpeggiator ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(b)))}`];
+    })())
     .join('\n');
   document.body.append(blobs);
 

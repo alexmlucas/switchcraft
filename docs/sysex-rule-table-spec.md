@@ -410,6 +410,7 @@ Channel `0xFF` and velocity `0` mean "use the default from globals".
 | 0x12 | `SEQ_STOP` | sequence or `0xFF` | 0 | 0 | 0 |
 | 0x13 | `SEQ_RESET` | sequence or `0xFF` | 0 | 0 | 0 |
 | 0x14 | `SEQ_SELECT` | sequence 0–3 | 0 | 0 | 0 |
+| 0x15 | `ARP_NOTE` | sequence 0–3 (not `0xFF`) | velocity, 0 = the sequence's | note: `i16` scale degree if `DEGREE` is set, else MIDI note 0–127 | 0 |
 | 0x20 | `TRANSPOSE` | mode: 0 = set, 1 = add | 0 | `i16` semitones, −48…48 (the running total is also kept within ±48) | 0 |
 | 0x21 | `SET_SCALE` | root 0–11, or `0xFF` = unchanged | 0 | scale_mask, or 0 = unchanged | 0 |
 | 0x30 | `PRESET` | mode: 0 = slot p1, 1 = next, 2 = previous | slot 0–7 | 0 | 0 |
@@ -442,6 +443,19 @@ degree" survives a later `SET_SCALE` or `TRANSPOSE`, while absolute notes
 input's release; `LATCH` on the next firing; `ONESHOT` after p3 ms. The
 note-off uses the pitch that was sent, even if the scale or transpose has
 changed since. The form view therefore needs **one rule per switch**.
+
+**`ARP_NOTE`** (firmware 0.7.3) builds an arpeggio from held switches. While
+its input is held (`HOLD`), or from one press to the next (`LATCH`), its note
+is in the sequence's **pool** (up to 12 notes). A sequence that any
+`ARP_NOTE` rule targets is an arpeggio: it plays the pool instead of its
+steps, one note per `division` ticks for `gate`% of each, in its `order`
+(`UP`, `DOWN`, `UPDOWN` by pitch, `RANDOM`, or `WRITTEN` = the order the
+notes went in) across `octaves`. It starts when the first note goes in,
+carries on as notes come and go, and stops when the pool is empty. Its
+steps are not played, but the section still needs one (any note). With
+`QUANTIZE` a note goes in on the next beat, so the arpeggio starts on the
+beat; a `HOLD` note whose input is released before then never goes in.
+`ONESHOT` is not allowed. Loading or editing the table empties the pool.
 
 **`PRESET`** loads a slot exactly like `SLOT_LOAD` (including the boot
 slot change and a `SLOT_CHANGED` report). Empty slots are skipped by
