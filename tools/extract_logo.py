@@ -5,7 +5,9 @@ Writes:
   web/logo.js                    the same shapes for the editor page, split
                                  into steam, bubbles and the rest so the page
                                  can animate them (and draw the cauldron
-                                 without its lettering in the header)
+                                 without its lettering in the header), plus
+                                 the cauldron's filled silhouette, so the page
+                                 can colour the spaces inside it (needs Pillow)
 
     python tools/extract_logo.py
 
@@ -58,17 +60,68 @@ def path(pts):
     return "".join(out) + "z"
 
 
+def silhouette(polys, scale=24):
+    """The cauldron and synth filled in: everything the outside can't reach.
+    Drawn as rows of pixel runs (in mm), a pixel inside the ink's outer edge
+    so it never shows beyond it. None without Pillow."""
+    try:
+        from PIL import Image, ImageDraw, ImageFilter
+    except ImportError:
+        return None
+    xs = [x for p in polys for x, _ in p]
+    ys = [y for p in polys for _, y in p]
+    x0, y0 = min(xs), min(ys)
+    pad = 2
+    w = int((max(xs) - x0) * scale) + 2 * pad
+    h = int((max(ys) - y0) * scale) + 2 * pad
+    img = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(img)
+    for p in polys:
+        draw.polygon([((x - x0) * scale + pad, (y - y0) * scale + pad) for x, y in p], fill=255)
+    ImageDraw.floodfill(img, (0, 0), 128)   # the outside
+    inside = img.point(lambda v: 0 if v == 128 else 255).filter(ImageFilter.MinFilter(3))
+    px = inside.load()
+    rects = []      # [x, y, w, h] in pixels, runs merged down the rows
+    open_runs = {}  # (a, b) -> rect still growing
+    for r in range(h):
+        runs, a = [], None
+        for c in range(w + 1):
+            on = c < w and px[c, r] > 0
+            if on and a is None:
+                a = c
+            elif not on and a is not None:
+                runs.append((a, c))
+                a = None
+        nxt = {}
+        for run in runs:
+            if run in open_runs:
+                open_runs[run][3] += 1
+                nxt[run] = open_runs[run]
+            else:
+                rect = [run[0], r, run[1] - run[0], 1]
+                rects.append(rect)
+                nxt[run] = rect
+        open_runs = nxt
+    mm = lambda v: round(v / scale, 2)
+    return "".join(f"M{mm(x - pad) + x0:.2f} {mm(y - pad) + y0:.2f}h{mm(rw):g}v{mm(rh):g}h{-mm(rw):g}z"
+                   for x, y, rw, rh in rects)
+
+
 def main():
     pcb = PCB.read_text(encoding="utf-8")
     logo = max(footprints(pcb), key=lambda b: b.count("fp_poly") + len(b) / 1e6)
     parts = {"steam": [], "bubble": [], "body": [], "text": []}
+    body_polys = []
     xs, ys = [], []
     for pts in polygons(logo):
         px = [p[0] for p in pts]
         py = [p[1] for p in pts]
         xs += px
         ys += py
-        parts[kind(min(px), min(py), max(px) - min(px), max(py) - min(py))].append(path(pts))
+        k = kind(min(px), min(py), max(px) - min(px), max(py) - min(py))
+        parts[k].append(path(pts))
+        if k == "body":
+            body_polys.append(pts)
     assert len(parts["steam"]) == 3 and len(parts["bubble"]) == 6, {k: len(v) for k, v in parts.items()}
     pad = 0.3
     box = [round(min(xs) - pad, 2), round(min(ys) - pad, 2),
@@ -85,6 +138,11 @@ def main():
     icon_box = [box[0], box[1], box[2], round(max(icon_ys) - min(ys) + 2 * pad, 2)]
     data = {"box": box, "iconBox": icon_box, "body": parts["body"], "text": parts["text"],
             "steam": parts["steam"], "bubbles": parts["bubble"]}
+    fill = silhouette(body_polys)
+    if fill:
+        data["fill"] = fill
+    else:
+        print("Pillow isn't installed: logo.js has no fill (pip install pillow)")
     js = ("// logo.js: the Switchcraft logo (the cauldron), made by tools/extract_logo.py\n"
           "// from the PCB silkscreen. Don't edit by hand: re-run the tool.\n"
           f"window.SwitchcraftLogoData = {json.dumps(data, separators=(',', ':'))};\n")

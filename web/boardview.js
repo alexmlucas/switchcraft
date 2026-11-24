@@ -151,78 +151,36 @@
   let root = null;
   const groups = [];
 
-  // The same board inside a 3D-printed box, seen from above: only the button
-  // caps, the lights and the jack openings in the side walls show through.
+  // The box, seen from above, drawn like the page's other pictures: flat,
+  // with ink outlines (colours come from the page's CSS, so it follows the
+  // light and dark themes). Only the button caps, the lights and the jacks in
+  // the side walls show. Positions are the PCB's, as above.
   const BOX = { x: 92.9, y: 53.9, w: 95.0, h: 95.9, r: 5 };
-  // Mid-grey PLA. Labels are light, with a dark edge under them so they read as
-  // engraved; the ring around each button hole uses the same dark edge.
-  const PLA = { lid: '#7f8488', edge: '#6a6e72', shade: '#52565a', engrave: '#eceef0', highlight: '#33363a' };
 
   function buildEnclosure(container, onPick) {
-    root = svg('svg', { viewBox: '90.4 51.6 100 100.6', role: 'group', 'aria-label': 'Switchcraft interface', focusable: 'false' });
-    root.append(svg('defs', {},
-      svg('radialGradient', { id: 'bv-glow' },
-        svg('stop', { offset: '0%', 'stop-color': '#ff5a5a', 'stop-opacity': 0.95 }),
-        svg('stop', { offset: '45%', 'stop-color': '#ff7a7a', 'stop-opacity': 0.55 }),
-        svg('stop', { offset: '100%', 'stop-color': '#ff9a9a', 'stop-opacity': 0 })),
-      // The top layer of a print: fine diagonal lines.
-      svg('pattern', { id: 'bv-layers', width: 0.6, height: 0.6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
-        svg('rect', { width: 0.6, height: 0.6, fill: PLA.lid }),
-        svg('line', { x1: 0, y1: 0.3, x2: 0.6, y2: 0.3, stroke: '#000', 'stroke-opacity': 0.12, 'stroke-width': 0.12 })),
-      svg('linearGradient', { id: 'bv-lidshade', x1: 0, y1: 0, x2: 0, y2: 1 },
-        svg('stop', { offset: '0%', 'stop-color': '#fff', 'stop-opacity': 0.18 }),
-        svg('stop', { offset: '100%', 'stop-color': '#000', 'stop-opacity': 0.10 }))));
-
+    root = svg('svg', { viewBox: '90.4 51.6 100 100.6', role: 'group', 'aria-label': 'Switchcraft interface', focusable: 'false', class: 'bv-flat' });
     const { x, y, w, h, r } = BOX;
-    // A soft shadow under the box, the wall, then the lid inset by a chamfer.
-    root.append(
-      svg('rect', { x: x + 0.8, y: y + 1.4, width: w, height: h, rx: r, fill: '#000', opacity: 0.18 }),
-      svg('rect', { x, y, width: w, height: h, rx: r, fill: PLA.shade }),
-      svg('rect', { x: x + 0.6, y: y + 0.6, width: w - 1.2, height: h - 1.2, rx: r - 0.6, fill: PLA.edge }),
-      svg('rect', { x: x + 1.4, y: y + 1.4, width: w - 2.8, height: h - 2.8, rx: r - 1.2, fill: 'url(#bv-layers)' }),
-      svg('rect', { x: x + 1.4, y: y + 1.4, width: w - 2.8, height: h - 2.8, rx: r - 1.2, fill: 'url(#bv-lidshade)' }));
-
-    // The Pico's USB socket through the top wall.
-    root.append(
-      svg('rect', { x: PICO.x - 4.6, y: y - 0.4, width: 9.2, height: 2.8, rx: 0.8, fill: '#1b1b1b' }),
-      svg('rect', { x: PICO.x - 3.6, y: y + 0.1, width: 7.2, height: 1.6, rx: 0.4, fill: C.metal }));
-
-    // Engraved labels: a light edge under dark lettering.
-    const engraved = (text, tx, ty, size, weight = 700) => [
-      svg('text', { x: tx, y: ty + 0.18, 'font-size': size, fill: PLA.highlight, 'text-anchor': 'middle', 'font-family': 'monospace', 'font-weight': weight, opacity: 0.8 }, text),
-      svg('text', { x: tx, y: ty, 'font-size': size, fill: PLA.engrave, 'text-anchor': 'middle', 'font-family': 'monospace', 'font-weight': weight }, text),
-    ];
+    root.append(svg('rect', { class: 'bv-box', x, y, width: w, height: h, rx: r }));
+    // The Pico's USB socket in the top wall.
+    root.append(svg('rect', { class: 'bv-ink', x: PICO.x - 4, y: y - 1.2, width: 8, height: 2.4, rx: 0.5 }));
 
     INPUTS.forEach(([col, iy], i) => {
       const analog = i >= 10;
       const left = col.side === 'left';
       const g = svg('g', { class: 'bv-input', 'data-input': i });
-      g.append(svg('rect', { class: 'bv-hit', x: left ? 91 : 152.5, y: iy - 6.6, width: left ? 37.1 : 37.3, height: 13.2, rx: 1, fill: 'transparent' }));
-
-      // The jack socket in the side wall: a black rectangle.
-      const wx = left ? x : x + w;
-      const s = left ? 1 : -1;
-      g.append(svg('rect', { x: left ? wx - 0.4 : wx - 2.6, y: iy - 3, width: 3, height: 6, rx: 0.3, fill: '#151515' }));
-
-      // Button cap through a round hole, all centred on the button.
+      g.append(svg('rect', { class: 'bv-hit', x: left ? 94.5 : 151.5, y: iy - 6.4, width: 34.5, height: 12.8, rx: 1.5 }));
+      // The jack in the side wall.
+      g.append(svg('rect', { class: 'bv-ink', x: left ? x - 1.2 : x + w - 1.2, y: iy - 2.6, width: 2.4, height: 5.2, rx: 0.4 }));
+      // The button: a ring when it's chosen, the cap in its device's colour.
       const bx = col.button;
       g.append(
-        svg('circle', { cx: bx, cy: iy, r: 3.4, fill: PLA.highlight, opacity: 0.6 }),
-        svg('circle', { cx: bx, cy: iy, r: 3.2, fill: '#1e1e1e' }));
-      const cap = svg('circle', { class: 'bv-cap', cx: bx, cy: iy, r: 2.6, fill: C.capFree, stroke: '#111', 'stroke-width': 0.25 });
-      g.append(cap,
-        svg('ellipse', { cx: bx - 0.8, cy: iy - 1, rx: 1.1, ry: 0.6, fill: '#fff', opacity: 0.35 }),
-        svg('text', { class: 'bv-sym', x: bx, y: iy + 0.95, 'font-size': 2.6, 'text-anchor': 'middle', fill: '#000', 'font-family': 'sans-serif' }, ''));
-
-      // The light through a small window.
-      const lxp = col.led;
-      g.append(
-        svg('circle', { class: 'bv-glow', cx: lxp, cy: iy, r: 3.6, fill: 'url(#bv-glow)', opacity: 0 }),
-        svg('circle', { cx: lxp, cy: iy, r: 1.95, fill: PLA.shade }),
-        svg('circle', { class: 'bv-dome', cx: lxp, cy: iy, r: 1.5, fill: analog ? C.ledAnalog : C.ledOff }),
-        svg('ellipse', { cx: lxp - 0.5, cy: iy - 0.55, rx: 0.5, ry: 0.32, fill: '#fff', opacity: 0.5 }));
-
-      g.append(...engraved(analog ? (left ? 'V1' : 'V2') : String(i + 1), col.label, iy + 1.25, 3.6));
+        svg('circle', { class: 'bv-ring', cx: bx, cy: iy, r: 4.1 }),
+        svg('circle', { class: 'bv-cap', cx: bx, cy: iy, r: 2.8 }),
+        svg('text', { class: 'bv-sym', x: bx, y: iy + 0.95, 'font-size': 2.6, 'text-anchor': 'middle' }, ''));
+      // The light.
+      g.append(svg('circle', { class: `bv-led${analog ? ' analog' : ''}`, cx: col.led, cy: iy, r: 1.3 }));
+      g.append(svg('text', { class: 'bv-label', x: col.label, y: iy + 1.2, 'font-size': 3.4, 'text-anchor': 'middle' },
+        analog ? (left ? 'V1' : 'V2') : String(i + 1)));
       g.append(svg('title', {}, ''));
       g.addEventListener('click', () => { if (g.classList.contains('pickable')) onPick(i); });
       g.addEventListener('keydown', (e) => {
@@ -284,7 +242,9 @@
       const chosen = selected.has(i);
       g.classList.toggle('used', used);
       g.classList.toggle('selected', chosen);
-      g.querySelector('.bv-cap').setAttribute('fill', used ? o.hex : C.capFree);
+      const cap = g.querySelector('.bv-cap');
+      if (root && root.classList.contains('bv-flat')) cap.style.fill = used ? o.hex : '';
+      else cap.setAttribute('fill', used ? o.hex : C.capFree);
       g.querySelector('.bv-sym').textContent = used ? o.symbol : '';
       const label = (o && o.title) || `${i < 10 ? `Switch ${i + 1}` : i === 10 ? 'V1 button' : 'V2 button'}: free`;
       g.querySelector('title').textContent = chosen ? `${label} (chosen)` : label;
@@ -310,6 +270,8 @@
     const g = groups[i];
     if (!g) return;
     g.classList.toggle('down', down);
+    // The flat box: the page's CSS lights the cap and the light.
+    if (root && root.classList.contains('bv-flat')) return;
     const cap = g.querySelector('.bv-cap');
     if (!cap.dataset.r) cap.dataset.r = cap.getAttribute('r');
     const r = Number(cap.dataset.r);

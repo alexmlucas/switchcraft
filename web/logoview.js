@@ -52,6 +52,10 @@
       return g;
     };
     ink.append(group('sc-steam', D.steam), group('sc-bubble', D.bubbles));
+    // The cauldron's inside, filled (coloured by the page's CSS), under the
+    // pixels and the ink.
+    const fill = D.fill ? make('path', { d: D.fill, class: 'sc-fill' }) : null;
+    if (fill) svg.append(fill);
     svg.append(pixels, ink);
     container.replaceChildren(svg);
     if (!animate || reduced()) return;
