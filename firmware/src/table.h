@@ -50,11 +50,13 @@ enum {
     ACT_SEQ_RESET = 0x13,
     ACT_SEQ_SELECT = 0x14,
     ACT_ARP_NOTE = 0x15,   // a note joins a sequence's arpeggio while held or latched (0.7.3)
+                           // p3: its own Euclidean pattern, or 0 (0.7.4)
     ACT_TRANSPOSE = 0x20,
     ACT_SET_SCALE = 0x21,
     ACT_PRESET = 0x30,
     ACT_MOD_RUN = 0x40,
     ACT_MOD_STOP = 0x41,
+    ACT_MOD_SPEED = 0x42,  // an analog input sets an LFO's speed: p2 at 0, p3 at 127 (0.7.6)
 };
 
 // action_flags
@@ -77,6 +79,10 @@ enum { GATE_HOLD = 0, GATE_LATCH = 1, GATE_ONESHOT = 2 };
 
 enum { ADVANCE_PRESS = 0, ADVANCE_CLOCK = 1 };
 enum { ORDER_WRITTEN, ORDER_UP, ORDER_DOWN, ORDER_UPDOWN, ORDER_RANDOM };
+// ARP_NOTE p3: a note's own Euclidean pattern (0 = none).
+#define ARP_PATTERN_STEPS(p3) (((p3) & 0x1F) + 1)   // 1-32
+#define ARP_PATTERN_HITS(p3) (((p3) >> 5) & 0x3F)   // 0-32
+#define ARP_PATTERN_ROT(p3) (((p3) >> 11) & 0x1F)   // 0-31
 #define STEP_REST 0x80
 #define STEP_LENGTH_MASK 0x7F
 

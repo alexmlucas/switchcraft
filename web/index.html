@@ -194,13 +194,23 @@
   /* A switch in a device: its number, its job (or note), ✕. */
   /* A switch's controls on the left, its erase button at the card's right;
      every other row has a soft fill, so each row reads across as one. */
-  .role.sw-row { grid-template-columns: minmax(8ch, 9ch) auto minmax(9ch, auto) 1fr; }
+  .role.sw-row { grid-template-columns: minmax(8ch, 9ch) auto minmax(9ch, auto) auto 1fr; }
+  .sw-pattern { display: inline-flex; align-items: center; gap: 6px; }
+  .sw-pattern select { width: auto; }
+  .vjob-cell { display: inline-flex; flex-direction: column; gap: 2px; }
+  .vjob { font-size: 14px; color: var(--muted); }
+  .sw-pattern input { width: 6ch; min-height: 40px; }
+  .sw-pattern-word { color: var(--muted); font-size: 15px; }
   .role.sw-row .erase { justify-self: end; }
   .roles .sw-row:nth-child(odd):not(.down) { background: var(--bg); }
   /* Each menu is as wide as its choices (the same for every switch in a device). */
   .role.sw-row select { width: auto; max-width: 100%; }
   .sw-toggle { min-height: 0; }
   .add-here:empty { display: none; }
+  .rhythm-mini { display: inline-flex; align-self: end; }
+  .devcard-settings select[id$="-type"] { width: 19ch; }
+  .arp-row { align-items: end; }
+  .devcard-settings input[id$="-hits"], .devcard-settings input[id$="-steps"], .devcard-settings input[id$="-rotation"] { width: 7ch; }
   /* The top of a notes or melody generator device: the picture, then its menus. */
   .devcard-top { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-start; }
   .devcard-top > .kb-box, .devcard-top > .tune-box { flex: 0 1 360px; min-width: 0; }
@@ -412,22 +422,23 @@
   .notes-view button { min-height: 36px; padding: 4px 12px; }
   .roll-box { overflow: auto; max-height: 420px; border: 1px solid var(--line); margin: 12px 0; }
   svg.roll { display: block; cursor: crosshair; touch-action: none; user-select: none; }
-  svg.roll .row { fill: var(--card); }
-  svg.roll .row.black { fill: color-mix(in srgb, var(--text) 7%, var(--card)); }
-  svg.roll .row.inkey { fill: var(--inkey); }
+  /* The same look as the small preview: white, light grey steps, a dashed
+     line at home, notes in the device's colour (--note) with black edges. */
+  svg.roll .row { fill: #fff; }
+  svg.roll .playing { fill: var(--pressed); fill-opacity: 0.55; pointer-events: none; }
   /* The piano down the left of a sequence's rows. */
   svg.roll .key.white { fill: #fff; stroke: none; }
   svg.roll .key.black { fill: #1d1d1b; }
   svg.roll .keyline { stroke: #000; stroke-width: 1; }
   svg.roll .keyframe { fill: none; stroke: #000; stroke-width: 1.5; }
-  svg.roll .row.black.inkey { fill: color-mix(in srgb, var(--text) 7%, var(--inkey)); }
-  svg.roll .col { stroke: var(--line); stroke-width: 1; }
-  svg.roll .col.beat { stroke: var(--muted); stroke-opacity: 0.45; }
-  svg.roll .rootline { stroke: var(--ink); stroke-opacity: 0.5; }
+  svg.roll .col { stroke: #d0d0d0; stroke-width: 1; }
+  svg.roll .col.beat { stroke: var(--muted); stroke-opacity: 0.5; }
+  svg.roll .rootline { stroke: #4e6a49; stroke-width: 1; stroke-dasharray: 4 4; }
   svg.roll .endline { stroke: var(--warn); stroke-width: 2; stroke-dasharray: 4 3; }
   svg.roll .label { fill: var(--muted); font-size: 11px; font-family: inherit; }
   svg.roll .note { cursor: grab; }
-  svg.roll .note .body { fill: var(--ink); }
+  svg.roll .note .body { fill: var(--note, #81ff73); stroke: #000; stroke-width: 1; }
+  svg.roll .note.home .body { stroke-width: 2.5; }
   svg.roll .note .edge { fill: var(--wash); fill-opacity: 0.8; cursor: ew-resize; }
   svg.roll .note:focus { outline: none; }
   svg.roll .note:focus-visible .body { stroke: var(--focus); stroke-width: 3; }
@@ -705,7 +716,7 @@ const B = SwitchcraftBand;
 const $ = (id) => document.getElementById(id);
 
 // Panel layout (docs/pin-map.md): input numbers in each column, top to bottom.
-const SWITCH_LABEL = (i) => (i < 10 ? `Switch ${i + 1}` : i === 10 ? 'V1 button' : 'V2 button');
+const SWITCH_LABEL = (i) => (i < 10 ? `Switch ${i + 1}` : i === 10 ? 'V1' : 'V2');
 // The two variable (continuous) inputs, V1 and V2 on the box.
 const ANALOG_LABEL = ['V1', 'V2'];
 const CC_CHOICES = [
@@ -732,8 +743,10 @@ const DRUMS = {
 const MODE_CHOICES = [['press', 'One note per press'], ['clock', 'By itself, in time']];
 const ORDER_CHOICES = [['written', 'As written'], ['up', 'Up'], ['down', 'Down'], ['updown', 'Up and down'], ['random', 'Random']];
 // An arpeggiator's rate, on its card: note values (ticks of 24 a beat).
-// The order it plays its held notes in.
+// The order it plays its held notes in (its "Style").
 const DIRECTION_CHOICES = [['up', 'Up'], ['down', 'Down'], ['updown', 'Up and down'], ['random', 'Random']];
+// Euclidean isn't an order: each switch's note repeats on its own pattern.
+const STYLE_CHOICES = [...DIRECTION_CHOICES, ['euclid', 'Euclidean']];
 const RATE_CHOICES = [[24, '1/4'], [12, '1/8'], [8, '1/8T'], [6, '1/16'], [4, '1/16T'], [3, '1/32']];
 const SPEED_CHOICES = [
   [48, 'Half notes'], [24, 'Quarter notes'], [12, 'Eighth notes'], [8, 'Eighth-note triplets'],
@@ -870,10 +883,15 @@ const deviceTitle = (d) => d.name || defaultTitle(d);
 
 // "switch 3", or "switches 1, 2 and 5".
 function listInputs(inputs) {
-  const names = [...inputs].sort((a, b) => a - b).map((i) => (i < 10 ? String(i + 1) : i === 10 ? 'V1' : 'V2'));
-  if (!names.length) return 'no switches';
-  const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  return `switch${names.length > 1 ? 'es' : ''} ${joined}`;
+  const and = (xs) => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+  const sorted = [...inputs].sort((a, b) => a - b);
+  const nums = sorted.filter((i) => i < 10).map((i) => String(i + 1));
+  const vs = sorted.filter((i) => i >= 10).map((i) => (i === 10 ? 'V1' : 'V2'));
+  if (!nums.length && !vs.length) return 'no switches';
+  const parts = [];
+  if (nums.length) parts.push(`switch${nums.length > 1 ? 'es' : ''} ${and(nums)}`);
+  if (vs.length) parts.push(and(vs));
+  return parts.join(' and ');
 }
 
 // A Drum Rack pad: its number and Ableton's name for its note (Ableton
@@ -930,7 +948,7 @@ function deviceSummary(d) {
       const dir = (DIRECTION_CHOICES.find(([v]) => v === q.order) || [null, 'as pressed'])[1].toLowerCase();
       const rate = (RATE_CHOICES.find(([v]) => v === q.division) || [null, `${q.division} ticks`])[1];
       const notes = d.switches.map((s) => noteLabel(d, s.value)).join(' · ');
-      return `${notes || 'no notes yet'} · ${dir} · ${rate}`;
+      return `${notes || 'no notes yet'} · ${d.patterns ? 'euclidean' : dir} · ${rate}`;
     }
     return '';
   }
@@ -962,7 +980,21 @@ function deviceWarning(d) {
 
 // Updates the summaries, warnings and box drawing without rebuilding the
 // cards (used while notes and shapes are edited, so focus stays put).
+// A variable input a device is using: its CC menu is off, and says why.
+function renderVariableJobs() {
+  for (let i = 0; i < S.NUM_ANALOG; i++) {
+    const sel = $(`cc-${i}`);
+    if (!sel) continue;
+    const s = B.owner(form, 10 + i);
+    sel.classList.toggle('stay-disabled', !!s);
+    sel.disabled = !editable || !!s;
+    $(`vjob-${i}`).textContent = s ? `Sets the speed of ${deviceTitle(s.device)}` : '';
+    $(`vjob-${i}`).hidden = !s;
+  }
+}
+
 function renderStatus() {
+  renderVariableJobs();
   for (const d of form.devices) {
     const id = deviceIds.get(d);
     if (!id || !$(`${id}-sum`)) continue;
@@ -980,9 +1012,16 @@ function renderBoardUse() {
   // Only the firmware warning: the room left shows on the device menu.
   const gens = B.genIdsInUse(form).size;
   const arps = form.devices.some((d) => d.kind === 'arp');
+  const speeds = form.devices.some((d) => d.switches.some((x) => x.role === 'speed'));
   $('board-use').textContent =
+    (speeds && !speedsOnBoard()
+      ? 'This board’s firmware is older than 0.7.6, so V1 and V2 send their CC instead of setting a wobble’s speed. '
+      : '') +
     (arps && !arpsOnBoard()
       ? 'This board’s firmware is older than 0.7.3, so its arpeggiators are silent. Update the firmware to play them. '
+      : '') +
+    (form.devices.some((d) => d.kind === 'arp' && d.patterns) && arpsOnBoard() && !patternsOnBoard()
+      ? 'This board’s firmware is older than 0.7.4, so Euclidean patterns play as a straight arpeggio. Update the firmware to hear them. '
       : '') +
     (gens && !generatorsOnBoard()
       ? 'This board’s firmware is older than 0.8.0, so melody generators play in this browser only: turn Sound on to hear them. Update the firmware to play them from the board.'
@@ -1199,6 +1238,7 @@ function deviceCard(d, di) {
       isSeq ? $('seq-editor') : $('mod-editor'), collapse));
   } else if (graphic) body.append(el('div', { className: 'devcard-top' }, graphic, settings));
   else if (settings) body.append(settings);
+  if (settings && settings.arpRow) body.append(settings.arpRow);
   body.append(el('p', { className: 'sum', id: `${id}-sum` }));
 
   // Its switches, each with its job (or note) and who uses it: notes in the
@@ -1209,7 +1249,7 @@ function deviceCard(d, di) {
   shown.forEach((s) => rows.append(switchRow(d, s, `${id}-sw${s.input}`)));
   body.append(rows);
   body.append(el('div', { className: 'add-here', id: `${id}-addsel` }));
-  if (B.hasRoom(form, d)) {
+  if (B.hasRoom(form, d) || B.hasRoom(form, d, 10)) {
     // A menu of the switches, to add one without going to the box first.
     const add = el('button', { type: 'button', id: `${id}-addsw`, className: 'quiet add-switch',
       textContent: 'Add a switch', 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
@@ -1253,6 +1293,33 @@ const COLLAPSE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidd
   'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M4 14h6v6"/><path d="M10 14l-7 7"/></svg>';
 
+// Which step each sequencer played last, followed from its switches: "next
+// note" moves on one (round to the start after the last), "back to the
+// start" goes back before the first. The board starts its sequences again
+// whenever a table is sent, so that does too.
+const seqPlayed = new WeakMap();   // device -> step index, or -1
+
+function seqPlayedStep(d) {
+  return seqPlayed.has(d) ? seqPlayed.get(d) : -1;
+}
+
+function followSequencer(d, role) {
+  const len = form.sequences[d.seq].notes.length;
+  if (!len) return;
+  if (role === 'restart') seqPlayed.set(d, -1);
+  else if (role === 'step')
+    seqPlayed.set(d, d.loop === false ? Math.min(seqPlayedStep(d) + 1, len - 1) : (seqPlayedStep(d) + 1) % len);
+  else return;
+  redrawSeqPreviews();
+  if (openDevice === d && roll) roll.render();
+}
+
+function resetSequencers() {
+  for (const d of form.devices) if (d.kind === 'seq') seqPlayed.delete(d);
+  redrawSeqPreviews();
+  if (roll && openDevice && openDevice.kind === 'seq') roll.render();
+}
+
 function seqPreview(d, id) {
   const q = form.sequences[d.seq];
   const pitch = (n) => (q.noteType === 'scale' ? S.degreeToNote(n, form.root, deviceOctave(d), form.mask) : n);
@@ -1287,11 +1354,20 @@ function seqPreview(d, id) {
     parts.push(`<rect x="${x0}" y="${y(hi) - keyH / 2}" width="${pw}" height="${(hi - lo + 1) * keyH}" fill="none" stroke="#000" stroke-width="1"/>`);
   }
   const colour = B.COLOURS[d.colour].hex;
+  // The step that's just played: its column shaded (drawn under the notes).
+  const played = d.kind === 'seq' ? seqPlayedStep(d) : -1;
+  let playedAt = null;
+  if (played >= 0 && played < steps.length) {
+    playedAt = steps.slice(0, played).reduce((a, x) => a + x.len, 0);
+    parts.push(`<rect x="${left + playedAt * step}" y="2" width="${steps[played].len * step}" height="${H - 4}" class="tune-next"/>`);
+  }
   let at = 0;
   steps.forEach((x, k) => {
     if (x.n !== null)
       parts.push(`<rect x="${left + at * step + 1}" y="${y(x.n) - 4}" width="${Math.max(2, x.len * step - 2)}" height="8" rx="1.5" ` +
         `fill="${colour}" stroke="#000" stroke-width="${isHomeNote(x.n) ? 2 : 1}"><title>Step ${k + 1}: ${S.noteName(x.n)}</title></rect>`);
+    if (k === played && x.n !== null)
+      parts.push(`<rect x="${left + at * step - 2}" y="${y(x.n) - 8}" width="${Math.max(2, x.len * step - 2) + 6}" height="16" rx="3" class="tune-now"/>`);
     at += x.len;
   });
   const open = openDevice === d;
@@ -1532,6 +1608,80 @@ function tuneGraph(d, id) {
   return box;
 }
 
+// A variable input's speed range for a wobble: from (input at 0) to (at
+// full). Synced: note values. Free: times a second.
+const SYNC_RATES = [[768, '8 bars'], [384, '4 bars'], [192, '2 bars'], [96, '1 bar'], [48, '1/2'], [24, '1/4'],
+  [12, '1/8'], [6, '1/16'], [3, '1/32']];
+
+function speedRange(d, s, rowId, label) {
+  const synced = !!form.modulators[d.mod].synced;
+  const key = synced ? 'synced' : 'free';
+  const pair = s.range[key];
+  const end = (k, title) => {
+    let input;
+    if (synced) {
+      input = el('select', { id: `${rowId}-speed${k}`, 'aria-label': `${label}: ${title}` });
+      options(input, withValue(SYNC_RATES, pair[k], `${pair[k]} ticks`), pair[k]);
+    } else {
+      input = el('input', { type: 'number', id: `${rowId}-speed${k}`, min: 0.01, max: 20, step: 0.1, value: pair[k] / 100,
+        'aria-label': `${label}: ${title} (times a second)` });
+    }
+    input.addEventListener('change', () => {
+      const v = synced ? Number(input.value) : Math.round(Math.min(20, Math.max(0.01, Number(input.value) || 0.1)) * 100);
+      s.range = { ...s.range, [key]: k ? [pair[0], v] : [v, pair[1]] };
+      renderDevices();
+      changed();
+    });
+    return input;
+  };
+  return el('span', { className: 'sw-pattern' },
+    el('span', { textContent: 'from', className: 'sw-pattern-word' }), end(0, 'speed with the input at its lowest'),
+    el('span', { textContent: 'to', className: 'sw-pattern-word' }), end(1, 'speed with the input at its highest'),
+    synced ? null : el('span', { textContent: 'a second', className: 'sw-pattern-word' }));
+}
+
+// A switch's own pattern: hits, steps and rotation, and its circle.
+function switchPattern(d, s, rowId, label) {
+  const r = s.rhythm;
+  const num = (key, title, min, max) => {
+    const input = el('input', { type: 'number', id: `${rowId}-${key}`, min, max, value: r[key], title,
+      'aria-label': `${label}: ${title.toLowerCase()}` });
+    input.addEventListener('change', () => {
+      const v = Math.round(Number(input.value));
+      const next = { ...s.rhythm };
+      if (Number.isFinite(v)) next[key] = v;
+      next.steps = Math.min(32, Math.max(1, next.steps));
+      next.hits = Math.min(next.steps, Math.max(0, next.hits));
+      next.rotation = ((next.rotation % next.steps) + next.steps) % next.steps;
+      s.rhythm = next;
+      renderDevices();
+      changed();
+    });
+    return input;
+  };
+  return el('span', { className: 'sw-pattern' },
+    num('hits', 'Hits', 0, 32), el('span', { textContent: 'in', className: 'sw-pattern-word' }),
+    num('steps', 'Steps', 1, 32), el('span', { textContent: '↻', className: 'sw-pattern-word', title: 'Rotate' }),
+    num('rotation', 'Rotate', 0, 31), rhythmCircle(r));
+}
+
+// The pattern as a small circle: steps clockwise from the top, hits filled.
+function rhythmCircle({ steps, hits, rotation }) {
+  // Rotation is clockwise here (the board's turns the other way).
+  const pattern = S.euclidHits(steps, hits, (steps - rotation) % steps);
+  const R = 18, size = Math.max(2.2, Math.min(4.5, 50 / steps));
+  const dots = pattern.map((hit, i) => {
+    const a = (i / steps) * 2 * Math.PI - Math.PI / 2;
+    return `<circle cx="${(R * Math.cos(a)).toFixed(1)}" cy="${(R * Math.sin(a)).toFixed(1)}" r="${size}" ` +
+      `fill="${hit ? '#000' : '#fff'}" stroke="#000" stroke-width="1"/>`;
+  }).join('');
+  const box = el('span', { className: 'rhythm-mini', role: 'img', 'aria-label': `${hits} hits in ${steps} steps` });
+  // A tick above step 1, where the pattern starts.
+  const tick = `<line x1="0" x2="0" y1="${-R - size - 1}" y2="${-R - size - 4.5}" stroke="#000" stroke-width="1.6" stroke-linecap="round"/>`;
+  box.innerHTML = `<svg viewBox="-25 -27 50 51" width="50" height="51"><circle r="${R}" fill="none" stroke="#d0d0d0" stroke-width="1"/>${tick}${dots}</svg>`;
+  return box;
+}
+
 // Channel and loudness for a sound device; what a wobble or swell changes;
 // whether notes follow the key.
 function soundSettings(d, id) {
@@ -1555,15 +1705,12 @@ function soundSettings(d, id) {
     });
     row.append(channelSelect(), field('Loudness', loud));
   }
-  if (d.kind === 'arp') {
-    const q = form.sequences[d.seq];
-    const rate = el('select', { id: `${id}-rate` });
-    options(rate, withValue(RATE_CHOICES, q.division, `${q.division} ticks`), q.division);
-    rate.addEventListener('change', () => { q.division = Number(rate.value); changed(); });
-    const dir = el('select', { id: `${id}-direction` });
-    options(dir, withValue(DIRECTION_CHOICES, q.order, 'As pressed'), q.order);
-    dir.addEventListener('change', () => { q.order = dir.value; renderStatus(); changed(); });
-    row.append(field('Rate', rate), field('Direction', dir));
+  if (d.kind === 'seq') {
+    // Loop: after the last note, the next press plays the first again. Off,
+    // it stops at the end until "back to the start" (firmware 0.7.5).
+    const loop = el('input', { type: 'checkbox', id: `${id}-loop`, checked: d.loop !== false });
+    loop.addEventListener('change', () => { d.loop = loop.checked; changed(); });
+    row.append(el('label', { className: 'check', title: 'After the last note, start again from the first' }, loop, 'Loop'));
   }
   let octave = null;   // goes last, after Notes
   if (B.isSound(d)) {
@@ -1601,6 +1748,50 @@ function soundSettings(d, id) {
     row.append(field('Notes', type));
   }
   if (octave) row.append(octave);
+  // Arpeggiate and its settings: a row of their own (deviceCard puts it
+  // under the keyboard).
+  const arpRow = el('div', { className: 'devcard-settings arp-row' });
+  if (d.kind === 'notes' || d.kind === 'arp') {
+    const on = d.kind === 'arp';
+    const room = on || B.canAdd(form, 'arp');
+    const arp = el('input', { type: 'checkbox', id: `${id}-arp`, checked: on });
+    if (!room) arp.classList.add('stay-disabled');
+    arp.addEventListener('change', () => {
+      if (!B.setArpeggiate(form, d, arp.checked)) return;
+      renderDevices();
+      changed();
+      say(arp.checked ? `${deviceTitle(d)} arpeggiates: hold switches to build the arpeggio.` : `${deviceTitle(d)} plays its notes.`);
+      $(`${id}-arp`)?.focus();
+    });
+    arpRow.append(el('label', { className: 'check',
+      title: room ? 'Hold (or latch) switches to build an arpeggio from their notes'
+        : 'The board has room for 4 sequencers and arpeggios: remove one first' }, arp, 'Arpeggiate'));
+  }
+  if (d.kind === 'arp') {
+    const q = form.sequences[d.seq];
+    const rate = el('select', { id: `${id}-rate` });
+    options(rate, withValue(RATE_CHOICES, q.division, `${q.division} ticks`), q.division);
+    rate.addEventListener('change', () => { q.division = Number(rate.value); changed(); });
+    const style = el('select', { id: `${id}-style` });
+    options(style, withValue(STYLE_CHOICES, d.patterns ? 'euclid' : q.order, 'As pressed'), d.patterns ? 'euclid' : q.order);
+    style.addEventListener('change', () => {
+      const euclid = style.value === 'euclid';
+      if (!euclid) q.order = style.value;
+      if (euclid !== !!d.patterns) {
+        B.setPatterns(form, d, euclid);
+        renderDevices();
+      } else {
+        renderStatus();
+      }
+      changed();
+    });
+    // On the beat: a note joins (and the arpeggio starts) on the next beat.
+    const beat = el('input', { type: 'checkbox', id: `${id}-beat`, checked: !!d.onBeat });
+    beat.addEventListener('change', () => { d.onBeat = beat.checked; changed(); });
+    arpRow.append(field('Rate', rate), field('Style', style),
+      el('label', { className: 'check', title: 'Notes join, and the arpeggio starts, on the next beat' }, beat, 'On the beat'));
+  }
+  if (arpRow.children.length) row.arpRow = arpRow;
   if (B.isMod(d)) {
     // It changes another device's sound, or a channel of its own.
     const target = el('select', { id: `${id}-target` });
@@ -1643,7 +1834,7 @@ function switchRow(d, s, rowId) {
     job.addEventListener('change', () => { s.value = Number(job.value); renderDevices(); changed(); });
   } else {
     job = el('select', { id: `${rowId}-job`, 'aria-label': `${label}’s job` });
-    options(job, B.roles(form, d), s.role);
+    options(job, B.roles(form, d).filter(([k]) => B.CONTINUOUS.has(k) === B.isVariable(s.input)), s.role);
     job.addEventListener('change', () => {
       const other = d.switches.find((x) => x.role === job.value);
       B.setRole(form, d, s.input, job.value);
@@ -1663,20 +1854,22 @@ function switchRow(d, s, rowId) {
     const id = deviceIds.get(d);
     ($(id)?.querySelector('.sw-row button') || $(`${id}-toggle`))?.focus();
   });
-  // Held (sounds while the switch is down) or toggle (press on, press off).
+  // Held (sounds while the switch is down) or latched (press on, press off).
   let toggle = el('span');
   if (B.gated(d, s)) {
     const box = el('input', { type: 'checkbox', id: `${rowId}-toggle`, checked: !!s.toggle,
-      'aria-label': `${label}: toggle (press on, press off) instead of holding` });
-    // A short sound has nothing to toggle (kept off by setEditable too).
+      'aria-label': `${label}: latch (press on, press off) instead of holding` });
+    // A short sound has nothing to latch (kept off by setEditable too).
     if (d.gate === 'oneshot') box.classList.add('stay-disabled');
     box.addEventListener('change', () => { s.toggle = box.checked; changed(); });
     toggle = el('label', { className: 'check sw-toggle',
-      title: d.gate === 'oneshot' ? 'Short sounds have nothing to toggle' : 'On: press once to start and again to stop. Off: hold the switch to keep it sounding.' },
-    box, 'Toggle');
+      title: d.gate === 'oneshot' ? 'Short sounds have nothing to latch' : 'On: press once to start and again to stop. Off: hold the switch to keep it sounding.' },
+    box, 'Latch');
   }
+  const pattern = d.kind === 'arp' && d.patterns && s.rhythm ? switchPattern(d, s, rowId, label)
+    : s.role === 'speed' ? speedRange(d, s, rowId, label) : el('span');
   const row = el('div', { className: 'role sw-row' },
-    el('span', { className: 'role-name', textContent: label }), job, toggle, remove);
+    el('span', { className: 'role-name', textContent: label }), job, toggle, pattern, remove);
   row.dataset.input = s.input;
   return row;
 }
@@ -1696,7 +1889,8 @@ function closeSwitchMenu(refocus = false) {
 
 function openSwitchMenu(d, button) {
   closeSwitchMenu();
-  const inputs = Array.from({ length: B.NUM_SWITCHES }, (_, i) => i).filter((i) => !d.switches.some((s) => s.input === i));
+  const inputs = Array.from({ length: S.NUM_INPUTS }, (_, i) => i)
+    .filter((i) => !d.switches.some((s) => s.input === i) && B.hasRoom(form, d, i));
   const free = inputs.filter((i) => !B.owner(form, i));
   const used = inputs.filter((i) => B.owner(form, i));
   const box = el('div', { className: 'slot-menu switch-menu', role: 'menu', 'aria-label': `Add a switch to ${deviceTitle(d)}` });
@@ -1869,7 +2063,7 @@ let selected = [];      // chosen switches, in the order chosen
 let learning = false;   // a press on the board chooses the switch
 
 function toggleSelected(i) {
-  if (!editable || i < 0 || i >= B.NUM_SWITCHES) return;
+  if (!editable || i < 0 || i >= S.NUM_INPUTS) return;
   const at = selected.indexOf(i);
   if (at >= 0) selected.splice(at, 1);
   else selected.push(i);
@@ -1965,7 +2159,7 @@ function renderSelection() {
   const chooser = $('new-device');
   chooser.hidden = !n;
   if (n) {
-    chooser.replaceChildren(...B.KINDS.map((kind) => {
+    chooser.replaceChildren(...B.KINDS.filter((kind) => !B.DEVICES[kind].hidden).map((kind) => {
       const info = B.DEVICES[kind];
       const room = B.canAdd(form, kind);
       // Just the name, with a small picture of what's inside notes and
@@ -1982,9 +2176,9 @@ function renderSelection() {
   for (const d of form.devices) {
     const holder = $(`${deviceIds.get(d)}-addsel`);
     if (!holder) continue;
-    const mine = selected.filter((i) => !d.switches.some((s) => s.input === i));
+    const mine = selected.filter((i) => !d.switches.some((s) => s.input === i) && B.hasRoom(form, d, i));
     holder.replaceChildren();
-    if (!mine.length || !B.hasRoom(form, d)) continue;
+    if (!mine.length) continue;
     const b = el('button', { type: 'button', className: 'quiet', textContent: `Add ${listInputs(mine)} here`,
       'aria-label': `Add ${listInputs(mine)} to ${deviceTitle(d)}` });
     b.disabled = !editable;
@@ -2047,7 +2241,7 @@ function renderSwitchMap() {
     if (!s) return { title: `${name}: free` };
     const c = B.COLOURS[s.device.colour];
     return { hex: c.hex, symbol: c.symbol, title: `${name}: ${deviceTitle(s.device)} · ${slotLabel(s)}` };
-  }), new Set(selected), (i) => i < B.NUM_SWITCHES && editable);
+  }), new Set(selected), () => editable);
 }
 
 // --- Sequence editor ---
@@ -2162,8 +2356,10 @@ function renderNotesView() {
   $('roll').hidden = notesView !== 'roll';
   document.querySelectorAll('.list-only').forEach((e) => { e.hidden = notesView !== 'list'; });
   if (notesView !== 'roll') return;
+  if (openDevice) $('roll').style.setProperty('--note', B.COLOURS[openDevice.colour].hex);
   roll = roll || SwitchcraftPianoRoll.mount($('roll'), {
     get: () => form.sequences[currentSeq],
+    playing: () => (openDevice && openDevice.kind === 'seq' && openDevice.seq === currentSeq ? seqPlayedStep(openDevice) : -1),
     settings: () => ({ root: form.root, octave: seqOctave(), mask: form.mask }),
     editable: () => editable,
     changed: seqChanged,
@@ -2668,7 +2864,8 @@ function buildStatic() {
     const done = el('button', { type: 'button', id: `done-${i}`, textContent: 'Done', className: 'primary', hidden: true });
     const cancel = el('button', { type: 'button', id: `cancel-${i}`, textContent: 'Cancel', hidden: true, className: 'quiet' });
     $('analog').append(el('div', { className: 'analog-row' },
-      el('span', { className: 'analog-name', textContent: label }), sel,
+      el('span', { className: 'analog-name', textContent: label }),
+      el('span', { className: 'vjob-cell' }, sel, el('span', { className: 'vjob', id: `vjob-${i}`, hidden: true })),
       el('div', { className: 'analog-cal' }, setRange, done, cancel), knob(i, label),
       el('span', { className: 'cal-text', id: `caltext-${i}`, role: 'status' })));
 
@@ -2824,6 +3021,12 @@ function buildStatic() {
     }
     $('sound').setAttribute('aria-pressed', String(synth.running));
     $('sound').textContent = synth.running ? 'Sound: on' : 'Sound: off';
+    // A short, quiet blip when it comes on, so you can tell the browser's
+    // sound works before playing the board.
+    if (synth.running) {
+      synth.noteOn(15, 84, 40);
+      setTimeout(() => synth.noteOff(15, 84), 120);
+    }
   });
 
   $('connect').addEventListener('click', connect);
@@ -2894,6 +3097,7 @@ async function flush() {
       restartNext = false;
       await board.writeTable(S.buildTable(currentTable()), false, restart);
     } while (dirty);
+    resetSequencers();   // the board starts its sequences again
     setSave('Playing, not saved yet');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 2000);
@@ -2998,8 +3202,9 @@ function attach(b) {
 function detach(reason) {
   showClock(false, 0);
   synth.allNotesOff();  // their note-offs will never arrive
-  if (board) board.close();
+  if (board) board.release();   // closes the ports too
   board = null;
+  heartbeatMisses = 0;
   learning = false;
   clearTimeout(writeTimer);
   clearTimeout(saveTimer);
@@ -3010,6 +3215,37 @@ function detach(reason) {
   renderDevices();
   setSave(unsaved ? 'Not connected: some changes weren’t saved' : '');
 }
+
+// --- Heartbeat ---
+// Every few seconds when nothing else is going on, check the board is still
+// there: its ports are connected and it answers IDENTIFY. Two missed answers
+// in a row count as unplugged. While it's away, look for it coming back (in
+// case the browser missed the "connected" event).
+const HEARTBEAT_MS = 3000;
+const RECONNECT_EVERY = 2;   // heartbeats between looks for a board that's away
+let heartbeatMisses = 0;
+let heartbeatCount = 0;
+setInterval(async () => {
+  heartbeatCount++;
+  if (!board) {
+    if (!midiAccess || connecting || heartbeatCount % RECONNECT_EVERY) return;
+    const there = [...midiAccess.outputs.values()].some((p) => /switchcraft/i.test(p.name) && p.state === 'connected');
+    if (there) connect();
+    return;
+  }
+  const b = board;
+  if (b.input.state !== 'connected' || b.output.state !== 'connected') {
+    detach('Board unplugged');
+    return;
+  }
+  if (writing || b.pending) return;   // busy talking to it already
+  try {
+    await b.identify(1500);
+    heartbeatMisses = 0;
+  } catch (e) {
+    if (board === b && ++heartbeatMisses >= 2) detach('Board not responding');
+  }
+}, HEARTBEAT_MS);
 
 let reconnectTimer = null;
 function onPortChange(e) {
@@ -3051,11 +3287,26 @@ let foreignTable = null;  // a table this page can't show (made with Blocks, say
 
 // The table to send to the board.
 function currentTable() {
-  return foreignTable || B.tableFromBand(form, { generators: generatorsOnBoard(), arps: arpsOnBoard() });
+  return foreignTable || B.tableFromBand(form, { generators: generatorsOnBoard(), arps: arpsOnBoard(), speeds: speedsOnBoard() });
 }
 
 // Firmware 0.7.3 and later build arpeggios from held switches (ARP_NOTE).
 // Older boards would reject the table, so the arpeggio notes are left out.
+// Firmware 0.7.4 and later give each arpeggio note its own pattern (0.7.3
+// plays them as a straight arpeggio).
+function patternsOnBoard() {
+  if (!board) return true;
+  const [major, minor, patch] = board.info.firmware.split('.').map(Number);
+  return major > 0 || minor > 7 || (minor === 7 && patch >= 4);
+}
+
+// Firmware 0.7.6 and later let a variable input set a wobble's speed.
+function speedsOnBoard() {
+  if (!board) return true;
+  const [major, minor, patch] = board.info.firmware.split('.').map(Number);
+  return major > 0 || minor > 7 || (minor === 7 && patch >= 6);
+}
+
 function arpsOnBoard() {
   if (!board) return true;
   const [major, minor, patch] = board.info.firmware.split('.').map(Number);
@@ -3095,8 +3346,16 @@ function showTable(table) {
       d.octave = 0;
       unreversed = true;
     }
-    // Arpeggiators always start on the beat.
-    for (const d of form.devices) if (d.kind === 'arp' && !d.onBeat) { d.onBeat = true; unreversed = true; }
+    // An arpeggio's single rhythm (briefly, before patterns per switch): each
+    // switch gets it.
+    for (const d of form.devices) {
+      const q = d.kind === 'arp' && form.sequences[d.seq];
+      if (!q || !q.rhythm) continue;
+      B.setPatterns(form, d, true);
+      for (const sw of d.switches) sw.rhythm = { ...q.rhythm };
+      q.rhythm = null;
+      unreversed = true;
+    }
     // Melody generators always remember their tune and step back after a jump.
     for (const d of form.devices) if (d.kind === 'gen' && fixGenerator(B.generatorsOf(form)[d.gen])) unreversed = true;
     for (const d of form.devices) {
@@ -3339,6 +3598,11 @@ function showInput(i, ev) {
   if (i < 0 || i >= S.NUM_INPUTS) return;
   const down = ev === 'press' ? true : ev === 'release' ? false : null;
   if (down !== null) playGenerators(i, down);
+  if (down)
+    for (const x of form.devices) {
+      const slot = x.kind === 'seq' && x.switches.find((s) => s.input === i);
+      if (slot) followSequencer(x, slot.role);
+    }
   if (down && generatorsOnBoard()) {
     // Board-played generators: remember the job, for the note that follows.
     for (const x of form.devices) {

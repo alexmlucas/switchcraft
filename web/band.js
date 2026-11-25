@@ -52,9 +52,11 @@
     notes: { name: 'notes', what: 'Each switch plays a note.', sound: true },
     gen: { name: 'melody generator', what: 'Makes up a new note on every press: a tune that wanders, comes home and changes a little.', uses: 'gen', sound: true },
     seq: { name: 'sequencer', what: 'Plays a tune: one note per press, or by itself in time.', uses: 'seq', sound: true },
-    // Each switch gives the arpeggiator a note while it's held (or latched);
-    // it plays the held notes one after another, in time (ARP_NOTE, 0.7.3).
-    arp: { name: 'arpeggiator', what: 'Plays the notes its switches hold, one after another, in time.', uses: 'seq', sound: true },
+    // Notes, arpeggiated: each switch gives the arpeggio a note while it's
+    // held (or latched), and it plays them one after another, in time
+    // (ARP_NOTE, 0.7.3). It's a Notes device with Arpeggiate on (setArpeggiate),
+    // not one of its own in the menu.
+    arp: { name: 'notes', what: 'Each switch plays a note.', uses: 'seq', sound: true, hidden: true },
     // One of the board's modulators: a wobble (LFO, over and over) or a
     // swell (envelope, once), set by its Moves menu (band.modulators[d.mod].kind).
     mod: { name: 'Wobbles & Swells', what: 'Moves a sound up and down: over and over, or once.', uses: 'mod' },
@@ -75,7 +77,8 @@
           : [['play', 'play'], ['restart', 'back to the start']];
       case 'gen': return [['note', 'new note'], ['home', 'home'], ['again', 'again'], ['new', 'new melody']];
       case 'mod':
-        return band.modulators[d.mod].kind === 'env' ? [['run', 'swell']] : [['run', 'wobble'], ['stop', 'stop it']];
+        return band.modulators[d.mod].kind === 'env' ? [['run', 'swell']]
+          : [['run', 'wobble'], ['stop', 'stop it'], ['speed', 'speed']];
       default: return [];
     }
   }
@@ -211,13 +214,55 @@
     for (const x of band.devices) if (x.target === d) Object.assign(x, { target: null, channel: d.channel });
   }
 
+  // An arpeggio with patterns (d.patterns): each switch's note repeats on its
+  // own Euclidean rhythm (s.rhythm) while held, all at the arpeggio's rate,
+  // instead of the notes taking turns (firmware 0.7.4).
+  const DEFAULT_PATTERN = { steps: 8, hits: 3, rotation: 0 };
+  // The editor's rotation moves the hits later (clockwise round the circle);
+  // the board's moves them earlier. Each is the other's mirror.
+  const boardRotation = (r) => ({ ...r, rotation: (r.steps - r.rotation) % r.steps });
+  function setPatterns(band, d, on) {
+    d.patterns = !!on;
+    for (const s of d.switches) {
+      if (on && !s.rhythm) s.rhythm = { ...DEFAULT_PATTERN };
+      if (!on) delete s.rhythm;
+    }
+  }
+
+  // A Notes device's Arpeggiate: on, it takes one of the board's sequences
+  // (for its rate, style and note length) and its switches feed an arpeggio;
+  // off, they play their notes again. Returns false if the board has no room.
+  function setArpeggiate(band, d, on) {
+    if (on === (d.kind === 'arp')) return true;
+    if (on) {
+      if (!canAdd(band, 'arp')) return false;
+      const id = freeId(seqIdsInUse(band), NUM_SEQS);
+      band.sequences[id] = { ...S.defaultSequence(), mode: 'clock', noteType: 'fixed', notes: [60], order: 'up',
+        octaves: 1, division: 6, gate: 70 };
+      if (d.noteType === 'rack') d.noteType = 'fixed';   // the same notes
+      Object.assign(d, { kind: 'arp', seq: id, onBeat: true });
+      return true;
+    }
+    const id = d.seq;
+    delete d.seq;
+    delete d.onBeat;
+    setPatterns(band, d, false);
+    delete d.patterns;
+    d.kind = 'notes';
+    if (!seqIdsInUse(band).has(id)) {
+      band.sequences[id] = S.defaultSequence();
+      for (const mod of band.modulators) if (mod.follow === id) mod.follow = null;
+    }
+    return true;
+  }
+
   // Wobbles & swells: over and over (an LFO) or once (an envelope). A swell
   // has no "stop it" job, so a switch doing that is freed.
   function setModKind(band, id, kind) {
     band.modulators[id].kind = kind;
     for (const d of band.devices) {
       if (d.mod !== id) continue;
-      if (kind === 'env') d.switches = d.switches.filter((s) => s.role !== 'stop');
+      if (kind === 'env') d.switches = d.switches.filter((s) => s.role !== 'stop' && s.role !== 'speed');
       for (const s of d.switches) if (s.role === 'run') s.toggle = kind === 'lfo';
     }
   }
@@ -262,14 +307,25 @@
   }
 
   // The jobs a device has no switch for yet, in priority order.
-  function freeRoles(band, d) {
+  // Jobs for a variable input (V1, V2: inputs 10 and 11), not a switch.
+  const CONTINUOUS = new Set(['speed']);
+  const isVariable = (input) => input >= NUM_SWITCHES;
+  // A variable input's speed range, for each kind of wobble: free in centi-Hz
+  // (0.1 to 8 times a second), synced in ticks per cycle (4 bars to 1/16).
+  const DEFAULT_RANGE = { free: [10, 800], synced: [384, 6] };
+
+  // The jobs a device has no input for yet, in priority order: switch jobs,
+  // or (for a variable input) continuous ones.
+  function freeRoles(band, d, input = 0) {
     if (playsNotes(d)) return [];
-    return roles(band, d).filter(([k]) => !d.switches.some((s) => s.role === k));
+    return roles(band, d).filter(([k]) => CONTINUOUS.has(k) === isVariable(input) &&
+      !d.switches.some((s) => s.role === k));
   }
 
   // Whether the device can take another switch.
-  function hasRoom(band, d) {
-    return playsNotes(d) ? d.switches.length < S.NUM_INPUTS : freeRoles(band, d).length > 0;
+  function hasRoom(band, d, input = 0) {
+    if (playsNotes(d)) return !isVariable(input) && d.switches.length < S.NUM_INPUTS;
+    return freeRoles(band, d, input).length > 0;
   }
 
   // --- Hold or toggle, per switch ---
@@ -312,9 +368,11 @@
   // or null if the device has no job left for it.
   function addSwitch(band, d, input) {
     if (d.switches.some((s) => s.input === input)) return { was: null };
-    if (!hasRoom(band, d)) return null;
+    if (!hasRoom(band, d, input)) return null;
     const was = release(band, input);
-    const s = playsNotes(d) ? { input, value: nextNoteValue(d) } : { input, role: freeRoles(band, d)[0][0] };
+    const s = playsNotes(d) ? { input, value: nextNoteValue(d) } : { input, role: freeRoles(band, d, input)[0][0] };
+    if (s.role === 'speed') s.range = { free: [...DEFAULT_RANGE.free], synced: [...DEFAULT_RANGE.synced] };
+    if (d.kind === 'arp' && d.patterns) s.rhythm = { ...DEFAULT_PATTERN };
     if (gated(d, s) && togglesByDefault(band, d)) s.toggle = true;
     d.switches.push(s);
     return { was };
@@ -367,18 +425,20 @@
             : { action: 'note', note: s.value, gate: gateOf(d, s), channel: d.channel, velocity: d.velocity };
       } else if (d.kind === 'arp') {
         // Its sequence plays in time; each switch gives it a note while held
-        // (or latched), and every note starts on the beat.
+        // (or latched), on the beat if it's set to.
         if (!seqs.has(d.seq)) {
           const q = f.sequences[d.seq];
-          f.sequences[d.seq] = { ...q, mode: 'clock', notes: q.notes.length ? q.notes : [60], channel: d.channel, velocity: d.velocity };
+          f.sequences[d.seq] = { ...q, mode: 'clock', notes: q.notes.length ? q.notes : [60], channel: d.channel, velocity: d.velocity,
+            rhythm: null };
         }
         seqs.add(d.seq);
         const up = octaveSteps(band, d);
         for (const s of d.switches) {
           const gate = s.toggle ? 'latch' : 'hold';
           f.switches[s.input] = d.noteType === 'scale'
-            ? { action: 'arp-note', seq: d.seq, degree: s.value + up, gate, onBeat: true }
-            : { action: 'arp-note', seq: d.seq, note: s.value, gate, onBeat: true };
+            ? { action: 'arp-note', seq: d.seq, degree: s.value + up, gate, onBeat: !!d.onBeat }
+            : { action: 'arp-note', seq: d.seq, note: s.value, gate, onBeat: !!d.onBeat };
+          if (d.patterns && s.rhythm) f.switches[s.input].rhythm = boardRotation(s.rhythm);
         }
       } else if (d.kind === 'seq') {
         if (!seqs.has(d.seq)) {
@@ -386,13 +446,21 @@
         }
         seqs.add(d.seq);
         set('play', { action: 'seq-play', seq: d.seq, gate: d.gate, onBeat: !!d.onBeat });
-        set('step', { action: 'seq-step', seq: d.seq });
+        set('step', { action: 'seq-step', seq: d.seq, ...(d.loop === false ? { once: true } : {}) });
         set('restart', { action: 'seq-restart', seq: d.seq });
       } else if (d.kind === 'mod') {
         if (!mods.has(d.mod)) f.modulators[d.mod].channel = channelOf(band, d);
         mods.add(d.mod);
         set('run', { action: 'mod-run', mod: d.mod, gate: d.gate, onBeat: !!d.onBeat });
         set('stop', { action: 'mod-stop', mod: d.mod });
+        // A variable input setting its speed (firmware 0.7.6), in the range
+        // for its kind of wobble.
+        const synced = !!band.modulators[d.mod].synced;
+        for (const s of d.switches)
+          if (s.role === 'speed' && valid.has('speed')) {
+            const [lo, hi] = (s.range || DEFAULT_RANGE)[synced ? 'synced' : 'free'];
+            f.switches[s.input] = { action: 'mod-speed', mod: d.mod, lo, hi };
+          }
       } else if (d.kind === 'gen') {
         if (!gens.has(d.gen)) {
           f.generators[d.gen] = { ...shiftGenerator(f.generators[d.gen], octaveSteps(band, d)), on: true, channel: d.channel, velocity: d.velocity };
@@ -420,7 +488,12 @@
       v: EDITOR_VERSION,
       d: band.devices.map((d) => {
         const out = { k: d.kind, c: d.colour,
-          sw: d.switches.map((s) => [s.input, playsNotes(d) ? s.value : s.role, ...(s.toggle ? [1] : [])]) };
+          sw: d.switches.map((s) => [s.input, playsNotes(d) ? s.value : s.role,
+            ...(s.toggle || s.rhythm || s.range ? [s.toggle ? 1 : 0] : []),
+            ...(s.rhythm ? [[s.rhythm.steps, s.rhythm.hits, s.rhythm.rotation]] : []),
+            ...(s.range ? [[...s.range.free, ...s.range.synced]] : [])]) };
+        if (d.patterns) out.pt = 1;
+        if (d.kind === 'seq' && d.loop === false) out.lp = 0;
         if (d.name) out.n = d.name;
         if (d.collapsed) out.f = 1;
         if (d.channel !== undefined) out.ch = d.channel;
@@ -455,8 +528,9 @@
   // generators: the board takes GENERATOR sections (firmware 0.8.0 and
   // later). Otherwise generators are left out of the table (the page plays
   // them itself) but still kept in the EDITOR section.
-  function tableFromBand(band, { generators = true, arps = true } = {}) {
+  function tableFromBand(band, { generators = true, arps = true, speeds = true } = {}) {
     const f = toForm(band);
+    if (!speeds) f.switches = f.switches.map((s) => (s.action === 'mod-speed' ? { action: 'none' } : s));
     if (!arps) f.switches = f.switches.map((s) => (s.action === 'arp-note' ? { action: 'none' } : s));
     if (!generators) {
       f.generators = f.generators.map((g) => ({ ...g, on: false }));
@@ -512,6 +586,8 @@
       if (info.uses === 'seq') { if (!okId('s', NUM_SEQS)) return null; d.seq = x.s; }
       if (info.uses === 'mod') { if (!okId('o', NUM_MODS)) return null; d.mod = x.o; }
       if (info.uses === 'gen') { if (!okId('x', NUM_GENS)) return null; d.gen = x.x; }
+      if (x.k === 'arp') d.patterns = x.pt === 1;
+      if (x.k === 'seq') d.loop = x.lp !== 0;
       {
         d.gate = x.g === 'oneshot' ? 'oneshot' : 'hold';
         if (x.k !== 'notes') d.onBeat = !!x.b;
@@ -524,6 +600,14 @@
         if (notesLike ? !Number.isInteger(s[1]) : typeof s[1] !== 'string') return null;
         // Earlier today a device's gate could be 'latch': its switches toggle.
         if (s[2] === 1 || (x.g === 'latch' && gated(d, sw))) sw.toggle = true;
+        const p = s[3];
+        if (x.k === 'arp' && Array.isArray(p) && p.every(Number.isInteger) && p[0] >= 1 && p[0] <= 32 &&
+            p[1] >= 0 && p[1] <= p[0] && p[2] >= 0 && p[2] < p[0])
+          sw.rhythm = { steps: p[0], hits: p[1], rotation: p[2] };
+        if (sw.role === 'speed') {
+          const ok = Array.isArray(p) && p.length === 4 && p.every((v) => Number.isInteger(v) && v >= 1 && v <= 2000);
+          sw.range = ok ? { free: [p[0], p[1]], synced: [p[2], p[3]] } : { free: [...DEFAULT_RANGE.free], synced: [...DEFAULT_RANGE.synced] };
+        }
         d.switches.push(sw);
       }
       targets.push(info.uses === 'mod' && Number.isInteger(x.to) ? x.to : null);
@@ -651,8 +735,10 @@
       } else if (s.action === 'arp-note') {
         const noteType = s.degree !== undefined ? 'scale' : 'fixed';
         let d = band.devices.find((x) => x.kind === 'arp' && x.seq === s.seq);
-        if (!d) d = add({ kind: 'arp', seq: s.seq, noteType, gate: 'hold', onBeat: true, switches: [] });
-        d.switches.push({ input, value: noteType === 'scale' ? s.degree : s.note, ...toggle(s) });
+        if (!d) d = add({ kind: 'arp', seq: s.seq, noteType, gate: 'hold', onBeat: !!s.onBeat, switches: [] });
+        d.switches.push({ input, value: noteType === 'scale' ? s.degree : s.note, ...toggle(s),
+          ...(s.rhythm ? { rhythm: boardRotation(s.rhythm) } : {}) });
+        if (s.rhythm) d.patterns = true;
       } else if (s.action.startsWith('seq-')) {
         const q = form.sequences[s.seq];
         const role = { 'seq-play': 'play', 'seq-step': 'step', 'seq-restart': 'restart' }[s.action];
@@ -663,6 +749,13 @@
           ? deviceFor(kind, { seq: s.seq }, fixedRole, base(s.gate), s.onBeat)
           : deviceFor(kind, { seq: s.seq }, fixedRole);
         d.switches.push({ input, role: fixedRole, ...(fixedRole === 'play' ? toggle(s) : {}) });
+        if (s.once) d.loop = false;
+      } else if (s.action === 'mod-speed') {
+        const d = deviceFor('mod', { mod: s.mod }, 'speed');
+        const synced = !!form.modulators[s.mod].synced;
+        const range = { free: [...DEFAULT_RANGE.free], synced: [...DEFAULT_RANGE.synced] };
+        range[synced ? 'synced' : 'free'] = [s.lo, s.hi];
+        d.switches.push({ input, role: 'speed', range });
       } else if (s.action.startsWith('mod-')) {
         const role = s.action === 'mod-run' ? 'run' : 'stop';
         const d = s.action === 'mod-run'
@@ -744,8 +837,8 @@
 
   global.SwitchcraftBand = {
     COLOURS, DEVICES, KINDS, NUM_SWITCHES, NUM_SEQS, NUM_MODS, NUM_GENS, TEMPLATES, EDITOR_ID,
-    RACK_FIRST, RACK_PADS, roles, freeRoles, hasRoom, isSound, isMod, channelOf, gated, gateOf, OCTAVES, usesOctave, octaveSteps, scaleLength,
-    defaultBand, blankBand, newDevice, removeDevice, canAdd, setSequenceMode, setModKind,
+    RACK_FIRST, RACK_PADS, CONTINUOUS, isVariable, roles, freeRoles, hasRoom, isSound, isMod, channelOf, gated, gateOf, OCTAVES, usesOctave, octaveSteps, scaleLength,
+    defaultBand, blankBand, newDevice, removeDevice, canAdd, setSequenceMode, setModKind, setArpeggiate, setPatterns,
     slots, owner, release, freeInputs, addSwitch, removeSwitch, setRole,
     seqIdsInUse, modIdsInUse, genIdsInUse, generatorsOf,
     toForm, tableFromBand, bandFromTable, bandFromForm, editorJson,

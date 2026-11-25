@@ -410,13 +410,14 @@ Channel `0xFF` and velocity `0` mean "use the default from globals".
 | 0x12 | `SEQ_STOP` | sequence or `0xFF` | 0 | 0 | 0 |
 | 0x13 | `SEQ_RESET` | sequence or `0xFF` | 0 | 0 | 0 |
 | 0x14 | `SEQ_SELECT` | sequence 0–3 | 0 | 0 | 0 |
-| 0x15 | `ARP_NOTE` | sequence 0–3 (not `0xFF`) | velocity, 0 = the sequence's | note: `i16` scale degree if `DEGREE` is set, else MIDI note 0–127 | 0 |
+| 0x15 | `ARP_NOTE` | sequence 0–3 (not `0xFF`) | velocity, 0 = the sequence's | note: `i16` scale degree if `DEGREE` is set, else MIDI note 0–127 | its own Euclidean pattern, or 0 (0.7.4) |
 | 0x20 | `TRANSPOSE` | mode: 0 = set, 1 = add | 0 | `i16` semitones, −48…48 (the running total is also kept within ±48) | 0 |
 | 0x21 | `SET_SCALE` | root 0–11, or `0xFF` = unchanged | 0 | scale_mask, or 0 = unchanged | 0 |
 | 0x30 | `PRESET` | mode: 0 = slot p1, 1 = next, 2 = previous | slot 0–7 | 0 | 0 |
 | 0x40 | `MOD_RUN` | modulator 0–3 | 0 | 0 | 0 |
 | 0x41 | `MOD_STOP` | modulator 0–3 | 0 | 0 | 0 |
-| 0x42–0x4F | | reserved: modulators | | | |
+| 0x42 | `MOD_SPEED` | modulator 0–3 | 0 | speed at value 0 | speed at value 127 |
+| 0x43–0x4F | | reserved: modulators | | | |
 | 0x50 | `GEN_NOTE` | generator 0–3 | 0 | 0 | ONESHOT length ms; 0 = 250 ms |
 | 0x51 | `GEN_HOME` | generator 0–3 | 0 | 0 | ONESHOT length ms; 0 = 250 ms |
 | 0x52 | `GEN_AGAIN` | generator 0–3 | 0 | 0 | ONESHOT length ms; 0 = 250 ms |
@@ -432,6 +433,14 @@ runs one LFO cycle or an envelope's attack and decay followed by its
 release. **`MOD_STOP`** stops an LFO (it sends its “from” value) or releases
 an envelope.
 
+**`MOD_SPEED`** (firmware 0.7.6, `ANALOG` triggers only) sets an LFO's speed
+from the analog value: p2 at 0, p3 at 127, in the LFO's own `rate` units
+(centi-Hz, or ticks per cycle if `SYNCED`; 1–2000). A free LFO moves
+exponentially between them; a synced one steps through the note values
+(768, 384, 192, 96, 48, 24, 12, 6, 3 ticks) between them, keeping its place in
+the cycle. The speed holds until the next value, and through an edit of the
+table; loading a table goes back to `rate`.
+
 **Scale-degree notes.** Degree 0 is `12 * (base_octave + 1) + scale_root`.
 Positive degrees walk up through the set bits of `scale_mask`, wrapping into
 the next octave; negative degrees walk down. Then `transpose` is added, and
@@ -443,6 +452,10 @@ degree" survives a later `SET_SCALE` or `TRANSPOSE`, while absolute notes
 input's release; `LATCH` on the next firing; `ONESHOT` after p3 ms. The
 note-off uses the pitch that was sent, even if the scale or transpose has
 changed since. The form view therefore needs **one rule per switch**.
+
+**`SEQ_STEP`** plays the sequence's next step, wrapping round to the first
+after the last. With gate `ONESHOT` (firmware 0.7.5) it doesn't wrap: after
+the last step it does nothing until `SEQ_RESET` (or the table is loaded).
 
 **`ARP_NOTE`** (firmware 0.7.3) builds an arpeggio from held switches. While
 its input is held (`HOLD`), or from one press to the next (`LATCH`), its note
@@ -456,6 +469,14 @@ steps are not played, but the section still needs one (any note). With
 `QUANTIZE` a note goes in on the next beat, so the arpeggio starts on the
 beat; a `HOLD` note whose input is released before then never goes in.
 `ONESHOT` is not allowed. Loading or editing the table empties the pool.
+
+**Patterns** (firmware 0.7.4). An `ARP_NOTE` with p3 ≠ 0 gives its note its
+own Euclidean pattern: bits 0–4 are steps − 1 (1–32 steps), bits 5–10 hits
+(0–steps), bits 11–15 the rotation (below steps). While any note in the pool
+has a pattern, the arpeggio stops taking turns: on every `division` ticks
+each held note steps through its own pattern (from its first step when it
+went in) and sounds on its hits for `gate`% of a division, so several notes
+can sound at once. A note without a pattern sounds on every step.
 
 **`PRESET`** loads a slot exactly like `SLOT_LOAD` (including the boot
 slot change and a `SLOT_CHANGED` report). Empty slots are skipped by

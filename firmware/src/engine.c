@@ -88,11 +88,20 @@ typedef struct {
     uint64_t off_us;
     uint8_t step_owner;  // press mode, gate 0: input whose release ends the note
     uint8_t slot;        // position in the Euclidean rhythm
+    bool ended;          // played once through (SEQ_STEP with ONESHOT, 0.7.5)
     // An arpeggio from held notes (ARP_NOTE rules target it): it plays the
     // pool instead of its steps, and runs while the pool has notes.
     bool arp;
     uint8_t pool_n;
-    struct { uint8_t rule, owner, note, vel; } pool[MAX_POOL];
+    struct {
+        uint8_t rule, owner, note, vel;
+        // Its own Euclidean pattern (0.7.4): n steps, k hits, rotation r
+        // (n = 0: none), where it is in it, and the note it's sounding.
+        uint8_t n, k, r, pos;
+        bool sounding;
+        uint8_t snd_note;
+        uint32_t off_tick;
+    } pool[MAX_POOL];
 } seq_rt_t;
 static seq_rt_t seqs[MAX_SEQS];
 
@@ -233,6 +242,7 @@ static void seq_build_order(int i) {
     }
     s->order_len = n;
     s->pos = 0;
+    s->ended = false;
 }
 
 static void seq_note_off(seq_rt_t *s) {
@@ -248,6 +258,11 @@ static void seq_stop(int i) {
     s->running = false;
     s->finish = false;
     seq_note_off(s);
+    for (int j = 0; j < s->pool_n; j++)
+        if (s->pool[j].sounding) {
+            note_off(resolve_ch(tab->seqs[i].channel), s->pool[j].snd_note);
+            s->pool[j].sounding = false;
+        }
 }
 
 static void seq_play_step(int i, uint8_t owner) {
@@ -312,11 +327,52 @@ static void seq_play_step(int i, uint8_t owner) {
     }
 }
 
+// An arpeggio whose notes have their own patterns: each held note plays on
+// its own hits (several can sound at once), one step per division.
+static bool arp_patterns(const seq_rt_t *s) {
+    for (int j = 0; j < s->pool_n; j++)
+        if (s->pool[j].n)
+            return true;
+    return false;
+}
+
+static void arp_entry_off(seq_rt_t *s, int j) {
+    if (s->pool[j].sounding) {
+        note_off(resolve_ch(tab->seqs[s - seqs].channel), s->pool[j].snd_note);
+        s->pool[j].sounding = false;
+    }
+}
+
+static void arp_pattern_step(int i) {
+    const seq_def_t *d = &tab->seqs[i];
+    seq_rt_t *s = &seqs[i];
+    uint8_t ch = resolve_ch(d->channel);
+    uint32_t gate_ticks = (uint32_t)d->division * d->gate / 100;
+    for (int j = 0; j < s->pool_n; j++) {
+        __typeof__(s->pool[0]) *e = &s->pool[j];
+        uint32_t n = e->n ? e->n : 1, k = e->n ? e->k : 1;
+        bool hit = ((e->pos + e->r) * k) % n < k;
+        e->pos = (uint8_t)((e->pos + 1) % n);
+        if (!hit)
+            continue;
+        arp_entry_off(s, j);
+        e->snd_note = clamp_note(e->note + transpose);
+        note_on(ch, e->snd_note, e->vel ? e->vel : resolve_vel(d->velocity));
+        e->sounding = true;
+        e->off_tick = tick + (gate_ticks ? gate_ticks : 1);
+    }
+    s->next_tick = tick + d->division;
+}
+
 // A clock-mode step. With a Euclidean rhythm (spec B.6.1) only hits play
 // the next note; a miss is a rest and each position lasts one division.
 static void seq_clock_step(int i, uint8_t owner) {
     const seq_def_t *d = &tab->seqs[i];
     seq_rt_t *s = &seqs[i];
+    if (s->arp && arp_patterns(s)) {
+        arp_pattern_step(i);
+        return;
+    }
     if (!d->euclid_steps) {
         seq_play_step(i, owner);
         return;
@@ -416,9 +472,12 @@ static void arp_changed(int i) {
 static void arp_remove(int i, uint8_t rule, uint8_t owner) {
     seq_rt_t *s = &seqs[i];
     int k = 0;
-    for (int j = 0; j < s->pool_n; j++)
-        if (!(s->pool[j].rule == rule && s->pool[j].owner == owner))
+    for (int j = 0; j < s->pool_n; j++) {
+        if (s->pool[j].rule == rule && s->pool[j].owner == owner)
+            arp_entry_off(s, j);
+        else
             s->pool[k++] = s->pool[j];
+    }
     if (k != s->pool_n) {
         s->pool_n = (uint8_t)k;
         arp_changed(i);
@@ -449,6 +508,11 @@ static void act_arp_note(uint8_t ri, const rule_t *r, uint8_t owner) {
     s->pool[s->pool_n].owner = owner;
     s->pool[s->pool_n].note = clamp_note(note);
     s->pool[s->pool_n].vel = r->p1;
+    s->pool[s->pool_n].n = r->p3 ? (uint8_t)ARP_PATTERN_STEPS(r->p3) : 0;
+    s->pool[s->pool_n].k = r->p3 ? (uint8_t)ARP_PATTERN_HITS(r->p3) : 0;
+    s->pool[s->pool_n].r = r->p3 ? (uint8_t)ARP_PATTERN_ROT(r->p3) : 0;
+    s->pool[s->pool_n].pos = 0;
+    s->pool[s->pool_n].sounding = false;
     s->pool_n++;
     arp_changed(i);
 }
@@ -492,8 +556,15 @@ static void do_action(uint8_t ri, uint8_t value, uint8_t owner, bool from_queue)
         break;
     }
     case ACT_SEQ_STEP:
-        if ((i = seq_target(r->p0)) >= 0)
+        if ((i = seq_target(r->p0)) >= 0) {
+            // ONESHOT: once through, then nothing until SEQ_RESET (no loop).
+            bool once = (r->flags & GATE_MASK) == GATE_ONESHOT;
+            if (once && seqs[i].ended)
+                break;
             seq_play_step(i, owner);
+            if (once && seqs[i].order_len && seqs[i].pos == 0)
+                seqs[i].ended = true;   // that was the last step
+        }
         break;
     case ACT_SEQ_RUN:
         act_seq_run(r, owner);
@@ -534,6 +605,9 @@ static void do_action(uint8_t ri, uint8_t value, uint8_t owner, bool from_queue)
     }
     case ACT_MOD_STOP:
         mods_stop(r->p0);
+        break;
+    case ACT_MOD_SPEED:
+        mods_set_speed(r->p0, value, r->p2, r->p3);
         break;
     case ACT_PRESET:
         // Applied after the current event, since loading replaces the table.
@@ -660,6 +734,9 @@ static void on_tick(void) {
         seq_rt_t *s = &seqs[i];
         if (s->sounding && s->off_by_tick && (int32_t)(tick - s->off_tick) >= 0)
             seq_note_off(s);
+        for (int j = 0; j < s->pool_n; j++)
+            if (s->pool[j].sounding && (int32_t)(tick - s->pool[j].off_tick) >= 0)
+                arp_entry_off(s, j);
         if (s->running && tab->seqs[i].advance == ADVANCE_CLOCK &&
             (int32_t)(tick - s->next_tick) >= 0) {
             if (s->finish)

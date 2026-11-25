@@ -197,6 +197,9 @@ static bool check_rule(const table_t *t, const rule_t *r, uint16_t off, table_er
             FAIL(off + 6, INVALID_SEQ_REF);
         if (r->p1 > 127 || (r->flags & GATE_MASK) == GATE_ONESHOT)
             FAIL(off + 6, INVALID_PARAM);
+        if (r->p3 && (ARP_PATTERN_HITS(r->p3) > ARP_PATTERN_STEPS(r->p3) ||
+                      ARP_PATTERN_ROT(r->p3) >= ARP_PATTERN_STEPS(r->p3)))
+            FAIL(off + 10, INVALID_PARAM);
         if (r->flags & FLAG_DEGREE) {
             int16_t deg = (int16_t)r->p2;
             if (deg < -127 || deg > 127)
@@ -219,6 +222,16 @@ static bool check_rule(const table_t *t, const rule_t *r, uint16_t off, table_er
     case ACT_MOD_STOP:
         if (r->p0 >= MAX_MODS || !t->mods[r->p0].defined)
             FAIL(off + 6, INVALID_SEQ_REF);
+        break;
+    case ACT_MOD_SPEED:
+        // From an analog input: p2 the speed at 0, p3 at 127, in the LFO's
+        // own units (centi-Hz, or ticks per cycle if synced).
+        if (r->trig_type != TRIG_ANALOG)
+            FAIL(off, INVALID_TRIGGER);
+        if (r->p0 >= MAX_MODS || !t->mods[r->p0].defined)
+            FAIL(off + 6, INVALID_SEQ_REF);
+        if (r->p2 < 1 || r->p3 < 1 || r->p2 > 2000 || r->p3 > 2000)
+            FAIL(off + 8, INVALID_PARAM);
         break;
     case ACT_PRESET:
         // LOAD -> PRESET could chain loads forever, writing flash each time.

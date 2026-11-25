@@ -169,7 +169,7 @@
         const inKey = q.noteType === 'scale' || (s.mask & (1 << ((pc - s.root + 12) % 12)));
         const cls = BLACK.has(pc) ? 'row black' : 'row';
         root.append(svg('rect', { class: `${cls}${inKey ? ' inkey' : ''}`, x: LABEL, y: TOP + r * ROW, width: cols * COL, height: ROW }));
-        if (pc === s.root) root.append(svg('line', { class: 'rootline', x1: LABEL, x2: LABEL + cols * COL, y1: TOP + (r + 1) * ROW, y2: TOP + (r + 1) * ROW }));
+        if (pc === s.root) root.append(svg('line', { class: 'rootline', x1: LABEL, x2: LABEL + cols * COL, y1: TOP + r * ROW + ROW / 2, y2: TOP + r * ROW + ROW / 2 }));
         root.append(svg('text', { class: 'label', x: NAMES - 6, y: TOP + r * ROW + 13, 'text-anchor': 'end' }, S.noteName(midi)));
         if (piano) {
           // White keys fill the strip; a black key covers its left part.
@@ -188,13 +188,18 @@
         root.append(svg('line', { class: c % 4 === 0 ? 'col beat' : 'col', x1: LABEL + c * COL, x2: LABEL + c * COL, y1: TOP, y2: height }));
         if (c < cols && c % 4 === 0) root.append(svg('text', { class: 'label', x: LABEL + c * COL + 3, y: 13 }, String(c + 1)));
       }
+      // The step that's just played (a sequencer being played), shaded.
+      const playing = opts.playing ? opts.playing() : -1;
+      if (playing >= 0 && playing < cols)
+        root.append(svg('rect', { class: 'playing', x: LABEL + playing * COL, y: TOP, width: COL, height: height - TOP }));
       // The end of the sequence.
       root.append(svg('line', { class: 'endline', x1: LABEL + end * COL, x2: LABEL + end * COL, y1: TOP, y2: height }));
 
       const notes = events.map((e, i) => {
         const r = rowValues.indexOf(e.note);
         const y = r < 0 ? (e.note > rowValues[0] ? TOP : height - ROW) : TOP + r * ROW;
-        const g = svg('g', { class: 'note', tabindex: opts.editable() ? 0 : -1, role: 'button',
+        const home = ((((rowMidi(q, e.note, s) - s.root) % 12) + 12) % 12) === 0;
+        const g = svg('g', { class: home ? 'note home' : 'note', tabindex: opts.editable() ? 0 : -1, role: 'button',
           'aria-label': `${S.noteName(rowMidi(q, e.note, s))}, step ${e.start + 1}${q.mode === 'clock' ? `, ${e.length} step${e.length === 1 ? '' : 's'} long` : ''}` });
         g.append(svg('rect', { class: 'body', x: LABEL + e.start * COL + 1, y: y + 1, width: e.length * COL - 2, height: ROW - 2, rx: 4 }));
         if (q.mode === 'clock') g.append(svg('rect', { class: 'edge', x: LABEL + (e.start + e.length) * COL - 8, y: y + 1, width: 7, height: ROW - 2 }));

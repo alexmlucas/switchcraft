@@ -24,6 +24,8 @@ typedef struct {
     uint32_t cycle;     // LFO cycles completed
     float random_value; // random wave: this cycle's value
     int32_t last_sent;  // last output value, -1 = none yet
+    uint16_t speed;     // from an analog input (MOD_SPEED), 0 = the table's rate
+    uint16_t rate_used; // synced: the rate start_tick is measured against
 } mod_rt_t;
 
 static const table_t *tab;
@@ -50,8 +52,11 @@ void mods_load(const table_t *t, bool live) {
     for (int i = 0; i < MAX_MODS; i++) {
         const mod_def_t *d = &t->mods[i];
         bool keep = live && mods[i].active && !mods[i].stopping && d->defined && d->type == mods[i].type;
+        uint16_t speed = mods[i].speed;
         if (!keep)
             reset(&mods[i]);
+        if (live && d->defined)
+            mods[i].speed = speed;  // an edit keeps the knob's speed
     }
     tab = t;
 }
@@ -94,6 +99,7 @@ void mods_run(uint8_t id, uint8_t gate_mode, uint8_t owner, uint32_t tick) {
         m->phase = 0;
         m->cycle = 0;
         m->start_tick = (float)tick;
+        m->rate_used = 0;
         m->random_value = random01();
     } else {
         bool open = m->active && m->stage != ENV_RELEASE;
@@ -107,6 +113,39 @@ void mods_run(uint8_t id, uint8_t gate_mode, uint8_t owner, uint32_t tick) {
     m->type = d->type;
     m->gate_mode = gate_mode;
     m->owner = owner;
+}
+
+// Note values a synced LFO's speed steps through: ticks per cycle, slow to fast.
+static const uint16_t SYNC_STEPS[] = {768, 384, 192, 96, 48, 24, 12, 6, 3};
+#define SYNC_STEP_COUNT (sizeof(SYNC_STEPS) / sizeof(SYNC_STEPS[0]))
+
+void mods_set_speed(uint8_t id, uint8_t value, uint16_t lo, uint16_t hi) {
+    if (!tab || id >= MAX_MODS || !tab->mods[id].defined || !lo || !hi)
+        return;
+    float t = value / 127.0f;
+    if (tab->mods[id].flags & MOD_SYNCED) {
+        // The note values between lo and hi (in either order), one per slice.
+        uint16_t slow = lo > hi ? lo : hi, fast = lo > hi ? hi : lo;
+        int first = -1, last = -1;
+        for (int k = 0; k < (int)SYNC_STEP_COUNT; k++)
+            if (SYNC_STEPS[k] <= slow && SYNC_STEPS[k] >= fast) {
+                if (first < 0)
+                    first = k;
+                last = k;
+            }
+        if (first < 0) {
+            mods[id].speed = lo;
+            return;
+        }
+        int n = last - first;
+        int k = (int)(t * n + 0.5f);
+        mods[id].speed = SYNC_STEPS[lo > hi ? first + k : last - k];
+    } else {
+        // Exponential, so the slow end is as easy to set as the fast one.
+        mods[id].speed = (uint16_t)(lo * powf((float)hi / lo, t) + 0.5f);
+        if (!mods[id].speed)
+            mods[id].speed = 1;
+    }
 }
 
 void mods_stop(uint8_t id) {
@@ -156,12 +195,19 @@ static float wave(uint8_t w, float p, float random_value) {
 
 static void update_lfo(const mod_def_t *d, mod_rt_t *m, float dt, float tick_pos) {
     float pos;
+    uint16_t rate = m->speed ? m->speed : d->rate;
     if (d->flags & MOD_SYNCED) {
-        pos = (tick_pos - m->start_tick) / d->rate;
+        // A new speed: measure from a start that keeps its place in the cycle.
+        if (rate != m->rate_used) {
+            if (m->rate_used)
+                m->start_tick = tick_pos - ((float)m->cycle + m->phase) * rate;
+            m->rate_used = rate;
+        }
+        pos = (tick_pos - m->start_tick) / rate;
         if (pos < 0)
             pos = 0;
     } else {
-        pos = m->cycle + m->phase + dt * d->rate / 100.0f;
+        pos = m->cycle + m->phase + dt * rate / 100.0f;
     }
     uint32_t cycle = (uint32_t)pos;
     if (cycle != m->cycle) {

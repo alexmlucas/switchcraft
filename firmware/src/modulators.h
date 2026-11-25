@@ -22,6 +22,11 @@ void mods_release_owned(uint8_t input);
 // A note started or stopped in sequence `seq` (envelopes can follow one).
 void mods_seq_note(int seq, bool on);
 
+// MOD_SPEED: an analog value (0-127) sets an LFO's speed between `lo` (at 0)
+// and `hi` (at 127), in its own units. Free LFOs glide (exponentially);
+// synced ones step through note values, keeping their place in the cycle.
+void mods_set_speed(uint8_t id, uint8_t value, uint16_t lo, uint16_t hi);
+
 // MIDI Start: synced LFOs restart their cycle at tick 0.
 void mods_clock_start(void);
 

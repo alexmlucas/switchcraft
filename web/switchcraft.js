@@ -91,6 +91,8 @@
     ARP_NOTE: 0x15,
     TRANSPOSE: 0x20, SET_SCALE: 0x21, PRESET: 0x30,
     MOD_RUN: 0x40, MOD_STOP: 0x41,
+    // A variable input sets a wobble's speed (firmware 0.7.6).
+    MOD_SPEED: 0x42,
     // Note generator (spec B.6.3, firmware 0.8.0).
     GEN_NOTE: 0x50, GEN_HOME: 0x51, GEN_AGAIN: 0x52, GEN_NEW: 0x53,
   };
@@ -381,9 +383,13 @@
           trig: TRIG.PRESS, src: i, act: ACT.ARP_NOTE,
           flags: GATE[s.gate] | (degree ? FLAG.DEGREE : 0) | (s.onBeat ? FLAG.QUANTIZE : 0),
           p0: s.seq, p1: s.velocity ?? 0, p2: degree ? s.degree : s.note,
+          // Its own Euclidean pattern (firmware 0.7.4): steps-1, hits, rotation.
+          p3: s.rhythm ? (s.rhythm.steps - 1) | (s.rhythm.hits << 5) | (s.rhythm.rotation << 11) : 0,
         });
       } else if (s.action in SEQ_ACTIONS && sequenceInUse(f, s.seq)) {
-        const flags = s.action === 'seq-play' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0) : 0;
+        // "Next note" once through (no loop) is a SEQ_STEP with ONESHOT (0.7.5).
+        const flags = s.action === 'seq-play' ? GATE[s.gate] | (s.onBeat ? FLAG.QUANTIZE : 0)
+          : s.action === 'seq-step' && s.once ? GATE.oneshot : 0;
         rules.push({ trig: TRIG.PRESS, src: i, act: SEQ_ACTIONS[s.action], flags, p0: s.seq });
       } else if (s.action in GEN_ACTIONS && f.generators && f.generators[s.gen] && f.generators[s.gen].on) {
         // "new tune" makes no sound, so it has no gate.
@@ -391,8 +397,15 @@
         rules.push({ trig: TRIG.PRESS, src: i, act: GEN_ACTIONS[s.action], flags, p0: s.gen });
       }
     });
+    f.switches.forEach((s, i) => {
+      const analog = i - (NUM_INPUTS - NUM_ANALOG);
+      if (s.action === 'mod-speed' && analog >= 0 && f.modulators && f.modulators[s.mod].kind !== 'off')
+        rules.push({ trig: TRIG.ANALOG, src: analog, act: ACT.MOD_SPEED, p0: s.mod, p2: s.lo, p3: s.hi });
+    });
+    // A variable input doing a job sends no CC.
+    const busy = (i) => (f.switches[NUM_INPUTS - NUM_ANALOG + i] || {}).action === 'mod-speed';
     f.analog.forEach((a, i) => {
-      if (a.cc !== null)
+      if (a.cc !== null && !busy(i))
         rules.push({
           trig: TRIG.ANALOG, src: i, act: ACT.CC,
           flags: FLAG.VALUE_FROM_TRIGGER | (a.reversed ? FLAG.REVERSE : 0),
@@ -508,16 +521,19 @@
                    r.p0 < 4) {
           s = { action: 'seq-play', seq: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
         } else if (r.act === ACT.ARP_NOTE && (r.flags & ~(3 | FLAG.DEGREE | FLAG.QUANTIZE)) === 0 &&
-                   (gate === 'hold' || gate === 'latch') && r.p0 < 4 && r.p3 === 0) {
+                   (gate === 'hold' || gate === 'latch') && r.p0 < 4) {
           s = { action: 'arp-note', seq: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
+          if (r.p3) s.rhythm = { steps: (r.p3 & 31) + 1, hits: (r.p3 >> 5) & 63, rotation: (r.p3 >> 11) & 31 };
           if (r.flags & FLAG.DEGREE) s.degree = r.p2; else s.note = r.p2;
           if (r.p1) s.velocity = r.p1;
         } else if (r.act === ACT.MOD_RUN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 && gate && r.p0 < 4) {
           s = { action: 'mod-run', mod: r.p0, gate, onBeat: !!(r.flags & FLAG.QUANTIZE) };
         } else if (r.act === ACT.MOD_STOP && r.flags === 0 && r.p0 < 4) {
           s = { action: 'mod-stop', mod: r.p0 };
-        } else if ((r.act === ACT.SEQ_STEP || r.act === ACT.SEQ_RESET) && r.flags === 0 && r.p0 < 4) {
+        } else if ((r.act === ACT.SEQ_STEP || r.act === ACT.SEQ_RESET) && r.p0 < 4 &&
+                   (r.flags === 0 || (r.act === ACT.SEQ_STEP && r.flags === GATE.oneshot))) {
           s = { action: r.act === ACT.SEQ_STEP ? 'seq-step' : 'seq-restart', seq: r.p0 };
+          if (r.flags === GATE.oneshot) s.once = true;
         } else if (r.act === ACT.GEN_NEW && r.flags === 0 && r.p0 < NUM_GENS) {
           s = { action: 'gen-new', gen: r.p0 };
         } else if (r.act >= ACT.GEN_NOTE && r.act <= ACT.GEN_AGAIN && (r.flags & ~(3 | FLAG.QUANTIZE)) === 0 &&
@@ -530,6 +546,13 @@
           usedSwitch.add(r.src);
           continue;
         }
+      }
+      if (r.trig === TRIG.ANALOG && r.act === ACT.MOD_SPEED && r.flags === 0 && r.p0 < 4 && r.src < NUM_ANALOG &&
+          !usedAnalog.has(r.src)) {
+        f.switches[NUM_INPUTS - NUM_ANALOG + r.src] = { action: 'mod-speed', mod: r.p0, lo: r.p2, hi: r.p3 };
+        f.analog[r.src] = { cc: null };
+        usedAnalog.add(r.src);
+        continue;
       }
       if (r.trig === TRIG.ANALOG && r.act === ACT.CC && (r.flags & ~FLAG.REVERSE) === FLAG.VALUE_FROM_TRIGGER &&
           r.p0 === DEFAULT && !usedAnalog.has(r.src)) {
@@ -892,6 +915,18 @@
       if (this.input.onmidimessage === this._handler) this.input.onmidimessage = null;
     }
 
+    // Lets go of the ports altogether (the board has gone), so the browser
+    // isn't left holding a device that no longer exists.
+    release() {
+      this.close();
+      for (const port of [this.input, this.output]) {
+        try {
+          const done = port.close();
+          if (done && done.catch) done.catch(() => {});
+        } catch (e) { /* already closed */ }
+      }
+    }
+
     _receive(data) {
       if (data[0] !== 0xf0) {
         if (this.onMidi) this.onMidi(data);
@@ -931,7 +966,22 @@
             reject(err);
           },
         };
-        this.output.send(encode(cmd, this.seq, payload));
+        // Never write to a board that's gone: Chrome can stall (or crash) on
+        // a send to a USB MIDI device that was unplugged.
+        const gone = (port) => port.state !== undefined && port.state !== 'connected';
+        if (gone(this.output) || gone(this.input)) {
+          clearTimeout(timer);
+          this.pending = null;
+          reject(new BoardError(`${name}: board disconnected`));
+          return;
+        }
+        try {
+          this.output.send(encode(cmd, this.seq, payload));
+        } catch (e) {
+          clearTimeout(timer);
+          this.pending = null;
+          reject(new BoardError(`${name}: ${e.message || 'send failed'}`));
+        }
       });
       const result = this.chain.then(run, run);
       this.chain = result.catch(() => {});

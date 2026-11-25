@@ -734,6 +734,23 @@ function fakeBoard() {
     assertEq(JSON.stringify(full), before);
   });
 
+  await test('a board that has gone is never written to', async () => {
+    let sent = 0;
+    const input = { state: 'disconnected', onmidimessage: null };
+    const output = { state: 'connected', send: () => { sent++; } };
+    const b = new S.Board(input, output);
+    let error = null;
+    try { await b.identify(200); } catch (e) { error = e; }
+    assert(error instanceof S.BoardError && /disconnected/.test(error.message), String(error));
+    assertEq(sent, 0);
+    // A send that throws (the port vanished mid-send) is an error, not a crash.
+    input.state = 'connected';
+    output.send = () => { throw new Error('port gone'); };
+    error = null;
+    try { await b.identify(200); } catch (e) { error = e; }
+    assert(error instanceof S.BoardError && /port gone/.test(error.message), String(error));
+  });
+
   // --- Devices view (band.js) ---
   const BD = SwitchcraftBand;
   const reopen = (b, opts) => BD.bandFromTable(S.parseTable(S.buildTable(BD.tableFromBand(b, opts)))).band;
@@ -1004,6 +1021,56 @@ function fakeBoard() {
     assertEq(BD.tableFromBand(b, { arps: false }).rules.filter((r) => r.act === S.ACT.ARP_NOTE).length, 0);
   });
 
+  await test('band: Arpeggiate turns a Notes device into an arpeggio, and back', () => {
+    const b = BD.defaultBand();
+    const d = BD.newDevice(b, 'notes', [0, 1]).device;
+    assert(BD.setArpeggiate(b, d, true));
+    assertEq([d.kind, d.seq, BD.toForm(b).switches[0].action], ['arp', 0, 'arp-note']);
+    assertEq(d.switches.map((s) => s.value), [0, 1]);   // the same notes
+    const back = reopen(b);
+    assertEq([back.devices[0].kind, back.devices[0].name], ['arp', '']);
+    assert(BD.setArpeggiate(b, d, false));
+    assertEq([d.kind, d.seq, BD.toForm(b).switches[0].action], ['notes', undefined, 'scale']);
+    assertEq(b.sequences[0].notes, []);   // its sequence is free again
+    // No room: four sequencers already.
+    for (let i = 0; i < 4; i++) BD.newDevice(b, 'seq');
+    assert(!BD.setArpeggiate(b, d, true) && d.kind === 'notes');
+  });
+
+  await test('band: an arpeggio with a Euclidean pattern per switch (firmware 0.7.4)', () => {
+    const b = BD.defaultBand();
+    const d = BD.newDevice(b, 'notes', [0, 1]).device;
+    BD.setArpeggiate(b, d, true);
+    BD.setPatterns(b, d, true);
+    d.switches[1].rhythm = { steps: 16, hits: 5, rotation: 3 };
+    BD.addSwitch(b, d, 2);   // a new switch gets a pattern too
+    const t = S.parseTable(S.buildTable(BD.tableFromBand(b)));
+    assertEq(t.rules.filter((r) => r.act === S.ACT.ARP_NOTE).map((r) => r.p3),
+      // Rotate 3 (clockwise in the editor) is 16 - 3 = 13 on the board, which turns the other way.
+      [7 | (3 << 5), 15 | (5 << 5) | (13 << 11), 7 | (3 << 5)]);
+    const back = reopen(b);
+    assertEq(BD.editorJson(back), BD.editorJson(b));
+    const plain = BD.tableFromBand(b);
+    plain.extra = [];
+    const b2 = BD.bandFromTable(S.parseTable(S.buildTable(plain))).band;
+    assertEq([b2.devices[0].patterns, b2.devices[0].switches[1].rhythm], [true, { steps: 16, hits: 5, rotation: 3 }]);
+    BD.setPatterns(b, d, false);
+    assertEq(BD.tableFromBand(b).rules.filter((r) => r.act === S.ACT.ARP_NOTE).map((r) => r.p3 || 0), [0, 0, 0]);
+  });
+
+  await test('band: a sequencer loops, or plays once through (SEQ_STEP with ONESHOT)', () => {
+    const b = BD.defaultBand();
+    const d = BD.newDevice(b, 'seq', [0, 1]).device;
+    const step = () => S.parseTable(S.buildTable(BD.tableFromBand(b))).rules.find((r) => r.act === S.ACT.SEQ_STEP);
+    assertEq(step().flags, 0);
+    d.loop = false;
+    assertEq(step().flags, 2);
+    assertEq(reopen(b).devices[0].loop, false);
+    const plain = BD.tableFromBand(b);
+    plain.extra = [];
+    assertEq(BD.bandFromTable(S.parseTable(S.buildTable(plain))).band.devices[0].loop, false);
+  });
+
   await test('band: Wobbles & Swells move over and over (wobble) or once (swell)', () => {
     const b = BD.defaultBand();
     BD.newDevice(b, 'notes', [0]);
@@ -1017,7 +1084,35 @@ function fakeBoard() {
     const back = reopen(b);
     assertEq([back.devices[1].kind, back.modulators[back.devices[1].mod].kind], ['mod', 'env']);
     BD.setModKind(b, d.mod, 'lfo');
-    assertEq(BD.roles(b, d).map(([k]) => k), ['run', 'stop']);
+    assertEq(BD.roles(b, d).map(([k]) => k), ['run', 'stop', 'speed']);
+  });
+
+  await test('band: a variable input sets a wobble’s speed (MOD_SPEED, firmware 0.7.6)', () => {
+    const b = BD.defaultBand();
+    const d = BD.newDevice(b, 'mod', [0]).device;
+    // Switches can't take speed; V1 (input 10) can't take a switch job.
+    assert(!BD.addSwitch(b, BD.newDevice(b, 'notes', []).device, 10), 'notes take no variable input');
+    assertEq(BD.addSwitch(b, d, 10), { was: null });
+    assertEq(d.switches.map((s) => s.role), ['run', 'speed']);
+    assert(!BD.hasRoom(b, d, 11), 'one speed per wobble');
+    b.modulators[d.mod].synced = false;
+    let t = S.parseTable(S.buildTable(BD.tableFromBand(b)));
+    const speed = (tt) => tt.rules.filter((r) => r.act === S.ACT.MOD_SPEED).map((r) => [r.trig, r.src, r.p0, r.p2, r.p3]);
+    assertEq(speed(t), [[S.TRIG.ANALOG, 0, d.mod, 10, 800]]);
+    // V1 sends no CC while it sets the speed.
+    assertEq(t.rules.filter((r) => r.trig === S.TRIG.ANALOG && r.act === S.ACT.CC).map((r) => r.src), [1]);
+    b.modulators[d.mod].synced = true;
+    t = S.parseTable(S.buildTable(BD.tableFromBand(b)));
+    assertEq(speed(t), [[S.TRIG.ANALOG, 0, d.mod, 384, 6]]);
+    assertEq(BD.editorJson(reopen(b)), BD.editorJson(b));
+    const plain = BD.tableFromBand(b);
+    plain.extra = [];
+    const back = BD.bandFromTable(S.parseTable(S.buildTable(plain))).band;
+    assertEq(back.devices.find((x) => x.kind === 'mod').switches.find((s) => s.role === 'speed').input, 10);
+    // A swell has no speed; older boards send V1's CC instead.
+    assertEq(speed(BD.tableFromBand(b, { speeds: false })), []);
+    BD.setModKind(b, d.mod, 'env');
+    assertEq(d.switches.map((s) => s.role), ['run']);
   });
 
   await test('band: clear leaves no devices and spare CCs', () => {
@@ -1120,7 +1215,17 @@ function fakeBoard() {
       const b = SwitchcraftBand.defaultBand();
       const d = SwitchcraftBand.newDevice(b, 'arp', [0, 1, 2, 3]).device;
       d.switches[3].toggle = true;
-      return [`band arpeggiator ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(b)))}`];
+      const arp = `band arpeggiator ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(b)))}`;
+      // The same with a Euclidean pattern per switch (firmware 0.7.4).
+      SwitchcraftBand.setPatterns(b, d, true);
+      d.switches[1].rhythm = { steps: 16, hits: 5, rotation: 3 };
+      const patterns = `band arp patterns ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(b)))}`;
+      // A wobble whose speed V1 sets: synced and free (firmware 0.7.6).
+      const w = SwitchcraftBand.defaultBand();
+      const wd = SwitchcraftBand.newDevice(w, 'mod', [0, 10]).device;
+      const synced = `band wobble speed synced ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(w)))}`;
+      w.modulators[wd.mod].synced = false;
+      return [arp, patterns, synced, `band wobble speed free ${toHex(S.buildTable(SwitchcraftBand.tableFromBand(w)))}`];
     })())
     .join('\n');
   document.body.append(blobs);
