@@ -393,6 +393,29 @@ function fakeBoard() {
     }
   });
 
+  await test('synth: each voice plays its own channel; other channels are silent', async () => {
+    // Voice 1 on channel 1, Voice 2 on 2, Voice 3 on 3, drums on 10.
+    const ch = (c) => render(0.4, [[0, [0x90 | c, 60, 100]]]);
+    for (const c of [0, 1, 2]) assert(rms((await ch(c)).buf, 0.05, 0.3) > 0.005, `channel ${c + 1} silent`);
+    assert(rms((await ch(4)).buf, 0.05, 0.3) < 0.0005, 'channel 5 should be silent');
+    // Moving a voice moves what it plays.
+    const moved = await render(0.4, [[0, [0x94, 60, 100]]], (s) => s.setPart(0, { channel: 4 }));
+    assert(rms(moved.buf, 0.05, 0.3) > 0.005, 'Voice 1 on channel 5 is silent');
+    // A controller on one channel leaves the others alone.
+    const muted = await render(0.4, [[0, [0xb1, 7, 0]], [0, [0x90, 60, 100]]]);
+    assert(rms(muted.buf, 0.05, 0.3) > 0.005, 'CC 7 on channel 2 muted channel 1');
+  });
+
+  await test('synth: the drum voice plays General MIDI drums, which ring out by themselves', async () => {
+    for (const note of [36, 38, 39, 42, 46, 49, 45, 56, 37, 80]) {
+      const { buf } = await render(0.3, [[0, [0x99, note, 110]], [0.01, [0x89, note, 0]]]);
+      const level = rms(buf, 0, 0.04);
+      assert(level > 0.003, `drum ${note} is silent: ${level.toFixed(4)}`);
+    }
+    const { synth } = await render(2, [[0, [0x99, 36, 110]]]);
+    assertEq(synth.activeVoices, 0);
+  });
+
   await test('synth: echo repeats a short note in time with the tempo', async () => {
     // 120 BPM, echo every 1/2 beat = 0.25 s. A 50 ms pluck, then silence.
     const events = [[0, [0x90, 72, 127]], [0.05, [0x80, 72, 0]]];
@@ -788,6 +811,15 @@ function fakeBoard() {
     assert(back.devices[3].target === back.devices[0], 'the wobble still changes the notes');
   });
 
+  await test('band: a saved wobble with a stop switch opens with that switch free', () => {
+    const b = BD.defaultBand();
+    const wob = BD.newDevice(b, 'wobble', [0]).device;
+    wob.switches.push({ input: 1, role: 'stop' });   // as the editor saved it before
+    const back = reopen(b);
+    assertEq(back.devices[0].switches.map((s) => s.role), ['run']);
+    assertEq(BD.owner(back, 1), null);
+  });
+
   await test('band: a wobble can carry on from where it left off (firmware 0.7.7)', () => {
     const b = BD.defaultBand();
     const wob = BD.newDevice(b, 'wobble', [0]).device;
@@ -990,8 +1022,8 @@ function fakeBoard() {
     const notes = BD.newDevice(b, 'notes', [0, 1]).device;
     const seq = BD.newDevice(b, 'arp', [2]).device;
     const wob = BD.newDevice(b, 'mod', [3, 4]).device;
-    // Notes are held by default; wobbles toggle; a stop switch has nothing to toggle.
-    assertEq([notes.switches.map((s) => !!s.toggle), wob.switches.map((s) => !!s.toggle)], [[false, false], [true, false]]);
+    // Notes are held by default; a wobble's one trigger toggles (Latch stops it).
+    assertEq([notes.switches.map((s) => !!s.toggle), wob.switches.map((s) => !!s.toggle)], [[false, false], [true]]);
     notes.switches[1].toggle = true;
     seq.switches[0].toggle = true;
     let f = BD.toForm(b);
@@ -1108,16 +1140,17 @@ function fakeBoard() {
     const b = BD.defaultBand();
     BD.newDevice(b, 'notes', [0]);
     const d = BD.newDevice(b, 'mod', [1, 2]).device;
-    assertEq(d.switches.map((s) => [s.role, !!s.toggle]), [['run', true], ['stop', false]]);
+    // A wobble's one switch job is Trigger: the second switch stays free.
+    assertEq(d.switches.map((s) => [s.role, !!s.toggle]), [['run', true]]);
+    assertEq(BD.freeInputs(b).includes(2), true);
     assertEq(b.modulators[d.mod].kind, 'lfo');
     BD.setModKind(b, d.mod, 'env');
-    // A swell has no "stop it": that switch is freed; its swell switch is held.
+    // A swell's switch is held.
     assertEq(d.switches.map((s) => [s.role, !!s.toggle]), [['run', false]]);
-    assertEq(BD.freeInputs(b).includes(2), true);
     const back = reopen(b);
     assertEq([back.devices[1].kind, back.modulators[back.devices[1].mod].kind], ['mod', 'env']);
     BD.setModKind(b, d.mod, 'lfo');
-    assertEq(BD.roles(b, d).map(([k]) => k), ['run', 'stop', 'speed']);
+    assertEq(BD.roles(b, d).map(([k]) => k), ['run', 'speed']);
   });
 
   await test('band: a variable input sets a wobble’s speed (MOD_SPEED, firmware 0.7.6)', () => {

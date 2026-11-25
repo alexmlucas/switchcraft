@@ -380,7 +380,11 @@
   #analog { display: grid; grid-template-columns: 3ch minmax(0, auto) auto auto; justify-content: start; gap: 12px 14px; align-items: center; }
   .analog-row { display: contents; }
   .analog-name { font-weight: bold; }
-  #channel, .devcard-settings select[id$="-channel"] { width: 9ch; }
+  #channel { width: 9ch; }
+  .devcard-settings select[id$="-channel"] { width: auto; }
+  .synth-parts { display: grid; grid-template-columns: auto auto auto 1fr; gap: 10px 16px; align-items: end; margin-top: 16px; }
+  .synth-parts .part-name { font-weight: 700; align-self: center; padding-top: 18px; }
+  .synth-parts .part-kit { align-self: center; padding-top: 18px; color: var(--muted); }
   /* The value knob: a grey track, the value in ink, the number in the middle. */
   .knob svg { display: block; }
   .knob-track { stroke: var(--line); stroke-width: 4; }
@@ -607,7 +611,6 @@
   <section class="card foldable" id="sound-card" aria-labelledby="sound-h">
     <h2 id="sound-h">synth</h2>
     <div class="row">
-      <label class="field">Sound <select id="synth-sound"></select></label>
       <label class="field">Volume
         <input type="range" id="synth-volume" min="0" max="100" step="1" class="slider">
       </label>
@@ -619,7 +622,8 @@
         <input type="range" id="echo-level" min="0" max="100" step="1" class="slider">
       </label>
     </div>
-    <p class="hint full">Turn on with the <strong>Synth</strong> button at the top. The browser plays everything the board sends, for every device, in one sound. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74).</p>
+    <div class="synth-parts" id="synth-parts"></div>
+    <p class="hint full">Turn on with the <strong>Synth</strong> button at the top. Each voice plays what the board sends on its MIDI channel: set a device’s MIDI Ch to a voice’s channel to play it there. Voices respond to vibrato (CC 1), volume (CC 7) and brightness (CC 74).</p>
   </section>
 </main>
 
@@ -660,6 +664,8 @@
       <label class="field">Wave <select id="mod-wave"></select></label>
       <label class="field">One cycle every <select id="mod-speed"></select></label>
       <label class="field mod-free">Speed (times a second) <input type="number" id="mod-hz" min="0.01" max="20" step="0.01"></label>
+      <label class="field">Starts <select id="mod-start"></select></label>
+      <label class="field">Speed set by <select id="mod-speed-by"></select></label>
     </div>
     <div class="row mod-env" style="margin-top: 16px;">
       <label class="field">Attack (ms) <input type="number" id="mod-attack" min="0" max="60000" step="10"></label>
@@ -733,7 +739,7 @@ const SEQ_GATE_CHOICES = [['hold', 'Keeps playing'], ['oneshot', 'Plays once thr
 // Trigger (the whole swell on each press).
 const SWELL_TRIGGERS = [['hold', 'Gate'], ['oneshot', 'Trigger']];
 // A wobble's start: from the start of its wave (retrigger), or where it left off (free running).
-const WOBBLE_STARTS = [['start', 'From the start'], ['free', 'Where it left off']];
+const WOBBLE_STARTS = [['start', 'Key Sync'], ['free', 'Free']];
 // General MIDI drums, named for devices on channel 10.
 const DRUMS = {
   35: 'Kick 2', 36: 'Kick', 37: 'Side stick', 38: 'Snare', 39: 'Clap', 40: 'Snare 2', 41: 'Low floor tom',
@@ -780,8 +786,39 @@ function loadPrefs() {
 }
 function savePrefs() {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ sound: synth.sound, volume: synth.volume, echo: synth.echo }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ volume: synth.volume, echo: synth.echo,
+      parts: synth.parts.map(({ channel, sound, volume }) => ({ channel, sound, volume })) }));
   } catch (e) { /* storage unavailable: not important */ }
+}
+
+// The synth's four voices: each one's sound (the drums are a kit), the MIDI
+// channel it plays, and its volume.
+function renderSynthParts() {
+  const box = $('synth-parts');
+  box.replaceChildren();
+  synth.parts.forEach((p, i) => {
+    let sound;
+    if (p.drums) {
+      sound = el('span', { className: 'part-kit', textContent: 'Drum kit' });
+    } else {
+      const sel = el('select', { id: `part-${i}-sound`, 'aria-label': `${p.name}: sound` });
+      options(sel, Object.entries(SwitchcraftSynth.SOUNDS).map(([id, s]) => [id, s.name]), p.sound);
+      sel.addEventListener('change', () => { synth.setPart(i, { sound: sel.value }); savePrefs(); });
+      sound = field('Sound', sel);
+    }
+    const ch = el('select', { id: `part-${i}-channel`, 'aria-label': `${p.name}: MIDI channel` });
+    options(ch, Array.from({ length: 16 }, (_, c) => [c, String(c + 1)]), p.channel);
+    ch.addEventListener('change', () => {
+      synth.setPart(i, { channel: Number(ch.value) });
+      savePrefs();
+      renderDevices();   // the devices' channel menus name the voices
+    });
+    const vol = el('input', { type: 'range', id: `part-${i}-volume`, min: 0, max: 100, step: 1, className: 'slider',
+      value: Math.round(p.volume * 100), 'aria-label': `${p.name}: volume` });
+    vol.addEventListener('input', () => { synth.setPart(i, { volume: Number(vol.value) / 100 }); savePrefs(); });
+    box.append(el('span', { className: 'part-name', textContent: p.name }), sound,
+      field('MIDI Ch', ch), field('Volume', vol));
+  });
 }
 
 // --- Small DOM helpers ---
@@ -1698,13 +1735,22 @@ function rhythmCircle({ steps, hits, rotation }) {
   return box;
 }
 
+// MIDI channels 1-16, each with the synth voice that plays it (if any):
+// a device goes to a voice by sending on its channel.
+function channelChoices() {
+  return Array.from({ length: 16 }, (_, i) => {
+    const parts = synth.partsOn(i).map((p) => p.name);
+    return [i, parts.length ? `${i + 1} · ${parts.join(', ')}` : String(i + 1)];
+  });
+}
+
 // Channel and loudness for a sound device; what a wobble or swell changes;
 // whether notes follow the key.
 function soundSettings(d, id) {
   const row = el('div', { className: 'devcard-settings' });
   const channelSelect = () => {
     const channel = el('select', { id: `${id}-channel` });
-    options(channel, Array.from({ length: 16 }, (_, i) => [i, String(i + 1)]), d.channel);
+    options(channel, channelChoices(), d.channel);
     channel.addEventListener('change', () => {
       d.channel = Number(channel.value);
       renderDevices();
@@ -1812,7 +1858,7 @@ function soundSettings(d, id) {
     // The channel it changes: a MIDI Ch like other devices. (One that was
     // set to follow another device shows that device's channel until changed.)
     const channel = el('select', { id: `${id}-channel` });
-    options(channel, Array.from({ length: 16 }, (_, i) => [i, String(i + 1)]), B.channelOf(form, d));
+    options(channel, channelChoices(), B.channelOf(form, d));
     channel.addEventListener('change', () => {
       d.target = null;
       d.channel = Number(channel.value);
@@ -1834,18 +1880,6 @@ function soundSettings(d, id) {
         changed();
       });
       row.append(field('CC', cc));
-    }
-    // A wobble starts from the start of its wave each time, or carries on
-    // from where it was (a synced one: in step with the clock).
-    if (m.kind === 'lfo') {
-      const start = el('select', { id: `${id}-start` });
-      options(start, WOBBLE_STARTS, m.freeRun ? 'free' : 'start');
-      start.addEventListener('change', () => {
-        form.modulators[d.mod] = { ...form.modulators[d.mod], freeRun: start.value === 'free' };
-        renderDevices();
-        changed();
-      });
-      row.append(field('Starts', start));
     }
   }
   return row.children.length ? row : null;
@@ -2167,7 +2201,7 @@ function kindIcon(kind) {
         line += `${k ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
       }
       return ['<rect x="0.5" y="0.5" width="55" height="23" fill="#fff" stroke="#000"/>',
-        `<path d="${line}L54 21L2 21Z" fill="#a9b1ff" fill-opacity="0.7"/>`,
+        `<path d="${line}L54 21L2 21Z" fill="#fff273" fill-opacity="0.9"/>`,
         `<path d="${line}" fill="none" stroke="#000" stroke-width="1.2"/>`].join('');
     },
   }[kind];
@@ -2669,6 +2703,14 @@ function renderMod() {
   $('mod-from').value = m.from;
   $('mod-to').value = m.to;
   options($('mod-curve'), [['linear', 'Straight'], ['exp', 'Curved']], m.exponential ? 'exp' : 'linear');
+  // Key Sync: from the start of its wave each press. Free: where it left off
+  // (a synced one in step with the clock).
+  options($('mod-start'), WOBBLE_STARTS, m.freeRun ? 'free' : 'start');
+  // V1 or V2 can set its speed (between the range on its row in the card).
+  const owner = modDevice(currentMod);
+  const by = owner && owner.switches.find((x) => x.role === 'speed');
+  options($('mod-speed-by'), [['', 'Its setting'], [10, 'V1'], [11, 'V2']], by ? by.input : '');
+  $('mod-speed-by').disabled = !editable || !owner || !speedsOnBoard();
   options($('mod-wave'), S.WAVES.map((w) => [w, w[0].toUpperCase() + w.slice(1)]), m.wave);
   options($('mod-speed'), withValue(LFO_SPEEDS, m.synced ? m.rate : 'free', `${m.rate} ticks`), m.synced ? m.rate : 'free');
   $('mod-hz').value = m.synced ? 1 : m.rate / 100;
@@ -2982,6 +3024,17 @@ function buildStatic() {
   $('mod-cc').addEventListener('change', () => { mod().cc = Number($('mod-cc').value); modChanged(); });
   $('mod-from').addEventListener('change', () => { mod().from = Math.round(clampInput('mod-from', 0, 127, mod().from)); modChanged(); });
   $('mod-to').addEventListener('change', () => { mod().to = Math.round(clampInput('mod-to', 0, 127, mod().to)); modChanged(); });
+  $('mod-speed-by').addEventListener('change', () => {
+    const d = modDevice(currentMod);
+    if (!d) return;
+    for (const x of d.switches.filter((x) => x.role === 'speed')) B.removeSwitch(form, d, x.input);
+    const v = $('mod-speed-by').value;
+    const r = v === '' ? null : B.addSwitch(form, d, Number(v));
+    renderDevices();
+    changed();
+    if (r && r.was) say(`${SWITCH_LABEL(Number(v))} moved from ${deviceTitle(r.was.device)} to set this wobble’s speed.`);
+  });
+  $('mod-start').addEventListener('change', () => { mod().freeRun = $('mod-start').value === 'free'; modChanged(); });
   $('mod-curve').addEventListener('change', () => { mod().exponential = $('mod-curve').value === 'exp'; modChanged(); });
   $('mod-wave').addEventListener('change', () => { mod().wave = $('mod-wave').value; modChanged(); });
   $('mod-speed').addEventListener('change', () => {
@@ -3027,15 +3080,14 @@ function buildStatic() {
 
   // Browser synth
   const prefs = loadPrefs();
-  synth.setSound(prefs.sound || 'warm');
+  if (prefs.sound) synth.setSound(prefs.sound);   // from when there was one sound
+  (prefs.parts || []).forEach((p, i) => synth.setPart(i, {
+    channel: Number.isInteger(p.channel) && p.channel >= 0 && p.channel < 16 ? p.channel : undefined,
+    sound: p.sound, volume: typeof p.volume === 'number' ? p.volume : undefined,
+  }));
   synth.setVolume(typeof prefs.volume === 'number' ? prefs.volume : 0.8);
-  options($('synth-sound'),
-    Object.entries(SwitchcraftSynth.SOUNDS).map(([id, s]) => [id, s.name]), synth.sound);
+  renderSynthParts();
   $('synth-volume').value = Math.round(synth.volume * 100);
-  $('synth-sound').addEventListener('change', () => {
-    synth.setSound($('synth-sound').value);
-    savePrefs();
-  });
   $('synth-volume').addEventListener('input', () => {
     synth.setVolume(Number($('synth-volume').value) / 100);
     savePrefs();
@@ -3070,10 +3122,7 @@ function buildStatic() {
     $('sound').textContent = synth.running ? 'Synth: on' : 'Synth: off';
     // A short, quiet blip when it comes on, so you can tell the browser's
     // sound works before playing the board.
-    if (synth.running) {
-      synth.noteOn(15, 84, 40);
-      setTimeout(() => synth.noteOff(15, 84), 120);
-    }
+    if (synth.running) synth.blip();
   });
 
   $('connect').addEventListener('click', connect);

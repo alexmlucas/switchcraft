@@ -84,7 +84,7 @@
       case 'gen': return [['note', 'new note'], ['home', 'home'], ['again', 'again'], ['new', 'new melody']];
       case 'mod':
         return band.modulators[d.mod].kind === 'env' ? [['run', 'swell']]
-          : [['run', 'wobble'], ['stop', 'stop it'], ['speed', 'speed']];
+          : [['run', 'trigger'], ['speed', 'speed']];
       default: return [];
     }
   }
@@ -626,6 +626,8 @@
         const notesLike = x.k === 'notes' || x.k === 'arp';
         const sw = notesLike ? { input: s[0], value: s[1] } : { input: s[0], role: s[1] };
         if (notesLike ? !Number.isInteger(s[1]) : typeof s[1] !== 'string') return null;
+        // A wobble had a "stop it" switch: Latch does that now, so it's free.
+        if (x.k === 'mod' && s[1] === 'stop') continue;
         // Earlier today a device's gate could be 'latch': its switches toggle.
         if (s[2] === 1 || (x.g === 'latch' && gated(d, sw))) sw.toggle = true;
         const p = s[3];
@@ -784,12 +786,10 @@
         const range = { free: [...DEFAULT_RANGE.free], synced: [...DEFAULT_RANGE.synced] };
         range[synced ? 'synced' : 'free'] = [s.lo, s.hi];
         d.switches.push({ input, role: 'speed', range });
-      } else if (s.action.startsWith('mod-')) {
-        const role = s.action === 'mod-run' ? 'run' : 'stop';
-        const d = s.action === 'mod-run'
-          ? deviceFor('mod', { mod: s.mod }, role, base(s.gate), s.onBeat)
-          : deviceFor('mod', { mod: s.mod }, role);
-        d.switches.push({ input, role, ...(role === 'run' ? toggle(s) : {}) });
+      } else if (s.action === 'mod-run') {
+        const d = deviceFor('mod', { mod: s.mod }, 'run', base(s.gate), s.onBeat);
+        d.switches.push({ input, role: 'run', ...toggle(s) });
+        // (A "stop" switch is left free: a latched trigger stops a wobble.)
       } else if (s.action.startsWith('gen-')) {
         const role = { 'gen-note': 'note', 'gen-home': 'home', 'gen-again': 'again', 'gen-new': 'new' }[s.action];
         const d = s.action === 'gen-new'

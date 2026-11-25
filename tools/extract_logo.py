@@ -62,8 +62,8 @@ def path(pts):
 
 def silhouette(polys, scale=24):
     """The cauldron and synth filled in: everything the outside can't reach.
-    Drawn as rows of pixel runs (in mm), a pixel inside the ink's outer edge
-    so it never shows beyond it. None without Pillow."""
+    Traced as one outline (in mm), a pixel inside the ink's outer edge so it
+    never shows beyond it. None without Pillow."""
     try:
         from PIL import Image, ImageDraw, ImageFilter
     except ImportError:
@@ -81,33 +81,70 @@ def silhouette(polys, scale=24):
     ImageDraw.floodfill(img, (0, 0), 128)   # the outside
     inside = img.point(lambda v: 0 if v == 128 else 255).filter(ImageFilter.MinFilter(3))
     px = inside.load()
-    rects = []      # [x, y, w, h] in pixels, runs merged down the rows
-    open_runs = {}  # (a, b) -> rect still growing
+    on = lambda c, r: 0 <= c < w and 0 <= r < h and px[c, r] > 0
+    # The outline: every pixel edge with inside on one side and outside on
+    # the other, directed so inside is on the right, chained into loops.
+    # One shape (not strips), so no seams can show between pieces.
+    starts = {}
     for r in range(h):
-        runs, a = [], None
-        for c in range(w + 1):
-            on = c < w and px[c, r] > 0
-            if on and a is None:
-                a = c
-            elif not on and a is not None:
-                runs.append((a, c))
-                a = None
-        nxt = {}
-        for run in runs:
-            if run in open_runs:
-                open_runs[run][3] += 1
-                nxt[run] = open_runs[run]
-            else:
-                rect = [run[0], r, run[1] - run[0], 1]
-                rects.append(rect)
-                nxt[run] = rect
-        open_runs = nxt
-    # Each strip's edges are worked out from pixel positions (not rounded
-    # widths added up), and each reaches a little into the strip below, so no
-    # hairline gap shows between them at any scale.
+        for c in range(w):
+            if not on(c, r):
+                continue
+            if not on(c, r - 1):
+                starts.setdefault((c, r), []).append((c + 1, r))
+            if not on(c + 1, r):
+                starts.setdefault((c + 1, r), []).append((c + 1, r + 1))
+            if not on(c, r + 1):
+                starts.setdefault((c + 1, r + 1), []).append((c, r + 1))
+            if not on(c - 1, r):
+                starts.setdefault((c, r + 1), []).append((c, r))
+    loops = []
+    while starts:
+        first = next(iter(starts))
+        loop, at = [first], first
+        while True:
+            nxt = starts[at].pop()
+            if not starts[at]:
+                del starts[at]
+            if nxt == first:
+                break
+            loop.append(nxt)
+            at = nxt
+        if len(loop) >= 4:
+            loops.append(loop)
+
+    def simplify(pts, tol):
+        # Douglas-Peucker on a closed loop: smooths the pixel staircase.
+        n = len(pts)
+        keep = [False] * n
+        keep[0] = keep[n // 2] = True
+        stack = [(0, n // 2), (n // 2, n)]
+        while stack:
+            a, b = stack.pop()
+            if b - a < 2:
+                continue
+            (ax, ay), (bx, by) = pts[a], pts[b % n]
+            dx, dy = bx - ax, by - ay
+            norm = (dx * dx + dy * dy) ** 0.5 or 1
+            best, k = -1, None
+            for m in range(a + 1, b):
+                px_, py_ = pts[m]
+                d = abs(dy * (px_ - ax) - dx * (py_ - ay)) / norm
+                if d > best:
+                    best, k = d, m
+            if best > tol:
+                keep[k] = True
+                stack += [(a, k), (k, b)]
+        return [p for p, kp in zip(pts, keep) if kp]
+
     at = lambda v, origin: f"{(v - pad) / scale + origin:.3f}"
-    return "".join(f"M{at(x, x0)} {at(y, y0)}H{at(x + rw, x0)}V{at(y + rh + 0.6, y0)}H{at(x, x0)}Z"
-                   for x, y, rw, rh in rects)
+    out = []
+    for loop in loops:
+        pts = simplify(loop, 0.7)
+        if len(pts) < 3:
+            continue
+        out.append("M" + "L".join(f"{at(x, x0)} {at(y, y0)}" for x, y in pts) + "Z")
+    return "".join(out)
 
 
 def main():
