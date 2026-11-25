@@ -147,7 +147,8 @@ enum { MOD_OUT_CC = 0, MOD_OUT_BEND = 1, MOD_OUT_PRESSURE = 2 };
 enum { WAVE_SINE, WAVE_TRIANGLE, WAVE_SAW, WAVE_SQUARE, WAVE_RANDOM };
 #define MOD_EXPONENTIAL 0x01
 #define MOD_SYNCED 0x02
-#define MOD_FLAGS_RESERVED 0xFC
+#define MOD_FREERUN 0x04  // LFO: a press carries on from where it was, not from the start (0.7.7)
+#define MOD_FLAGS_RESERVED 0xF8
 #define MOD_FOLLOW_NONE 0xFF
 #define MOD_MAX_MS 60000
 

@@ -554,7 +554,7 @@ pitch bend or channel pressure.
 | 4 | channel | `u8` | 0–15, `0xFF` = default |
 | 5 | from | `u8` | 0–127: what the output sends at the bottom of the movement |
 | 6 | to | `u8` | 0–127: at the top. May be less than `from` (upside down). For pitch bend, 0–127 spans the whole bend range; 64 is the middle |
-| 7 | flags | `u8` | bit 0 `EXPONENTIAL`: curve the movement (value²); bit 1 `SYNCED` (LFO): `rate` is in clock ticks; bits 2–7 reserved, 0 |
+| 7 | flags | `u8` | bit 0 `EXPONENTIAL`: curve the movement (value²); bit 1 `SYNCED` (LFO): `rate` is in clock ticks; bit 2 `FREERUN` (LFO, firmware 0.7.7): a run carries on from where the LFO was instead of from the start of its cycle (a synced one keeps its place against the clock, counted from MIDI Start); bits 3–7 reserved, 0 |
 | 8 | LFO: wave / envelope: sustain | `u8` | LFO: 0 sine, 1 triangle, 2 saw (rising), 3 square, 4 random (a new random value each cycle). Envelope: sustain level 0–100 % |
 | 9 | LFO: reserved / envelope: follow | `u8` | LFO: 0. Envelope: sequence 0–3 whose notes open and close it, or `0xFF` = none |
 | 10 | LFO: rate / envelope: attack | `u16` | LFO free: speed in hundredths of a hertz, 1–2000 (0.01–20 Hz). LFO synced: clock ticks per cycle, 1–65535 (24 = one beat). Envelope: attack ms, 0–60000 |

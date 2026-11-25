@@ -314,7 +314,7 @@
   function defaultModulator(kind = 'off') {
     return {
       kind, output: 'cc', cc: 74, from: 0, to: 127, exponential: false,
-      wave: 'triangle', synced: true, rate: 96,
+      wave: 'triangle', synced: true, rate: 96, freeRun: false,
       attack: 500, decay: 300, sustain: 100, release: 800, follow: null,
     };
   }
@@ -422,7 +422,7 @@
       const base = {
         id, type: m.kind === 'lfo' ? 0 : 1, output: MOD_OUTPUTS.indexOf(m.output),
         controller: m.output === 'cc' ? m.cc : 0, channel: m.channel ?? DEFAULT, from: m.from, to: m.to,
-        flags: (m.exponential ? 1 : 0) | (m.kind === 'lfo' && m.synced ? 2 : 0),
+        flags: (m.exponential ? 1 : 0) | (m.kind === 'lfo' && m.synced ? 2 : 0) | (m.kind === 'lfo' && m.freeRun ? 4 : 0),
       };
       modulators.push(m.kind === 'lfo'
         ? { ...base, wave: WAVES.indexOf(m.wave), rate: m.rate }
@@ -492,7 +492,7 @@
         ...defaultModulator(m.type === 0 ? 'lfo' : 'env'), output: MOD_OUTPUTS[m.output],
         cc: m.output === 0 ? m.controller : 74, from: m.from, to: m.to, exponential: !!(m.flags & 1),
       };
-      if (m.type === 0) Object.assign(fm, { wave: WAVES[m.wave], synced: !!(m.flags & 2), rate: m.rate });
+      if (m.type === 0) Object.assign(fm, { wave: WAVES[m.wave], synced: !!(m.flags & 2), freeRun: !!(m.flags & 4), rate: m.rate });
       else Object.assign(fm, {
         attack: m.attack, decay: m.decay, sustain: m.sustain, release: m.release,
         follow: m.follow === DEFAULT ? null : m.follow,

@@ -119,7 +119,7 @@
   section.foldable h2 button.card-toggle:hover { background: transparent; color: var(--text); }
   section.foldable.folded > h2 { margin-bottom: 0; }
   section.foldable h2::after { order: 1; }
-  /* Browser sound sits outside the template: it isn't numbered. */
+  /* The synth sits outside the template: it isn't numbered. */
   #sound-card { counter-increment: none; }
   #sound-card h2::before { content: none; }
   .devcard-summary { color: var(--muted); font-size: 15px; }
@@ -461,7 +461,7 @@
   .mod-env input[type="number"], .mod-lfo input[type="number"] { width: 10ch; }
   .mod-graph svg { display: block; width: 100%; max-width: 680px; height: auto; touch-action: none; user-select: none; }
   .mod-graph .frame { fill: none; stroke: var(--line); stroke-width: 1; }
-  .mod-graph .shape { fill: color-mix(in srgb, var(--wash) 60%, transparent); stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; }
+  .mod-graph .shape { fill: var(--shape, var(--wash)); fill-opacity: 0.6; stroke: #000; stroke-width: 3; stroke-linejoin: round; }
   .mod-graph .held { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
   .mod-graph text { fill: var(--muted); font-size: 13px; font-family: inherit; }
   .mod-graph .handle { fill: var(--card); stroke: var(--ink); stroke-width: 3; cursor: grab; }
@@ -511,7 +511,7 @@
   <div class="header-side header-right">
     <span id="save-status" role="status" aria-live="polite"></span>
     <span id="clock-status" class="clock-status" role="status" hidden></span>
-    <button id="sound" aria-pressed="false" title="Play the board’s notes in this browser">Sound: off</button>
+    <button id="sound" aria-pressed="false" title="Play the board’s notes in this browser">Synth: off</button>
     <button id="panic" disabled title="Send note-off for every sounding note">All notes off</button>
   </div>
 </header>
@@ -605,7 +605,7 @@
   </section>
 
   <section class="card foldable" id="sound-card" aria-labelledby="sound-h">
-    <h2 id="sound-h">browser sound</h2>
+    <h2 id="sound-h">synth</h2>
     <div class="row">
       <label class="field">Sound <select id="synth-sound"></select></label>
       <label class="field">Volume
@@ -619,7 +619,7 @@
         <input type="range" id="echo-level" min="0" max="100" step="1" class="slider">
       </label>
     </div>
-    <p class="hint full">Turn on with the <strong>Sound</strong> button at the top. The browser plays everything the board sends, for every device, in one sound. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74).</p>
+    <p class="hint full">Turn on with the <strong>Synth</strong> button at the top. The browser plays everything the board sends, for every device, in one sound. It responds to vibrato (CC 1), volume (CC 7) and brightness (CC 74).</p>
   </section>
 </main>
 
@@ -650,8 +650,8 @@
 
   <div id="mod-editor">
     <div class="row">
-      <label class="field mod-on">Sends <select id="mod-output"></select></label>
-      <label class="field mod-on mod-cc">Controller <select id="mod-cc"></select></label>
+      <label class="field mod-on card-sets">Sends <select id="mod-output"></select></label>
+      <label class="field mod-on mod-cc card-sets">Controller <select id="mod-cc"></select></label>
       <label class="field mod-on">From <input type="number" id="mod-from" min="0" max="127"></label>
       <label class="field mod-on">To <input type="number" id="mod-to" min="0" max="127"></label>
       <label class="field mod-on">Curve <select id="mod-curve"></select></label>
@@ -666,10 +666,10 @@
       <label class="field">Decay (ms) <input type="number" id="mod-decay" min="0" max="60000" step="10"></label>
       <label class="field">Sustain (%) <input type="number" id="mod-sustain" min="0" max="100"></label>
       <label class="field">Release (ms) <input type="number" id="mod-release" min="0" max="60000" step="10"></label>
-      <label class="field">Starts on <select id="mod-follow"></select></label>
+      <label class="field card-sets">Starts on <select id="mod-follow"></select></label>
     </div>
     <div class="mod-graph mod-on" id="mod-graph"></div>
-    <p class="hint mod-on" id="mod-hint"></p>
+    <p class="hint mod-on card-sets" id="mod-hint"></p>
   </div>
 </div>
 
@@ -729,7 +729,11 @@ const CC_CHOICES = [
 // How long a sequence or wobble lasts. (Notes and melody generators always
 // sustain; whether a switch is held or toggles is set on each switch.)
 const SEQ_GATE_CHOICES = [['hold', 'Keeps playing'], ['oneshot', 'Plays once through']];
-const MOD_GATE_CHOICES = [['hold', 'Keeps going'], ['oneshot', 'Once per press']];
+// A swell's switch: Gate (rises and stays while held, falls on release) or
+// Trigger (the whole swell on each press).
+const SWELL_TRIGGERS = [['hold', 'Gate'], ['oneshot', 'Trigger']];
+// A wobble's start: from the start of its wave (retrigger), or where it left off (free running).
+const WOBBLE_STARTS = [['start', 'From the start'], ['free', 'Where it left off']];
 // General MIDI drums, named for devices on channel 10.
 const DRUMS = {
   35: 'Kick 2', 36: 'Kick', 37: 'Side stick', 38: 'Snare', 39: 'Clap', 40: 'Snare 2', 41: 'Low floor tom',
@@ -871,12 +875,12 @@ function countLabel(n) {
 
 // --- Labels for devices and switches ---
 
-const deviceName = (d) => B.DEVICES[d.kind].name;
+const deviceName = (d) => B.deviceName(form, d);
 const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 // A device's title when it has no name: its kind, numbered if there are several.
 function defaultTitle(d) {
-  const same = form.devices.filter((x) => x.kind === d.kind);
+  const same = form.devices.filter((x) => deviceName(x) === deviceName(d));
   return capital(same.length > 1 ? `${deviceName(d)} ${same.indexOf(d) + 1}` : deviceName(d));
 }
 const deviceTitle = (d) => d.name || defaultTitle(d);
@@ -954,7 +958,7 @@ function deviceSummary(d) {
   }
   if (d.kind === 'mod') {
     const mod = form.modulators[d.mod];
-    const on = d.target ? ` · on ${deviceTitle(d.target)}` : ` · on channel ${d.channel + 1}`;
+    const on = ` · channel ${B.channelOf(form, d) + 1}`;
     return mod.kind === 'lfo' ? `wobble · ${mod.wave} wave · ${outputLabel(mod)}${on}` : `swell · ${outputLabel(mod)}${on}`;
   }
   if (d.kind === 'gen') {
@@ -1024,7 +1028,7 @@ function renderBoardUse() {
       ? 'This board’s firmware is older than 0.7.4, so Euclidean patterns play as a straight arpeggio. Update the firmware to hear them. '
       : '') +
     (gens && !generatorsOnBoard()
-      ? 'This board’s firmware is older than 0.8.0, so melody generators play in this browser only: turn Sound on to hear them. Update the firmware to play them from the board.'
+      ? 'This board’s firmware is older than 0.8.0, so melody generators play in this browser only: turn the Synth on to hear them. Update the firmware to play them from the board.'
       : '');
   $('board-use').hidden = !$('board-use').textContent;
 }
@@ -1192,7 +1196,7 @@ function deviceCard(d, di) {
     say(`Removed ${title}.`);
     (document.querySelector('.bv-input[data-input="0"]') || $('devices')).focus();
   });
-  const kind = el('span', { className: 'kind', textContent: `${capital(info.name)}${info.sub ? ` (${info.sub})` : ''}`, hidden: !d.name });
+  const kind = el('span', { className: 'kind', textContent: capital(deviceName(d)), hidden: !d.name });
   const line = el('span', { className: 'devcard-summary', id: `${id}-line`, hidden: !collapsed, textContent: deviceLine(d) });
   const body = el('div', { className: 'devcard-body', id: `${id}-body`, hidden: collapsed });
   const card = el('article', { className: `devcard${collapsed ? ' collapsed' : ''}`, id, 'aria-label': deviceTitle(d), 'data-device': di },
@@ -1381,32 +1385,43 @@ function seqPreview(d, id) {
   return box;
 }
 
-// --- Shape preview for Wobbles & Swells, like the sequence preview ---
+// --- Shape preview for a Wobble or Swell, like the sequence preview ---
 // A wobble: two cycles of its wave. A swell: its rise, fall, hold and
 // release. Upside down if it goes from high to low. Filled in the device's
 // colour; the button in its corner expands the shape editor.
 
-function modShape(m, t) {
-  // A value 0-1 at time t (0-1 across the picture).
+// A swell set to Trigger never holds: its decay runs straight into release.
+const modDevice = (mod) => form.devices.find((d) => d.kind === 'mod' && d.mod === mod);
+const triggered = (m, d) => m.kind === 'env' && !!d && d.gate === 'oneshot';
+
+function modShape(m, t, trigger = false) {
+  // A value 0-1 at time t (0-1 across the picture), drawn as the shape
+  // editor draws it: the same segments, and curved if its curve is.
+  const curve = (v) => (m.exponential ? v * v : v);
   if (m.kind === 'lfo') {
-    const c = (t * 2) % 1;   // two cycles
+    const pos = t * 2;   // two cycles
+    const cycle = Math.min(1, Math.floor(pos));
+    const c = t >= 1 ? 0.999 : pos - cycle;
     switch (m.wave) {
-      case 'sine': return 0.5 - 0.5 * Math.cos(2 * Math.PI * c);
-      case 'square': return c < 0.5 ? 1 : 0;
-      case 'saw': return c;
-      case 'random': return [0.3, 0.9, 0.5, 0.1, 0.7, 0.2, 1, 0.4][Math.floor(t * 8) % 8];
-      default: return 1 - Math.abs(2 * c - 1);   // triangle
+      case 'sine': return curve(0.5 - 0.5 * Math.cos(2 * Math.PI * c));
+      case 'square': return curve(c < 0.5 ? 1 : 0);
+      case 'saw': return curve(c);
+      case 'random': return curve([0.7, 0.2, 0.9, 0.4][cycle]);
+      default: return curve(c < 0.5 ? 2 * c : 2 - 2 * c);   // triangle
     }
   }
-  // Swell: attack, decay, a held stretch, release, scaled to the picture.
-  const a = Math.max(1, m.attack), dd = Math.max(1, m.decay), r = Math.max(1, m.release);
-  const hold = (a + dd + r) * 0.5;
-  const total = a + dd + hold + r;
-  const ms = t * total, sus = m.sustain / 100;
-  if (ms < a) return ms / a;
-  if (ms < a + dd) return 1 - (1 - sus) * ((ms - a) / dd);
-  if (ms < a + dd + hold) return sus;
-  return sus * (1 - (ms - a - dd - hold) / r);
+  // Swell: attack, decay, a held stretch and release, in the editor's
+  // proportions (times to scale, the held stretch a fixed width).
+  const width = G.w - G.left - G.right;
+  const hold = trigger ? 0 : G.hold;
+  const scale = (width - hold) / Math.max(400, m.attack + m.decay + m.release);
+  const x = t * width, sus = m.sustain / 100;
+  const x1 = m.attack * scale, x2 = x1 + m.decay * scale, x3 = x2 + hold, x4 = x3 + m.release * scale;
+  if (x < x1) return curve(x / x1);
+  if (x < x2) return curve(1 - (1 - sus) * ((x - x1) / (x2 - x1)));
+  if (x < x3) return curve(sus);
+  if (x < x4) return curve(sus * (1 - (x - x3) / (x4 - x3)));
+  return 0;
 }
 
 function modPreview(d, id) {
@@ -1414,9 +1429,10 @@ function modPreview(d, id) {
   const H = 100, Wd = 340, left = 8, right = 40, top = 10, bottom = 90;
   const flip = m.from > m.to;
   const pts = [];
-  for (let k = 0; k <= 120; k++) {
-    const t = k / 120;
-    const v = flip ? 1 - modShape(m, t) : modShape(m, t);
+  for (let k = 0; k <= 480; k++) {
+    const t = k / 480;
+    let v = modShape(m, t, triggered(m, d));
+    if (flip) v = 1 - v;
     pts.push([left + t * (Wd - left - right), bottom - v * (bottom - top)]);
   }
   const line = pts.map(([x, y], k) => `${k ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join('');
@@ -1793,31 +1809,44 @@ function soundSettings(d, id) {
   }
   if (arpRow.children.length) row.arpRow = arpRow;
   if (B.isMod(d)) {
-    // It changes another device's sound, or a channel of its own.
-    const target = el('select', { id: `${id}-target` });
-    const choices = form.devices.filter(B.isSound).map((x) => [form.devices.indexOf(x), `${deviceTitle(x)} (channel ${x.channel + 1})`]);
-    choices.push(['own', 'A channel of its own']);
-    options(target, choices, d.target ? form.devices.indexOf(d.target) : 'own');
-    target.addEventListener('change', () => {
-      if (target.value === 'own') {
-        if (d.target) d.channel = d.target.channel;
-        d.target = null;
-      } else {
-        d.target = form.devices[Number(target.value)];
-      }
+    // The channel it changes: a MIDI Ch like other devices. (One that was
+    // set to follow another device shows that device's channel until changed.)
+    const channel = el('select', { id: `${id}-channel` });
+    options(channel, Array.from({ length: 16 }, (_, i) => [i, String(i + 1)]), B.channelOf(form, d));
+    channel.addEventListener('change', () => {
+      d.target = null;
+      d.channel = Number(channel.value);
       renderDevices();
       changed();
     });
-    row.append(field('Changes', target));
-    const moves = el('select', { id: `${id}-moves` });
-    options(moves, [['lfo', 'Over and over'], ['env', 'Once']], form.modulators[d.mod].kind);
-    moves.addEventListener('change', () => {
-      B.setModKind(form, d.mod, moves.value);
-      renderDevices();
-      changed();
-    });
-    row.append(field('Moves', moves));
-    if (!d.target) row.append(channelSelect());
+    row.append(field('MIDI Ch', channel));
+    // The controller it changes, beside its channel.
+    const m = form.modulators[d.mod];
+    {
+      const cc = el('select', { id: `${id}-cc` });
+      const now = m.output === 'cc' ? m.cc : '';
+      options(cc, m.output === 'cc' ? withValue(MOD_CC_CHOICES, m.cc, `CC ${m.cc}`)
+        : [['', outputLabel(m)], ...MOD_CC_CHOICES], now);
+      cc.addEventListener('change', () => {
+        if (cc.value === '') return;
+        form.modulators[d.mod] = { ...form.modulators[d.mod], output: 'cc', cc: Number(cc.value) };
+        renderDevices();
+        changed();
+      });
+      row.append(field('CC', cc));
+    }
+    // A wobble starts from the start of its wave each time, or carries on
+    // from where it was (a synced one: in step with the clock).
+    if (m.kind === 'lfo') {
+      const start = el('select', { id: `${id}-start` });
+      options(start, WOBBLE_STARTS, m.freeRun ? 'free' : 'start');
+      start.addEventListener('change', () => {
+        form.modulators[d.mod] = { ...form.modulators[d.mod], freeRun: start.value === 'free' };
+        renderDevices();
+        changed();
+      });
+      row.append(field('Starts', start));
+    }
   }
   return row.children.length ? row : null;
 }
@@ -1832,6 +1861,15 @@ function switchRow(d, s, rowId) {
     job = el('select', { id: `${rowId}-job`, 'aria-label': `${label} plays` });
     options(job, withValue(choices, s.value, noteLabel(d, s.value)), s.value);
     job.addEventListener('change', () => { s.value = Number(job.value); renderDevices(); changed(); });
+  } else if (B.isSwell(form, d)) {
+    job = el('select', { id: `${rowId}-job`, 'aria-label': `${label}: gate or trigger` });
+    options(job, SWELL_TRIGGERS, d.gate === 'oneshot' ? 'oneshot' : 'hold');
+    job.addEventListener('change', () => {
+      d.gate = job.value;
+      s.toggle = false;
+      renderDevices();
+      changed();
+    });
   } else {
     job = el('select', { id: `${rowId}-job`, 'aria-label': `${label}’s job` });
     options(job, B.roles(form, d).filter(([k]) => B.CONTINUOUS.has(k) === B.isVariable(s.input)), s.role);
@@ -1856,14 +1894,14 @@ function switchRow(d, s, rowId) {
   });
   // Held (sounds while the switch is down) or latched (press on, press off).
   let toggle = el('span');
-  if (B.gated(d, s)) {
+  if (B.gated(d, s, form)) {
     const box = el('input', { type: 'checkbox', id: `${rowId}-toggle`, checked: !!s.toggle,
       'aria-label': `${label}: latch (press on, press off) instead of holding` });
     // A short sound has nothing to latch (kept off by setEditable too).
-    if (d.gate === 'oneshot') box.classList.add('stay-disabled');
+    if (B.once(d, form)) box.classList.add('stay-disabled');
     box.addEventListener('change', () => { s.toggle = box.checked; changed(); });
     toggle = el('label', { className: 'check sw-toggle',
-      title: d.gate === 'oneshot' ? 'Short sounds have nothing to latch' : 'On: press once to start and again to stop. Off: hold the switch to keep it sounding.' },
+      title: B.once(d, form) ? 'Short sounds have nothing to latch' : 'On: press once to start and again to stop. Off: hold the switch to keep it sounding.' },
     box, 'Latch');
   }
   const pattern = d.kind === 'arp' && d.patterns && s.rhythm ? switchPattern(d, s, rowId, label)
@@ -1951,7 +1989,6 @@ function responseRow(d, id) {
   let choices = null;
   if (d.kind === 'arp') return null;
   if (d.kind === 'seq' && form.sequences[d.seq].mode === 'clock') choices = SEQ_GATE_CHOICES;
-  else if (d.kind === 'mod') choices = MOD_GATE_CHOICES;
   if (!choices) return null;
   const row = el('div', { className: 'row' });
   if (choices) {
@@ -2119,8 +2156,11 @@ function kindIcon(kind) {
       [18, 13, 8, 18, 13, 8].forEach((y, k) => parts.push(`<rect x="${3 + k * 8.7}" y="${y}" width="7" height="4" rx="1" fill="#fff273" stroke="#000" stroke-width="0.6"/>`));
       return parts.join('');
     },
-    // Wobbles & Swells: a wave, filled.
-    mod: () => {
+    // Wobble: a wave, filled.
+    swell: () => ['<rect x="0.5" y="0.5" width="55" height="23" fill="#fff" stroke="#000"/>',
+      '<path d="M3 21L14 5L38 5L53 21Z" fill="#a9b1ff" fill-opacity="0.7"/>',
+      '<path d="M3 21L14 5L38 5L53 21" fill="none" stroke="#000" stroke-width="1.2" stroke-linejoin="round"/>'].join(''),
+    wobble: () => {
       let line = '';
       for (let k = 0; k <= 40; k++) {
         const x = 2 + k * 1.3, y = 12 - 7 * Math.sin((k / 40) * Math.PI * 4);
@@ -2165,7 +2205,7 @@ function renderSelection() {
       // Just the name, with a small picture of what's inside notes and
       // melody generator devices. Why a full one is off is in its tooltip.
       const b = el('button', { type: 'button', id: `new-${kind}`, className: 'quiet',
-        title: room ? '' : `The board is full: remove a ${info.uses === 'seq' ? 'sequencer or arpeggiator' : info.uses === 'gen' ? 'melody generator' : 'Wobbles & Swells device'} first.` },
+        title: room ? '' : `The board is full: remove a ${info.uses === 'seq' ? 'sequencer or arpeggiator' : info.uses === 'gen' ? 'melody generator' : 'wobble or swell'} first.` },
         kindIcon(kind), el('span', {}, capital(info.name), info.sub ? ` (${info.sub})` : ''));
       b.disabled = !room || !editable;
       b.addEventListener('click', () => createDevice(kind));
@@ -2430,16 +2470,18 @@ const yOf = (m, v) => G.bottom - (G.bottom - G.top) * curveOf(m)(v);
 
 // Milliseconds per pixel, so attack + decay + release fill the width
 // (kept fixed while dragging so the handle stays under the pointer).
-function envScale(m) {
-  const width = G.w - G.left - G.right - G.hold;
+const holdWidth = (trigger) => (trigger ? 0 : G.hold);
+
+function envScale(m, trigger = false) {
+  const width = G.w - G.left - G.right - holdWidth(trigger);
   return width / Math.max(400, m.attack + m.decay + m.release);
 }
 
-function envPoints(m, scale) {
+function envPoints(m, scale, trigger = false) {
   const s = m.sustain / 100;
   const x1 = G.left + m.attack * scale;
   const x2 = x1 + m.decay * scale;
-  const x3 = x2 + G.hold;
+  const x3 = x2 + holdWidth(trigger);
   const x4 = x3 + m.release * scale;
   return { x0: G.left, x1, x2, x3, x4, s };
 }
@@ -2499,18 +2541,21 @@ function renderModGraph() {
   box.replaceChildren();
   if (m.kind === 'off') return;
   const svg = svgEl('svg', { viewBox: `0 0 ${G.w} ${G.h}`, role: 'group' });
+  const owner = modDevice(currentMod);
+  if (owner) svg.style.setProperty('--shape', B.COLOURS[owner.colour].hex);
   axisLabels(svg, m);
   box.append(svg);
 
   if (m.kind === 'lfo') {
     svg.setAttribute('aria-label', `Preview of the ${m.wave} wave, two cycles`);
-    svg.append(svgEl('path', { class: 'shape', d: lfoPath(m), fill: 'none', style: 'fill: none' }),
+    svg.append(svgEl('path', { class: 'shape', d: `${lfoPath(m)} L${G.w - G.right},${G.bottom} L${G.left},${G.bottom} Z` }),
       svgEl('text', { x: G.left, y: G.bottom + 26 }, 'two cycles'));
     return;
   }
 
   svg.setAttribute('aria-label', 'Swell shape. Drag the handles, or focus one and use the arrow keys.');
-  let scale = envScale(m);
+  const trigger = triggered(m, modDevice(currentMod));
+  let scale = envScale(m, trigger);
   const shape = svgEl('path', { class: 'shape' });
   const held = svgEl('line', { class: 'held' });
   const labels = ['attack', 'decay', 'held', 'release'].map(() => svgEl('text', { 'text-anchor': 'middle' }));
@@ -2523,7 +2568,7 @@ function renderModGraph() {
   svg.append(shape, held, ...labels, handles.attack, handles.decay, handles.release);
 
   const draw = () => {
-    const p = envPoints(m, scale);
+    const p = envPoints(m, scale, trigger);
     shape.setAttribute('d', envPath(m, p));
     const ys = yOf(m, p.s);
     Object.entries({ x1: p.x2, y1: ys, x2: p.x2, y2: G.bottom }).forEach(([k, v]) => held.setAttribute(k, v));
@@ -2590,7 +2635,7 @@ function renderModGraph() {
       const up = () => {
         h.removeEventListener('pointermove', move);
         h.classList.remove('dragging');
-        scale = envScale(m);  // rescale once the drag is over
+        scale = envScale(m, trigger);  // rescale once the drag is over
         draw();
       };
       h.addEventListener('pointermove', move);
@@ -2610,7 +2655,7 @@ function renderModGraph() {
         m.sustain = Math.max(0, Math.min(100, m.sustain + dy));
       }
       if (name === 'release') m.release = clampMs(m.release + dx);
-      scale = envScale(m);
+      scale = envScale(m, trigger);
       draw();
       changed();
     });
@@ -2643,6 +2688,8 @@ function renderMod() {
   document.querySelectorAll('.mod-env').forEach((e) => { e.hidden = m.kind !== 'env'; });
   document.querySelectorAll('.mod-cc').forEach((e) => { e.hidden = m.kind === 'off' || m.output !== 'cc'; });
   document.querySelectorAll('.mod-free').forEach((e) => { e.hidden = m.kind !== 'lfo' || m.synced; });
+  // The card sets its channel and CC: the editor is just the shape.
+  document.querySelectorAll('.card-sets').forEach((e) => { e.hidden = true; });
   renderModGraph();
   $('mod-hint').textContent = m.output === 'bend'
     ? 'For pitch bend, 64 is the middle (no bend), 0 is fully down and 127 fully up.'
@@ -2800,7 +2847,7 @@ function setKnob(i, value) {
   box.setAttribute('aria-valuenow', String(value));
 }
 
-// --- Cards that fold away (variable inputs, browser sound) ---
+// --- Cards that fold away (variable inputs, synth) ---
 // The chevron hides everything under the heading. Folding is remembered in
 // this browser, not saved with the template.
 function makeFoldable(section) {
@@ -3020,7 +3067,7 @@ function buildStatic() {
       showError(e);
     }
     $('sound').setAttribute('aria-pressed', String(synth.running));
-    $('sound').textContent = synth.running ? 'Sound: on' : 'Sound: off';
+    $('sound').textContent = synth.running ? 'Synth: on' : 'Synth: off';
     // A short, quiet blip when it comes on, so you can tell the browser's
     // sound works before playing the board.
     if (synth.running) {
@@ -3287,7 +3334,7 @@ let foreignTable = null;  // a table this page can't show (made with Blocks, say
 
 // The table to send to the board.
 function currentTable() {
-  return foreignTable || B.tableFromBand(form, { generators: generatorsOnBoard(), arps: arpsOnBoard(), speeds: speedsOnBoard() });
+  return foreignTable || B.tableFromBand(form, { generators: generatorsOnBoard(), arps: arpsOnBoard(), speeds: speedsOnBoard(), freeRuns: freeRunsOnBoard() });
 }
 
 // Firmware 0.7.3 and later build arpeggios from held switches (ARP_NOTE).
@@ -3301,6 +3348,13 @@ function patternsOnBoard() {
 }
 
 // Firmware 0.7.6 and later let a variable input set a wobble's speed.
+// Firmware 0.7.7 and later can let a wobble carry on from where it was.
+function freeRunsOnBoard() {
+  if (!board) return true;
+  const [major, minor, patch] = board.info.firmware.split('.').map(Number);
+  return major > 0 || minor > 7 || (minor === 7 && patch >= 7);
+}
+
 function speedsOnBoard() {
   if (!board) return true;
   const [major, minor, patch] = board.info.firmware.split('.').map(Number);

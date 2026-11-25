@@ -13,6 +13,9 @@
 
   const LEFT = { jack: 102.5, button: 113.23, led: 120.79, label: 125.6, side: 'left' };
   const RIGHT = { jack: 177.93, button: 167.2, led: 159.64, label: 154.8, side: 'right' };
+  // A number beside its light: just clear of it, reading away from it.
+  const labelAt = (col) => (col.side === 'left'
+    ? { x: col.led + 2.3, 'text-anchor': 'start' } : { x: col.led - 2.3, 'text-anchor': 'end' });
   // Input -> column and row centre (y). Inputs 10 and 11 are the buttons beside
   // the analog jacks; their lights are driven by the firmware, not the button.
   const INPUTS = [
@@ -179,7 +182,7 @@
         svg('text', { class: 'bv-sym', x: bx, y: iy + 0.95, 'font-size': 2.6, 'text-anchor': 'middle' }, ''));
       // The light.
       g.append(svg('circle', { class: `bv-led${analog ? ' analog' : ''}`, cx: col.led, cy: iy, r: 1.3 }));
-      g.append(svg('text', { class: 'bv-label', x: col.label, y: iy + 1.2, 'font-size': 3.4, 'text-anchor': 'middle' },
+      g.append(svg('text', { class: 'bv-label', ...labelAt(col), y: iy + 1.9, 'font-size': 5.3 },
         analog ? (left ? 'V1' : 'V2') : String(i + 1)));
       g.append(svg('title', {}, ''));
       g.addEventListener('click', () => { if (g.classList.contains('pickable')) onPick(i); });
@@ -221,7 +224,7 @@
       }));
       g.append(jack(col, y, analog), button(col.button, y), led(col.led, y, analog));
       g.append(svg('text', {
-        x: col.label, y: y + 1.2, 'font-size': 3.4, fill: C.silk, 'text-anchor': 'middle', 'font-family': 'sans-serif', 'font-weight': 700,
+        ...labelAt(col), y: y + 1.9, 'font-size': 5.3, fill: C.silk, 'font-family': 'sans-serif', 'font-weight': 700,
       }, analog ? (left ? 'V1' : 'V2') : String(i + 1)));
       g.append(svg('title', {}, ''));
       g.addEventListener('click', () => { if (g.classList.contains('pickable')) onPick(i); });

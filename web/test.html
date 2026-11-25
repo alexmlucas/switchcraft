@@ -788,8 +788,31 @@ function fakeBoard() {
     assert(back.devices[3].target === back.devices[0], 'the wobble still changes the notes');
   });
 
+  await test('band: a wobble can carry on from where it left off (firmware 0.7.7)', () => {
+    const b = BD.defaultBand();
+    const wob = BD.newDevice(b, 'wobble', [0]).device;
+    assertEq(b.modulators[wob.mod].freeRun, false);
+    b.modulators[wob.mod].freeRun = true;
+    const t = BD.tableFromBand(b);
+    assertEq(t.modulators[0].flags & 4, 4);
+    const back = BD.bandFromTable(S.parseTable(S.buildTable(t))).band;
+    assertEq(back.modulators[wob.mod].freeRun, true);
+    // An older board gets the wobble starting from the start.
+    assertEq(BD.tableFromBand(b, { freeRuns: false }).modulators[0].flags & 4, 0);
+  });
+
+  await test('band: the switch on a swell holds it or fires it once, and never latches', () => {
+    const b = BD.defaultBand();
+    const sw = BD.newDevice(b, 'swell', [2]).device;
+    sw.switches[0].toggle = true;   // e.g. from an older file
+    assertEq(BD.toForm(b).switches[2].gate, 'hold');
+    sw.gate = 'oneshot';
+    assertEq(BD.toForm(b).switches[2].gate, 'oneshot');
+    assertEq(BD.gated(sw, sw.switches[0], b), false);
+  });
+
   await test('band: one switch always does the job that makes a sound', () => {
-    const first = { notes: 'scale', gen: 'gen-note', seq: 'seq-step', arp: 'arp-note', mod: 'mod-run' };
+    const first = { notes: 'scale', gen: 'gen-note', seq: 'seq-step', arp: 'arp-note', mod: 'mod-run', wobble: 'mod-run', swell: 'mod-run' };
     for (const kind of BD.KINDS) {
       const b = BD.defaultBand();
       const { device, left } = BD.newDevice(b, kind, [4]);
@@ -881,7 +904,9 @@ function fakeBoard() {
       // Transpose and next-template switches aren't devices any more: they open free.
       const free = (x) => (x.action === 'transpose' || x.action === 'preset-next' ? { action: 'none' }
         // A sequence that played by itself is stepped through now.
-        : x.action === 'seq-play' ? { action: 'seq-step', seq: x.seq } : x);
+        : x.action === 'seq-play' ? { action: 'seq-step', seq: x.seq }
+        // Wobbles and swells start straight away: they have no Quantise.
+        : x.action === 'mod-run' ? { ...x, onBeat: false } : x);
       assertEq(BD.toForm(band).switches.map(strip), f.switches.map(free).map(strip));
       for (const d of band.devices) if (d.channel !== undefined) assertEq(d.channel, f.channel);
     }
@@ -1069,6 +1094,14 @@ function fakeBoard() {
     const plain = BD.tableFromBand(b);
     plain.extra = [];
     assertEq(BD.bandFromTable(S.parseTable(S.buildTable(plain))).band.devices[0].loop, false);
+  });
+
+  await test('band: Wobble and Swell are modulators that move over and over, or once', () => {
+    const w = BD.defaultBand();
+    const wob = BD.newDevice(w, 'wobble', [0]).device;
+    const sw = BD.newDevice(w, 'swell', [1]).device;
+    assertEq([wob.kind, w.modulators[wob.mod].kind, BD.deviceName(w, wob)], ['mod', 'lfo', 'wobble']);
+    assertEq([sw.kind, w.modulators[sw.mod].kind, BD.deviceName(w, sw), sw.switches.map((s) => s.role)], ['mod', 'env', 'swell', ['run']]);
   });
 
   await test('band: Wobbles & Swells move over and over (wobble) or once (swell)', () => {

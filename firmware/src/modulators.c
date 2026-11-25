@@ -96,11 +96,25 @@ void mods_run(uint8_t id, uint8_t gate_mode, uint8_t owner, uint32_t tick) {
         }
         m->active = true;
         m->stopping = false;
-        m->phase = 0;
-        m->cycle = 0;
-        m->start_tick = (float)tick;
-        m->rate_used = 0;
-        m->random_value = random01();
+        if (d->flags & MOD_FREERUN) {
+            // Free running: carry on from where it was. A synced one keeps
+            // its place against the clock, as if it had been running all along.
+            if (d->flags & MOD_SYNCED) {
+                uint16_t rate = m->speed ? m->speed : d->rate;
+                m->start_tick = 0;
+                m->rate_used = rate;
+                m->cycle = tick / rate;
+                m->phase = (float)(tick % rate) / rate;
+            } else {
+                m->cycle = 0;  // phase kept from last time
+            }
+        } else {
+            m->phase = 0;
+            m->cycle = 0;
+            m->start_tick = (float)tick;
+            m->rate_used = 0;
+            m->random_value = random01();
+        }
     } else {
         bool open = m->active && m->stage != ENV_RELEASE;
         if (gate_mode == GATE_LATCH && open) {
@@ -196,7 +210,12 @@ static float wave(uint8_t w, float p, float random_value) {
 static void update_lfo(const mod_def_t *d, mod_rt_t *m, float dt, float tick_pos) {
     float pos;
     uint16_t rate = m->speed ? m->speed : d->rate;
-    if (d->flags & MOD_SYNCED) {
+    if ((d->flags & MOD_SYNCED) && (d->flags & MOD_FREERUN)) {
+        // Free running: always in step with the clock (from MIDI Start).
+        m->start_tick = 0;
+        m->rate_used = rate;
+        pos = tick_pos / rate;
+    } else if (d->flags & MOD_SYNCED) {
         // A new speed: measure from a start that keeps its place in the cycle.
         if (rate != m->rate_used) {
             if (m->rate_used)

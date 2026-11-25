@@ -58,9 +58,15 @@
     // not one of its own in the menu.
     arp: { name: 'notes', what: 'Each switch plays a note.', uses: 'seq', sound: true, hidden: true },
     // One of the board's modulators: a wobble (LFO, over and over) or a
-    // swell (envelope, once), set by its Moves menu (band.modulators[d.mod].kind).
-    mod: { name: 'Wobbles & Swells', what: 'Moves a sound up and down: over and over, or once.', uses: 'mod' },
+    // swell (envelope, once), by band.modulators[d.mod].kind. The menu
+    // offers them as two devices (below), each made as a 'mod'.
+    mod: { name: 'wobble', what: 'Moves a sound up and down.', uses: 'mod', hidden: true },
+    wobble: { name: 'wobble', what: 'Moves a sound up and down, over and over.', uses: 'mod', makes: 'mod', modKind: 'lfo' },
+    swell: { name: 'swell', what: 'Makes a sound rise and fall, once each time.', uses: 'mod', makes: 'mod', modKind: 'env' },
   };
+  // What a device is called: a modulator by what it does.
+  const deviceName = (band, d) => (d.kind === 'mod' ? (band.modulators[d.mod].kind === 'env' ? 'swell' : 'wobble')
+    : DEVICES[d.kind].name);
   const KINDS = Object.keys(DEVICES);
   const isSound = (d) => !!DEVICES[d.kind].sound;
   // Devices whose switches each play a note (rather than doing a job).
@@ -166,6 +172,19 @@
   // (left: switches it had no job for), or null if the board has no room.
   function newDevice(band, kind, inputs = []) {
     if (!canAdd(band, kind)) return null;
+    // Wobble and Swell are both modulators.
+    const as = DEVICES[kind].makes;
+    if (as) {
+      const made = newDevice(band, as, []);
+      if (!made) return null;
+      const d = made.device;
+      if (DEVICES[kind].modKind === 'env') {
+        band.modulators[d.mod] = { ...S.defaultModulator('env'), cc: 74, from: 10, to: 127, exponential: true };
+        setModKind(band, d.mod, 'env');
+      }
+      const left = inputs.filter((input) => !addSwitch(band, d, input));
+      return { device: d, left };
+    }
     const d = { kind, name: '', colour: nextColour(band), collapsed: false, switches: [] };
     if (isSound(d)) Object.assign(d, { channel: freeChannel(band), velocity: 100, octave: 0 });
     if (kind === 'notes') {
@@ -334,13 +353,20 @@
   // (s.toggle). The device says whether its sound is sustained ('hold') or
   // short ('oneshot'); a short sound has nothing to toggle.
 
-  function gated(d, s) {
+  // A swell's switch holds it or fires it once: it never latches.
+  const isSwell = (band, d) => d.kind === 'mod' && band.modulators[d.mod].kind === 'env';
+
+  function gated(d, s, band = null) {
     if (playsNotes(d)) return true;
+    if (band && isSwell(band, d)) return false;
     return { gen: ['note', 'home', 'again'], seq: ['play'], mod: ['run'] }[d.kind]?.includes(s.role) || false;
   }
 
   // The gate a switch's rule gets: 'hold', 'latch' or 'oneshot'.
-  const gateOf = (d, s) => (d.gate === 'oneshot' ? 'oneshot' : s.toggle ? 'latch' : 'hold');
+  // Short ('oneshot'): a wobble never is (it keeps going, or latches).
+  const once = (d, band = null) => d.gate === 'oneshot' && !(band && d.kind === 'mod' && !isSwell(band, d));
+  const gateOf = (d, s, band = null) => (once(d, band) ? 'oneshot'
+    : s.toggle && !(band && isSwell(band, d)) ? 'latch' : 'hold');
 
   // New switches on sequencers and wobbles toggle (they run until stopped);
   // notes and generators are held.
@@ -373,7 +399,7 @@
     const s = playsNotes(d) ? { input, value: nextNoteValue(d) } : { input, role: freeRoles(band, d, input)[0][0] };
     if (s.role === 'speed') s.range = { free: [...DEFAULT_RANGE.free], synced: [...DEFAULT_RANGE.synced] };
     if (d.kind === 'arp' && d.patterns) s.rhythm = { ...DEFAULT_PATTERN };
-    if (gated(d, s) && togglesByDefault(band, d)) s.toggle = true;
+    if (gated(d, s, band) && togglesByDefault(band, d)) s.toggle = true;
     d.switches.push(s);
     return { was };
   }
@@ -415,7 +441,7 @@
       const set = (role, action) => {
         if (!valid.has(role)) return;
         for (const s of d.switches)
-          if (s.role === role) f.switches[s.input] = action.gate ? { ...action, gate: gateOf(d, s) } : action;
+          if (s.role === role) f.switches[s.input] = action.gate ? { ...action, gate: gateOf(d, s, band) } : action;
       };
       if (d.kind === 'notes') {
         const up = octaveSteps(band, d);
@@ -451,7 +477,7 @@
       } else if (d.kind === 'mod') {
         if (!mods.has(d.mod)) f.modulators[d.mod].channel = channelOf(band, d);
         mods.add(d.mod);
-        set('run', { action: 'mod-run', mod: d.mod, gate: d.gate, onBeat: !!d.onBeat });
+        set('run', { action: 'mod-run', mod: d.mod, gate: d.gate, onBeat: false });
         set('stop', { action: 'mod-stop', mod: d.mod });
         // A variable input setting its speed (firmware 0.7.6), in the range
         // for its kind of wobble.
@@ -528,8 +554,10 @@
   // generators: the board takes GENERATOR sections (firmware 0.8.0 and
   // later). Otherwise generators are left out of the table (the page plays
   // them itself) but still kept in the EDITOR section.
-  function tableFromBand(band, { generators = true, arps = true, speeds = true } = {}) {
+  function tableFromBand(band, { generators = true, arps = true, speeds = true, freeRuns = true } = {}) {
     const f = toForm(band);
+    // Before 0.7.7 a wobble always starts from the start.
+    if (!freeRuns) f.modulators = f.modulators.map((m) => ({ ...m, freeRun: false }));
     if (!speeds) f.switches = f.switches.map((s) => (s.action === 'mod-speed' ? { action: 'none' } : s));
     if (!arps) f.switches = f.switches.map((s) => (s.action === 'arp-note' ? { action: 'none' } : s));
     if (!generators) {
@@ -837,7 +865,7 @@
 
   global.SwitchcraftBand = {
     COLOURS, DEVICES, KINDS, NUM_SWITCHES, NUM_SEQS, NUM_MODS, NUM_GENS, TEMPLATES, EDITOR_ID,
-    RACK_FIRST, RACK_PADS, CONTINUOUS, isVariable, roles, freeRoles, hasRoom, isSound, isMod, channelOf, gated, gateOf, OCTAVES, usesOctave, octaveSteps, scaleLength,
+    RACK_FIRST, RACK_PADS, CONTINUOUS, isVariable, deviceName, isSwell, once, roles, freeRoles, hasRoom, isSound, isMod, channelOf, gated, gateOf, OCTAVES, usesOctave, octaveSteps, scaleLength,
     defaultBand, blankBand, newDevice, removeDevice, canAdd, setSequenceMode, setModKind, setArpeggiate, setPatterns,
     slots, owner, release, freeInputs, addSwitch, removeSwitch, setRole,
     seqIdsInUse, modIdsInUse, genIdsInUse, generatorsOf,
